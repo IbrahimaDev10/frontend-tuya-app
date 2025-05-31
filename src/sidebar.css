@@ -1,0 +1,56 @@
+.main .sidebarWrapper{
+  width: 20%;
+  flex: 0 0 20%;
+
+}
+.main .sidebarWrapper .sidebar{
+  background: #fff;
+  width: 20%;
+  height: 100vh;
+  top: 90px;
+  left: 0;
+  position: fixed;
+  
+
+}
+.main .sidebarWrapper .sidebar ul{
+  margin-bottom: 0;
+  padding:30px 20px;
+  align-items: center;
+ 
+}
+.main .sidebarWrapper .sidebar ul li{
+  list-style: none;
+}
+.main .sidebarWrapper .sidebar ul li button{
+  text-align:left;
+  color:#000;
+  font-size: 16px;
+  padding: 20px 25px;
+  justify-content: left;
+  align-items: center;
+  font-weight: bold;
+  
+
+}
+
+.main .sidebarWrapper .sidebar ul li button .icon{
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color:rgb(0,162,232);
+  font-size: 18px;
+  margin-right: 10px;
+
+}
+
+.main .sidebarWrapper .sidebar ul li button .icon-right{
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color:rgb(0,162,232);
+  font-size: 18px;
+  margin-left: auto;
+
+
+}

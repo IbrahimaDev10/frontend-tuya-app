@@ -1,0 +1,409 @@
+
+*{
+  margin: 0;
+  padding: 0;
+}
+
+body{
+  background: #e0dfdf !important;
+}
+
+header{
+  -webkit-backdrop-filter: blur(5px);
+  backdrop-filter: blur(5px);
+  background: #ffffffe6;
+  height: 90px;
+  left: 0;
+  position: fixed;
+  top: 0;
+  width: 100%;
+  z-index: 1000;
+}
+header .logo {
+  
+border-radius: 50%;
+padding: 8px;
+margin-right: 5px;
+  
+}
+header .logo .N{
+  color: white;
+}
+header .logo .S{
+  color: black;
+}
+header .logo .N, header .logo .S{
+  font-size: 30px;
+  font-weight: bold;
+
+}
+header .logo_sertec{
+  width: 200px;
+  height: 150px;
+  padding: 10px;
+  margin-top: 10px;
+}
+header h3,h5{
+  color: rgb(0,162,232) !important;
+}
+header h5{
+  font-size: 25px;
+}
+header .part1{
+  display: flex;
+  align-items: center;
+  
+}
+
+header .part2{
+  display: flex;
+  align-items: center;
+  
+}
+header .part2 button.rounded-circle{
+  background: #F2F2F2;
+  width: 40px !important;
+  height: 40px !important;
+  
+ 
+}
+header .part2 button svg{
+  font-size: 15px;
+  color:black;
+  
+}
+ button.rounded-circle{
+ /* border-radius: 50% !important; */
+  background: #75dbf8;
+}
+.searchbox{
+  width: 400px;
+  background:#F2F2F2 ;
+  border-radius: 5px;
+  height: 30px;
+ 
+
+}
+
+.searchbox input{
+  padding: 3px 15px ;
+  background:#F2F2F2 ;
+  outline: none;
+  border: none;
+  
+  
+  margin: 0;
+  font-size: 16px;
+  
+  
+}
+.iconSearch{
+  margin-right: 3px;
+  
+  color:black;
+  font-size: 16px;
+
+}
+.part3 button{
+  width: 20px;
+  background: #F2F2F2;
+}
+.part3 button svg{
+  font-size: 15px;
+  color: #000;
+}
+
+
+/* CSS SIDEBAR */
+
+
+.main .content {
+  flex: 0 0 80%;
+  transition: all .3s;
+  width: 80%;
+}
+
+.right-content {
+  padding: 100px 30px 10px;
+}
+.content .dashboardBoxWrapper{
+  gap:15px;
+  width: 100%;
+  flex-wrap: wrap;
+ }
+ .content .dashboardBoxWrapper .dashboardBox{
+  width: 48%;
+  height: 170px;
+  border-radius: 10px;
+  overflow: hidden;
+  padding: 20px;
+  position: relative;
+ 
+ }
+
+ .dashboardBoxWrapperRow .box{
+  width: 100%;
+  height: 100%;
+  background: #ccc;
+ }
+ .dashboardBox .element{
+  margin-left: auto;
+ }
+ .dashboardBoxWrapper .dashboardBox .col1 h4{
+  font-size: 30px;
+  font-weight: bold;
+ }
+ .dashboardBoxWrapper .dashboardBox .col1 span{
+  font-size: 40px;
+  line-height: 45px;
+  font-weight: bold;
+ }
+ .dashboardBoxWrapper .dashboardBox .icon svg{
+  font-size: 45px;
+  color: #000;
+  opacity: 0.1;
+ }
+
+ .dashboardBoxWrapper .dashboardBox .icon{
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 60px;
+  border-radius: 5px;
+  background-image: linear-gradient(bottom right, rgba(0,0,0,0.1),rgba(0,0,0,0.2));
+ }
+
+ .dashboardBox .element_bas{
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  padding:10px;
+  
+ }
+
+ .dashboardBox .element_bas h6{
+  font-size: 20px;
+  font-weight: bold;
+ }
+ .dashboardBox .chart{
+ 
+  color: #000;
+  opacity: 0.2;
+  position:absolute;
+  left: 20px;
+  bottom: 20px;
+ }
+ .dashboardBox .chart svg{
+  font-size: 110px;
+  color: #000;
+ }
+ .login{
+  background: blue;
+  z-index:99999999999;
+  padding: 100px;
+  width:60%;
+  margin-top: 100px;
+  border-radius: 20px;
+ }
+ .login h2{
+  color:white;
+ }
+ .login .form_element{
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap:20px;
+ }
+
+ .bouton_allumer{
+  gap:20px;
+  width: 80px;
+  height: 40px;
+  background: blue;
+  color: white;
+ }
+ .bouton_eteindre{
+  gap:20px;
+  width: 80px;
+  height: 40px;
+  background: red;
+  color: white;
+  margin-left: 20px;
+ }
+
+
+ .loginPatern{
+  width: 100%;
+  height: 100%;
+  opacity: 0.6;
+  top: 0;
+  left: 0;
+  z-index: 99;
+  position: fixed;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.loginSection{
+  width: 100%;
+  height: 100vh;
+  padding: 35px 25px;
+ 
+  position: relative;
+
+ 
+}
+
+.loginSection h5{
+  font-size: 40px;
+  color: #fff;
+  font-weight: bold;
+  margin-top: 10px;
+  background: #000;
+  padding: 15px;
+  align-items: center;
+}
+
+.loginSection .loginBox{
+  width: 500px;
+  height: auto;
+  margin: auto; 
+
+  
+}
+
+.loginSection .loginBox .wrapper{
+  width: 100%;
+  height: 300px;
+  background: #f0f0f0;
+  position: relative;
+  z-index: 100;
+  padding: 45px ;
+}
+.loginSection .loginBox .wrapper .form-control{
+  background: #fff;
+  outline: none;
+  box-shadow: none;
+  border-radius: 5px;
+  font-size: 14px;
+  font-weight: 600;
+  height: 45px;
+  padding-left: 40px;
+}
+
+.loginSection .loginBox .wrapper .form-group .icon{
+  position: absolute;
+  top: 3px;
+  left: 10px;
+  z-index: 100;
+  font-size: 22px;
+  color: blue;
+
+}
+.toggleShowPassword{
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+.toggleShowPassword svg{
+  font-size: 22px;
+}
+
+
+
+.card.debut{
+  background: #838181;
+  margin-bottom: 0;
+
+}
+.card.debut h2{
+  color: white;
+}
+.result_produit{
+  display: flex;
+  flex-direction: column;
+  border-right: solid 2px;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 50px;
+  border-color:#8e8c8c
+}
+.card.menu .row{
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  
+}
+
+.card .menu_active{
+  color:white;
+  background: #75dbf8;
+  text-align: center;
+  padding: 15px;
+  border-radius: 30px;
+}
+.menu_link_active{
+  text-decoration: none;
+  color: white;
+}
+.card .menu_noactive{
+  color:black;
+  background: white;
+  text-align: center;
+  padding: 15px;
+  border-radius: 30px;
+}
+.menu_link_noactive{
+  text-decoration: none;
+  color: black;
+}
+
+.power{
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 50px;
+  border-color:#8e8c8c
+}
+.power_action{
+  font-size: 100px;
+  color:#0a6bb0;
+}
+.power_noaction{
+  font-size: 100px;
+  color:#ccd1d5;
+}
+
+.deviceLink{
+  text-decoration: none;
+}
+.entete_table{
+  text-align: center;
+  vertical-align: middle;
+
+}
+.body_table{
+  text-align: center;
+  vertical-align: middle;
+}
+
+
+.box.graphBox{
+  background: white;
+  display: flex;
+  flex-direction: column;
+}
+.logo_auchan{
+  width: 100%;
+}
+.textBoxParagraph{
+  font-weight: bold;
+  margin-left: 10px;
+  margin-right: 10px;
+  font-size: 20px;
+}
+
+
+

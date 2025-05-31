@@ -1,0 +1,74 @@
+ {
+  "result": [
+    {
+      "id": "bf64f01f2b7e204bbczvq6",
+      "status": [
+        {
+          "code": "switch_1",
+          "value": false
+        },
+        {
+          "code": "countdown_1",
+          "value": 0
+        },
+        {
+          "code": "add_ele",
+          "value": 5
+        },
+        {
+          "code": "cur_current",
+          "value": 0
+        },
+        {
+          "code": "cur_power",
+          "value": 0
+        },
+        {
+          "code": "cur_voltage",
+          "value": 21189
+        }
+      ]
+    }
+  ],
+  "success": true,
+  "t": 1746398480566,
+  "tid": "e62a8b2e293811f0bfcc7a9b25a12206"
+}  
+
+
+
+{
+    "result": {
+      "data": [
+        202699154,
+        207351048,
+        230796312,
+        234189751,
+        234484484,
+        236178721
+      ],
+      "page_size": 10
+    },
+    "success": true,
+    "t": 1746438689486,
+    "tid": "848f69f0299611f0bfcc7a9b25a12206"
+  }
+
+
+
+  liste_asset_name
+  
+  {
+    "result": {
+      "asset_full_name": "Auchan",
+      "asset_id": "236178721",
+      "asset_name": "Auchan",
+      "level": 0,
+      "parent_asset_id": "-1"
+    },
+    "success": true,
+    "t": 1746447158423,
+    "tid": "3c6c368d29aa11f0bfcc7a9b25a12206"
+  }
+
+  
