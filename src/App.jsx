@@ -41,9 +41,8 @@ function App() {
         <BrowserRouter>
 
         
-        
            <MyContext.Provider value={values}>
-              { isHideSidebarAndHeader!==false &&
+              { isHideSidebarAndHeader!==false && 
                 <Header />
               }
               <Routes>
@@ -54,7 +53,10 @@ function App() {
 
         </Routes>
     
-    
+
+           <Routes>
+            <Route path='/connexion' element={<LoginPage />} ></Route>
+          </Routes>
         <div className="main d-flex">
         {isHideSidebarAndHeader!==false &&
           <div className='sidebarWrapper'>
@@ -63,6 +65,7 @@ function App() {
             
           </div>
           }
+
           
         <div className="content">
            
@@ -76,7 +79,7 @@ function App() {
           <Route path='/device/:id' element={<DeviceDetail />} ></Route>
           <Route path='/appareils' element={<PrivateRoute> <DeviceList /> </PrivateRoute>} ></Route>
           <Route path='/appareils_chart/:id' element={<DeviceDetailGraph />} ></Route>
-           <Route path='/connexion' element={<LoginPage />} ></Route>
+           
            <Route path='/devicesocket/:id' element={<DeviceSocket />} ></Route>
           
           

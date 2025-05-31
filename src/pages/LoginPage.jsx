@@ -63,7 +63,14 @@ export default function LoginPage() {
 
   return (
     <>
-      <img src={bg} alt="" className='bglogin' />
+      <img src={bg} alt="" className='bglogin' style={{
+    backgroundImage: `url(${bg})`,
+    backgroundSize: "cover",
+    backgroundPosition: "center",
+    backgroundRepeat: "no-repeat",
+    height: "100vh", // ou minHeight si tu veux l'adapter
+    
+  }} />
       <section className="section">
         <div className="login">
           <div className="login-header">
