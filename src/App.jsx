@@ -25,14 +25,18 @@ export const MyContext=createContext();
 function App() {
 
   const [isHideSidebarAndHeader , setIsHideSidebarAndHeader]=useState(true);
+  
   const [isClick, setIsClick]=useState(1);
+   const [toggleSidebar , setToggleSidebar]=useState(true);
 
   const values={
 
     isHideSidebarAndHeader,
     setIsHideSidebarAndHeader,
     isClick,
-    setIsClick
+    setIsClick,
+    toggleSidebar,
+    setToggleSidebar,
   
   }
 
@@ -59,7 +63,7 @@ function App() {
           </Routes>
         <div className="main d-flex">
         {isHideSidebarAndHeader!==false &&
-          <div className='sidebarWrapper'>
+          <div className={`sidebarWrapper ${toggleSidebar ? 'visible' : 'hide'}`}>
            
               <Sidebar /> 
             

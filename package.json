@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "homepage": "https://IbrahimaDev10.github.io/frontend-tuya-app",
+
   "scripts": {
     "dev": "vite",
     "build": "vite build",

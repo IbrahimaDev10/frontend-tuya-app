@@ -2,6 +2,8 @@
   width: 20%;
   flex: 0 0 20%;
 
+  z-index:9999999;
+
 }
 .main .sidebarWrapper .sidebar{
   background: #fff;
@@ -54,3 +56,12 @@
 
 
 }
+
+@media screen and (max-width: 1200px) {
+  .sidebarWrapper{
+    display: none;
+  }
+  .main .content{
+    flex: 0 0 100%;
+  }
+  }

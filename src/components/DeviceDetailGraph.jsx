@@ -57,7 +57,7 @@ const options_power = {
 
 
 useEffect(() => {
-  axios.get(`http://localhost:5001/get_logs_name/${id}`)
+  axios.get(`${import.meta.env.VITE_API_URL}/get_logs_name/${id}`)
     .then((res) => {
       const result = res.data.datacode;
       setResultdata(result)
@@ -138,7 +138,7 @@ useEffect(()=>{
   const jwt =localStorage.getItem('jwt');
 
 
-  axios.get(`http://localhost:5001/get_graphique_voltage/?id=${id}&end_time=${voltTimeEndHorodatage}&start_time=${voltTimeStartHorodatage}` , {
+  axios.get(`${import.meta.env.VITE_API_URL}/get_graphique_voltage/?id=${id}&end_time=${voltTimeEndHorodatage}&start_time=${voltTimeStartHorodatage}` , {
         headers: {
           Authorization: `Bearer ${jwt}`,
         },
@@ -190,7 +190,7 @@ useEffect(() => {
   //const ab=startDate;
 
 
-    axios.get(`http://localhost:5001/get_graphique_current/?id=${id}&end_time=${voltTimeEndHorodatageCurrent}&start_time=${voltTimeStartHorodatageCurrent}`)
+    axios.get(`${import.meta.env.VITE_API_URL}/get_graphique_current/?id=${id}&end_time=${voltTimeEndHorodatageCurrent}&start_time=${voltTimeStartHorodatageCurrent}`)
     .then((res) => {
       const result = res.data.donnees_current.logs || [];
       
@@ -239,7 +239,7 @@ useEffect(() => {
   //const ab=startDate;
 
 
-    axios.get(`http://localhost:5001/get_graphique_power/?id=${id}&end_time=${voltTimeEndHorodatagePower}&start_time=${voltTimeStartHorodatagePower}` )
+    axios.get(`${import.meta.env.VITE_API_URL}/get_graphique_power/?id=${id}&end_time=${voltTimeEndHorodatagePower}&start_time=${voltTimeStartHorodatagePower}` )
     .then((res) => {
       const result = res.data.donnees_power.logs || [];
       
@@ -314,7 +314,7 @@ useEffect(() => {
          
     <DatePicker selected={startDate} 
         onChange={(date) =>{ setStartDate(date);
-         const mydates = new Date(date); // <-- utiliser `date`, pas `startDate`
+         const mydates = new Date(date); 
          const datest = new Date(
           mydates.getFullYear(),
           mydates.getMonth(),
@@ -332,7 +332,7 @@ useEffect(() => {
       0
     );
 
-   setVoltTimeStart(datest); // <-- probablement tu voulais ça
+   setVoltTimeStart(datest); 
    setVoltTimeStartHorodatage(datest.getTime());
    setVoltTimeEnd(datestFin);
    setVoltTimeEndHorodatage(datestFin.getTime());
@@ -345,7 +345,7 @@ useEffect(() => {
 
 
 //useEffect(() => {
-  axios.get(`http://localhost:5001/get_graphique_voltage/?id=${id}&end_time=${voltTimeEndHorodatage}&start_time=${voltTimeStartHorodatage}`)
+  axios.get(`${import.meta.env.VITE_API_URL}/get_graphique_voltage/?id=${id}&end_time=${voltTimeEndHorodatage}&start_time=${voltTimeStartHorodatage}`)
     .then((res) => {
       const result = res.data.donnees3.logs || [];
       
@@ -419,7 +419,7 @@ useEffect(() => {
                 <div className="col-lg-12">
         <DatePicker selected={startDateCurrent} 
         onChange={(dateCurrent) =>{ setStartDateCurrent(dateCurrent);
-         const mydatesCurrent = new Date(dateCurrent); // <-- utiliser `date`, pas `startDate`
+         const mydatesCurrent = new Date(dateCurrent); 
          const datestCurrent = new Date(
           mydatesCurrent.getFullYear(),
           mydatesCurrent.getMonth(),
@@ -437,7 +437,7 @@ useEffect(() => {
       0
     );
 
-   setVoltTimeStartCurrent(datestCurrent); // <-- probablement tu voulais ça
+   setVoltTimeStartCurrent(datestCurrent); 
    setVoltTimeStartHorodatageCurrent(datestCurrent.getTime());
    setVoltTimeEndCurrent(datestFinCurrent);
    setVoltTimeEndHorodatageCurrent(datestFinCurrent.getTime());
@@ -450,7 +450,7 @@ useEffect(() => {
 
 
 //useEffect(() => {
-  axios.get(`http://localhost:5001/get_graphique_current/?id=${id}&end_time=${voltTimeEndHorodatageCurrent}&start_time=${voltTimeStartHorodatageCurrent}`)
+  axios.get(`${import.meta.env.VITE_API_URL}/get_graphique_current/?id=${id}&end_time=${voltTimeEndHorodatageCurrent}&start_time=${voltTimeStartHorodatageCurrent}`)
     .then((res) => {
       const result = res.data.donnees_current.logs || [];
       
@@ -502,7 +502,7 @@ useEffect(() => {
                 <div className="col-lg-12">
         <DatePicker selected={startDatePower} 
         onChange={(datePower) =>{ setStartDatePower(datePower);
-         const mydatesCurrent = new Date(datePower); // <-- utiliser `date`, pas `startDate`
+         const mydatesCurrent = new Date(datePower); 
          const datestCurrent = new Date(
           mydatesCurrent.getFullYear(),
           mydatesCurrent.getMonth(),
@@ -520,7 +520,7 @@ useEffect(() => {
       0
     );
 
-   setVoltTimeStartPower(datestCurrent); // <-- probablement tu voulais ça
+   setVoltTimeStartPower(datestCurrent); 
    setVoltTimeStartHorodatagePower(datestCurrent.getTime());
    setVoltTimeEndPower(datestFinCurrent);
    setVoltTimeEndHorodatagePower(datestFinCurrent.getTime());
@@ -533,7 +533,7 @@ useEffect(() => {
 
 
 //useEffect(() => {
-  axios.get(`http://localhost:5001/get_graphique_power/?id=${id}&end_time=${voltTimeEndHorodatagePower}&start_time=${voltTimeStartHorodatagePower}`)
+  axios.get(`${import.meta.env.VITE_API_URL}/get_graphique_power/?id=${id}&end_time=${voltTimeEndHorodatagePower}&start_time=${voltTimeStartHorodatagePower}`)
     .then((res) => {
       const result = res.data.donnees_power.logs || [];
       

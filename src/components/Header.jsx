@@ -9,8 +9,11 @@ import { CiLight } from "react-icons/ci";
 import { MdTextsms } from "react-icons/md";
 import { IoNotifications } from "react-icons/io5";
 import { FaUser } from "react-icons/fa";
+import { MyContext } from '../App';
+import { useContext } from 'react';
 
 export default function Header() {
+   const { toggleSidebar, setToggleSidebar } = useContext(MyContext);
   return (
     <header className='w-100 d-flex align-items-center'>
         <div className='container-fluid'>
@@ -26,7 +29,7 @@ export default function Header() {
                 </div>
                 <div className="col-lg-3 align-items-center part2">
                     <Button
-                     className='rounded-circle'>
+                     className='rounded-circle' onClick={() => setToggleSidebar(!toggleSidebar)}>
                      <IoMdMenu / >
                     </Button>
                     <SearchBox />

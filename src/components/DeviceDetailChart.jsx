@@ -99,7 +99,7 @@ export default function DeviceDetailChart() {
   };
 
 useEffect(() => {
-  axios.get("http://localhost:5000/get_graphique_current")
+  axios.get(`${import.meta.env.VITE_API_URL}/get_graphique_current`)
     .then((res) => {
       const result = res.data.donnees.logs || [];
       
@@ -134,7 +134,7 @@ useEffect(() => {
 
 
 useEffect(() => {
-  axios.get(`http://localhost:5000/get_logs_name/${id}`)
+  axios.get(`${import.meta.env.VITE_API_URL}/get_logs_name/${id}`)
     .then((res) => {
       const result = res.data.datacode;
       setResultdata(result)
@@ -334,7 +334,7 @@ const courbe_by_day=()=>{
 
 
 //useEffect(() => {
-  axios.get(`http://localhost:5000/get_graphique_current3?end_time=${voltTimeEndHorodatage}&start_time=${voltTimeStartHorodatage}`)
+  axios.get(`${import.meta.env.VITE_API_URL}/get_graphique_current3?end_time=${voltTimeEndHorodatage}&start_time=${voltTimeStartHorodatage}`)
     .then((res) => {
       const result = res.data.donnees3.logs || [];
       

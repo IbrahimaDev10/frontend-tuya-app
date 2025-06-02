@@ -8,7 +8,7 @@ export default function DeviceLatestStatus() {
 
     const fetchDeviceLatestStatus = async () => {
       const jwt=localStorage.getItem('jwt');
-        const response = await axios.get(`http://localhost:5001/device-status/${id}` , {
+        const response = await axios.get(`${import.meta.env.VITE_API_URL}/device-status/${id}` , {
         headers: {
           Authorization: `Bearer ${jwt}`,
         },

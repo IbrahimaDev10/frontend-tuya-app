@@ -22,7 +22,7 @@ export default function DeviceList() {
 
           console.log(payload);
           console.log(isExpired, 'testtt');
-          const res = await axios.get("http://localhost:5001/get_devices" , {
+          const res = await axios.get(`${import.meta.env.VITE_API_URL}/get_devices` , {
         headers: {
           Authorization: `Bearer ${jwt}`,
         },

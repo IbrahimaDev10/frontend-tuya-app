@@ -405,5 +405,35 @@ header .part2 button svg{
   font-size: 20px;
 }
 
+@media screen and (max-width: 1200px) {
+  .sidebarWrapper{
+    display: none ;
+  }
+  .main .content{
+    flex: 0 0 100%;
+  }
+
+  }
+
+  @media screen and (max-width: 800px) {
+    .content .dashboardBoxWrapper  .dashboardBox{
+      width: 100%;
+   
+    margin-bottom: 10px;
+  }
+  .content .dashboardBoxWrapper {
+    width: 100%;
+    margin-right: 0;
+  }
+}
+
+
+.sidebarWrapper.visible{
+  display: block;
+}
+.sidebarWrapper.hide{
+  display: none;
+}
+
 
 

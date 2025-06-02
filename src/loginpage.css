@@ -125,8 +125,36 @@ section.section{
     background: #86b8e9;
     padding:50px;
 }
-@media screen and (max-width: 800px) {
+
+@media screen and (max-width: 1200px) {
   .login{
     padding:2px;
   }
+  .login-form{
+    padding: 10px;
+  }
+  .input-group{
+    
+    margin-bottom: 25px;
+    display: flex;
+    align-items: center;
+  }
+
+  .input-icon {
+  
+  position: absolute;
+  font-size: 15px;
+ 
+  
+}
+
+.input-group input {
+  width: 100%;
+  padding: 15px 15px 15px 45px;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 14px;
+  transition: border-color 0.3s ease;
+  height: 30px;
+}
 }

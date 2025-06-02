@@ -18,7 +18,7 @@ export default function DeviceDetail() {
   useEffect(() => {
     // Exemple : récupérer les infos du device depuis ton serveur
     const jwt=localStorage.getItem('jwt');
-    axios.get(`http://localhost:5001/get-device-name/${id}` , {
+    axios.get(`${import.meta.env.VITE_API_URL}/get-device-name/${id}` , {
         headers: {
           Authorization: `Bearer ${jwt}`,
         },

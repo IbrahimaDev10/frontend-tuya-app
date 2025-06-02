@@ -37,7 +37,7 @@ export default function LoginPage() {
     e.preventDefault();
 
     try {
-      const {data} = await axios.post("http://localhost:5001/token", formData);
+      const {data} = await axios.post(`${import.meta.env.VITE_API_URL}/connexion`, formData);
 
     if(data.success) {
      const jwt = data.jwt;
@@ -45,11 +45,14 @@ export default function LoginPage() {
     const payload = JSON.parse(atob(jwt.split('.')[1]));
     console.log("Expire à :", new Date(payload.exp * 1000));
       navigate("/"); // ou autre
+      //console.log('info', data.info);
     } else {
       setError("Erreur d’authentification");
+      
     }
   } catch (err) {
-    setError(err);
+    console.error(err);
+  
   }
   };
 

@@ -9,41 +9,12 @@ export default function DeviceCommand() {
     const { id } = useParams();
       const [status, setStatus] = useState(null);
       const [erreur, setErreur] = useState("");
- /*   const [device, setDevice]=useState(null);
-    const [error, setError] = useState(null);
-    const [status, setStatus] = useState(null);
-    const [loading, setLoading] = useState(true); */
-/* avec useEffect
-    useEffect(() => {
-        axios.get(`http://localhost:5000/device-status/${id}`)
-          .then(res => {
-            if (res.data.success && res.data.devices.length > 0) {
-              const deviceStatus = res.data.devices[0].status;
-    
-              // Récupère les valeurs par code
-              const getStatus = (code) => {
-                const found = deviceStatus.find(item => item.code === code);
-                return found ? found.value : null;
-              };
-    
-              setStatus(getStatus('switch_1') ? 'true' : 'false');
 
-            } else {
-              setStatus('Non disponible');
-            }
-            setLoading(false);
-          })
-          .catch(err => {
-            console.error(err);
-            setStatus('Erreur');
-            setLoading(false);
-          });
-      }, [id]); */
 
       const fetchDeviceStatus = async () => {
 
        const jwt=localStorage.getItem('jwt');
-        const response = await axios.get(`http://localhost:5001/device-status/${id}` , {
+        const response = await axios.get(`${import.meta.env.VITE_API_URL}/device-status/${id}` , {
         headers: {
           Authorization: `Bearer ${jwt}`,
         },
@@ -67,8 +38,8 @@ export default function DeviceCommand() {
     const handleCommand = async (value) => {
       const jwt=localStorage.getItem('jwt');
     try {
-      const response = await axios.post("http://localhost:5001/toggle-device"  , {
-        mydevice_id: id,  // remplace par ton vrai ID
+      const response = await axios.post(`${import.meta.env.VITE_API_URL}/toggle-device`  , {
+        mydevice_id: id,  
         code: "switch_1",
         value: value,  // true = allumer, false = éteindre
       } , {
