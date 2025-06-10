@@ -21,8 +21,10 @@ class Client(db.Model):
     date_modification = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     actif = db.Column(db.Boolean, default=True, nullable=False, index=True)
     
-    # Relations
-    utilisateurs = db.relationship('User', backref='client', lazy='dynamic', cascade='all, delete-orphan')
+    # ✅ CORRECTION : Utiliser back_populates au lieu de backref
+    utilisateurs = db.relationship('User', back_populates='client', lazy='dynamic', cascade='all, delete-orphan')
+    
+    # Relations autres (garder les backref car pas de conflit)
     sites = db.relationship('Site', backref='client', lazy='dynamic', cascade='all, delete-orphan')
     appareils = db.relationship('Device', backref='client', lazy='dynamic', cascade='all, delete-orphan')
     donnees = db.relationship('DeviceData', backref='client', lazy='dynamic')
