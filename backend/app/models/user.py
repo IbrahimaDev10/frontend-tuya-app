@@ -24,7 +24,7 @@ class User(db.Model):
     telephone = db.Column(db.String(20), nullable=True)
     
     # Rôle : superadmin, admin, user
-    role = db.Column(db.Enum('superadmin', 'admin', 'user', name='user_roles'), 
+    role = db.Column(db.Enum('superadmin', 'admin', 'user', name='user_roles'),
                      nullable=False, default='user', index=True)
     
     # Métadonnées
@@ -32,7 +32,10 @@ class User(db.Model):
     derniere_connexion = db.Column(db.DateTime, nullable=True)
     actif = db.Column(db.Boolean, default=True, nullable=False, index=True)
     
-    # Relations
+    # ✅ CORRECTION : Utiliser back_populates au lieu de backref
+    client = db.relationship('Client', back_populates='utilisateurs', lazy='select')
+    
+    # Relations autres
     acces_appareils = db.relationship('DeviceAccess', backref='utilisateur', lazy='dynamic', cascade='all, delete-orphan')
     
     def __repr__(self):
@@ -66,6 +69,11 @@ class User(db.Model):
             return True
         return self.client_id == client_id
     
+    def update_last_login(self):
+        """Mettre à jour l'heure de dernière connexion"""
+        self.derniere_connexion = datetime.utcnow()
+        db.session.commit()
+    
     def to_dict(self, include_sensitive=False):
         """Convertir en dictionnaire pour l'API"""
         data = {
@@ -82,7 +90,8 @@ class User(db.Model):
             'actif': self.actif
         }
         
-        if include_sensitive and self.client:
-            data['client_nom'] = self.client.nom_entreprise
-            
+        # Vérification sécurisée du client
+        if include_sensitive and self.client_id:
+            data['client_nom'] = self.client.nom_entreprise if self.client else None
+        
         return data
