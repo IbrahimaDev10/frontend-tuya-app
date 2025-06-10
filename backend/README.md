@@ -10,3 +10,10 @@ python -m venv venv
 source venv/bin/activate  # Sur Unix
 # ou
 venv\Scripts\activate  # Sur Windows
+
+## Dépendances
+
+1. Installer les dépendances :
+```bash
+pip install -r requirements.txt
+
