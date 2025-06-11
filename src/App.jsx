@@ -79,7 +79,7 @@ function App() {
         
       
         {/*} <Route path='/' element={<DashboardContent />} ></Route> */}
-        <Route path='/' element={ <PrivateRoute> <Dashboard /> </PrivateRoute>} ></Route>
+        <Route path='/dash' element={ <PrivateRoute> <Dashboard /> </PrivateRoute>} ></Route>
           <Route path='/device/:id' element={<DeviceDetail />} ></Route>
           <Route path='/appareils' element={<PrivateRoute> <DeviceList /> </PrivateRoute>} ></Route>
           <Route path='/appareils_chart/:id' element={<DeviceDetailGraph />} ></Route>

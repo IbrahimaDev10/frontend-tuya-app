@@ -33,17 +33,23 @@ export default function Login() {
     e.preventDefault();
 
     try {
-      const {data} = await axios.post("http://localhost:5000/token", formData);
+      const response = await axios.post("http://localhost:5000/api/auth/login", {
+        email: formData.username,
+        password: formData.password
+      });
 
-    if(data.success) {
-      localStorage.setItem("jwt", data.jwt);
-      navigate("/login"); // ou autre
-    } else {
-      setError("Erreur d’authentification");
+      if (response.data.success) {
+        // Mise à jour pour correspondre à la structure de la réponse
+        localStorage.setItem("token", response.data.data.access_token);
+        localStorage.setItem("refresh_token", response.data.data.refresh_token);
+        localStorage.setItem("user", JSON.stringify(response.data.data.user));
+        navigate("/dash");
+      } else {
+        setError("Erreur d'authentification");
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || "Erreur de connexion");
     }
-  } catch (err) {
-    setError(err);
-  }
   };
 
 

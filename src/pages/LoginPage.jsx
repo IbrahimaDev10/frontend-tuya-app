@@ -37,23 +37,24 @@ export default function LoginPage() {
     e.preventDefault();
 
     try {
-      const {data} = await axios.post(`${import.meta.env.VITE_API_URL}/connexion`, formData);
+      const response = await axios.post(`${import.meta.env.VITE_API_URL}/api/auth/login`, {
+        email: formData.username,
+        password: formData.password
+      });
 
-    if(data.success) {
-     const jwt = data.jwt;
-      localStorage.setItem("jwt", data.jwt);
-    const payload = JSON.parse(atob(jwt.split('.')[1]));
-    console.log("Expire à :", new Date(payload.exp * 1000));
-      navigate("/"); // ou autre
-      //console.log('info', data.info);
-    } else {
-      setError("Erreur d’authentification");
-      
+      if (response.data.success) {
+        // Mise à jour pour correspondre à la structure de la réponse
+        localStorage.setItem("token", response.data.data.access_token);
+        localStorage.setItem("refresh_token", response.data.data.refresh_token);
+        localStorage.setItem("user", JSON.stringify(response.data.data.user));
+        navigate("/dash");
+      } else {
+        setError("Erreur d'authentification");
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || "Erreur de connexion");
+      console.error(err);
     }
-  } catch (err) {
-    console.error(err);
-  
-  }
   };
 
   
