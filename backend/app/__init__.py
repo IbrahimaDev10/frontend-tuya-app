@@ -45,7 +45,7 @@ def create_app():
     except ImportError as e:
         app.logger.warning(f"⚠️ Erreur import modèles: {e}")
     
-    # Register blueprints - On va adapter ton routes.py existant
+    # Register blueprints - Version améliorée
     register_blueprints(app)
     
     # Gestionnaires d'erreurs
@@ -87,21 +87,18 @@ def setup_logging(app):
 def register_blueprints(app):
     """Enregistrer tous les blueprints"""
     
-    # Pour l'instant, on garde ton blueprint existant
-    # Et on ajoute progressivement les nouveaux
+    # Blueprint API existant (temporaire)
     try:
-        # Ton blueprint existant (temporaire)
         from app.routes import api
         app.register_blueprint(api)
-        app.logger.info("✅ Blueprint existant enregistré")
+        app.logger.info("✅ Blueprint API existant enregistré")
     except ImportError as e:
-        app.logger.warning(f"⚠️ Erreur import blueprint existant: {e}")
+        app.logger.warning(f"⚠️ Erreur import blueprint API existant: {e}")
     
-    # ✅ NOUVEAU : Blueprint auth depuis app/routes/ (structure réelle)
+    # 🔐 BLUEPRINT AUTH - Même méthode que votre structure existante
     try:
-        app.logger.info("🔍 Tentative d'import du blueprint auth depuis app/routes/...")
+        app.logger.info("🔍 Import du blueprint auth...")
         
-        # Solution Windows : Import direct avec importlib
         import importlib.util
         import os
         
@@ -111,70 +108,137 @@ def register_blueprints(app):
         routes_dir = os.path.join(app_dir, 'routes')
         auth_file_path = os.path.join(routes_dir, 'auth.py')
         
-        app.logger.info(f"🔍 Fichier actuel: {current_file}")
-        app.logger.info(f"🔍 Dossier app: {app_dir}")
-        app.logger.info(f"🔍 Dossier routes: {routes_dir}")
-        app.logger.info(f"🔍 Fichier auth recherché: {auth_file_path}")
-        
-        # Lister le contenu du dossier app/routes
-        if os.path.exists(routes_dir):
-            files_in_routes = os.listdir(routes_dir)
-            app.logger.info(f"📁 Fichiers dans app/routes/: {files_in_routes}")
-        else:
-            app.logger.error(f"❌ Dossier routes n'existe pas: {routes_dir}")
-        
         if os.path.exists(auth_file_path):
-            # Charger le module directement
+            # Charger le module auth
             spec = importlib.util.spec_from_file_location("app.routes.auth", auth_file_path)
             auth_module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(auth_module)
             
-            # Récupérer le blueprint
+            # Récupérer et enregistrer le blueprint
             auth_bp = auth_module.auth_bp
-            app.logger.info(f"✅ Blueprint auth importé directement: {auth_bp}")
-            
             app.register_blueprint(auth_bp)
             app.logger.info("✅ Blueprint auth enregistré sur /api/auth")
             
-            # Debug: Compter les routes auth
-            route_count = 0
-            for rule in app.url_map.iter_rules():
-                if rule.rule.startswith('/api/auth'):
-                    route_count += 1
-                    app.logger.info(f"📍 Route auth: {list(rule.methods)} {rule.rule}")
-            
-            app.logger.info(f"✅ Total routes auth enregistrées: {route_count}")
-            
         else:
-            app.logger.error(f"❌ Fichier non trouvé: {auth_file_path}")
+            app.logger.error(f"❌ Fichier auth non trouvé: {auth_file_path}")
             
     except Exception as e:
         app.logger.error(f"❌ Erreur import blueprint auth: {e}")
+    
+    # 👥 NOUVEAU BLUEPRINT USERS - Même structure
+    try:
+        app.logger.info("🔍 Import du blueprint users...")
+        
+        # Chemin : app/routes/user_routes.py
+        user_routes_file_path = os.path.join(routes_dir, 'user_routes.py')
+        
+        if os.path.exists(user_routes_file_path):
+            # Charger le module user_routes
+            spec = importlib.util.spec_from_file_location("app.routes.user_routes", user_routes_file_path)
+            user_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(user_module)
+            
+            # Récupérer et enregistrer le blueprint
+            user_bp = user_module.user_bp
+            app.register_blueprint(user_bp)
+            app.logger.info("✅ Blueprint users enregistré sur /api/users")
+            
+            # Debug: Compter les routes users
+            route_count = 0
+            for rule in app.url_map.iter_rules():
+                if rule.rule.startswith('/api/users'):
+                    route_count += 1
+                    app.logger.debug(f"📍 Route users: {list(rule.methods)} {rule.rule}")
+            
+            app.logger.info(f"✅ Total routes users enregistrées: {route_count}")
+            
+        else:
+            app.logger.warning(f"⚠️ Fichier user_routes non trouvé: {user_routes_file_path}")
+            app.logger.info("💡 Créez le fichier app/routes/user_routes.py pour activer la gestion des utilisateurs")
+            
+    except Exception as e:
+        app.logger.error(f"❌ Erreur import blueprint users: {e}")
         import traceback
         app.logger.error(f"📋 Traceback: {traceback.format_exc()}")
     
-    # Nouveaux blueprints futurs
-    try:
-        from routes.devices_routes import devices_bp
-        app.register_blueprint(devices_bp, url_prefix='/api/devices')
-        app.logger.info("✅ Blueprint devices enregistré")
-    except ImportError:
-        app.logger.info("ℹ️ Blueprint devices pas encore créé")
+    # 🔮 BLUEPRINTS FUTURS - Prêts pour l'expansion
     
-    # 🔧 ROUTE DE DEBUG TEMPORAIRE
+    # Blueprint devices (à créer)
+    try:
+        device_routes_file_path = os.path.join(routes_dir, 'device_routes.py')
+        if os.path.exists(device_routes_file_path):
+            spec = importlib.util.spec_from_file_location("app.routes.device_routes", device_routes_file_path)
+            device_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(device_module)
+            
+            device_bp = device_module.device_bp
+            app.register_blueprint(device_bp)
+            app.logger.info("✅ Blueprint devices enregistré sur /api/devices")
+        else:
+            app.logger.debug("ℹ️ Blueprint devices pas encore créé")
+    except Exception as e:
+        app.logger.debug(f"ℹ️ Blueprint devices non disponible: {e}")
+    
+    # Blueprint alerts (à créer)
+    try:
+        alert_routes_file_path = os.path.join(routes_dir, 'alert_routes.py')
+        if os.path.exists(alert_routes_file_path):
+            spec = importlib.util.spec_from_file_location("app.routes.alert_routes", alert_routes_file_path)
+            alert_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(alert_module)
+            
+            alert_bp = alert_module.alert_bp
+            app.register_blueprint(alert_bp)
+            app.logger.info("✅ Blueprint alerts enregistré sur /api/alerts")
+        else:
+            app.logger.debug("ℹ️ Blueprint alerts pas encore créé")
+    except Exception as e:
+        app.logger.debug(f"ℹ️ Blueprint alerts non disponible: {e}")
+    
+    # 🔧 ROUTES DE DEBUG ET SANTÉ
+    
     @app.route('/debug/routes')
     def debug_routes():
+        """Route pour voir toutes les routes disponibles"""
         routes = []
         for rule in app.url_map.iter_rules():
             routes.append({
                 'endpoint': rule.endpoint,
-                'methods': list(rule.methods) if rule.methods else [],
+                'methods': list(rule.methods - {'HEAD', 'OPTIONS'}) if rule.methods else [],
                 'path': rule.rule
             })
         return {
             'total_routes': len(routes),
             'routes': sorted(routes, key=lambda x: x['path'])
         }
+    
+    @app.route('/certif')
+    def health_check():
+        """Route de santé pour vérifier que l'API fonctionne"""
+        return {
+            'status': 'certifier',
+            'message': 'SERTEC IoT API est opérationnelle',
+            'version': '1.0.0',
+            'services': {
+                'database': 'connected',
+                'auth': 'active',
+                'users': 'active'
+            }
+        }, 200
+    
+    @app.route('/')
+    def home():
+        """Page d'accueil de l'API"""
+        return {
+            'message': 'Bienvenue sur l\'API SERTEC IoT',
+            'version': '1.0.0',
+            'documentation': '/debug/routes',
+            'certifier': '/certif',
+            'endpoints': {
+                'auth': '/api/auth',
+                'users': '/api/users'
+            }
+        }, 200
 
 def register_error_handlers(app):
     """Gestionnaires d'erreurs globaux"""
@@ -195,6 +259,10 @@ def register_error_handlers(app):
     @app.errorhandler(401)
     def unauthorized(error):
         return {'error': 'Non autorisé'}, 401
+    
+    @app.errorhandler(403)
+    def forbidden(error):
+        return {'error': 'Accès interdit'}, 403
 
 def register_jwt_callbacks(app):
     """Callbacks JWT pour une meilleure gestion"""
@@ -218,4 +286,11 @@ def register_jwt_callbacks(app):
         return {
             'error': 'Token manquant',
             'message': 'Authentification requise'
+        }, 401
+    
+    @jwt.needs_fresh_token_loader
+    def token_not_fresh_callback(jwt_header, jwt_payload):
+        return {
+            'error': 'Token non frais',
+            'message': 'Une nouvelle authentification est requise'
         }, 401

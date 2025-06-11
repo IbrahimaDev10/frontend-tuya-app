@@ -76,7 +76,7 @@ class AuthService:
             return None, f"Erreur lors de l'enregistrement: {str(e)}"
     
     def login(self, email, password):
-        """Connexion utilisateur"""
+        """Connexion utilisateur avec durées optimisées"""
         try:
             # Validation des entrées
             if not email or not password:
@@ -96,7 +96,7 @@ class AuthService:
             # Mettre à jour la dernière connexion avec TA méthode
             user.update_last_login()
             
-            # Créer les tokens
+            # 🕐 DURÉES OPTIMISÉES : Access 1h, Refresh 8h
             access_token = create_access_token(
                 identity=user.id,
                 additional_claims={
@@ -105,23 +105,52 @@ class AuthService:
                     'email': user.email,
                     'nom_complet': user.nom_complet  # TA propriété
                 },
-                expires_delta=timedelta(hours=24)
+                expires_delta=timedelta(hours=1)  # ✅ 1 heure au lieu de 24h
             )
             
             refresh_token = create_refresh_token(
                 identity=user.id,
-                expires_delta=timedelta(days=30)
+                expires_delta=timedelta(hours=8)  # ✅ 8 heures au lieu de 30 jours
             )
             
             return {
                 'access_token': access_token,
                 'refresh_token': refresh_token,
                 'user': user.to_dict(),  # TA méthode to_dict
-                'expires_in': 24 * 3600
+                'expires_in': 1 * 3600,        # ✅ 3600 secondes = 1 heure
+                'refresh_expires_in': 8 * 3600  # ✅ 28800 secondes = 8 heures
             }, None
             
         except Exception as e:
             return None, f"Erreur lors de la connexion: {str(e)}"
+    
+    def refresh_token(self, user_id):
+        """Renouveler le token d'accès"""
+        try:
+            user = User.query.get(user_id)
+            if not user or not user.actif:
+                return None, "Utilisateur non trouvé ou inactif"
+            
+            # Créer un nouveau access token
+            new_access_token = create_access_token(
+                identity=user.id,
+                additional_claims={
+                    'role': user.role,
+                    'client_id': user.client_id,
+                    'email': user.email,
+                    'nom_complet': user.nom_complet
+                },
+                expires_delta=timedelta(hours=1)  # 1 heure
+            )
+            
+            return {
+                'access_token': new_access_token,
+                'expires_in': 3600,  # 1 heure en secondes
+                'user': user.to_dict()
+            }, None
+            
+        except Exception as e:
+            return None, f"Erreur lors du renouvellement: {str(e)}"
     
     def logout(self, user_id):
         """Déconnexion (côté serveur)"""
