@@ -24,8 +24,15 @@ try:
 except ImportError:
     user_blueprints = []
 
-# Combinaison de tous les blueprints disponibles
-__all__ = api_blueprints + auth_blueprints + user_blueprints
+# Import des nouvelles routes sites
+try:
+    from .site_routes import site_bp
+    site_blueprints = ['site_bp']
+except ImportError:
+    site_blueprints = []    
+
+# Inclure site_blueprints dans __all__
+__all__ = api_blueprints + auth_blueprints + user_blueprints + site_blueprints
 
 # Futures routes à ajouter
 # from .client_routes import client_bp  
@@ -67,6 +74,15 @@ def register_blueprints(app):
             print("✅ Blueprint 'user_bp' enregistré")
         except Exception as e:
             print(f"❌ Erreur lors de l'enregistrement du blueprint 'user_bp': {e}")
+    
+    # ✅ AJOUT : Blueprints de gestion des sites
+    if 'site_bp' in site_blueprints:
+        try:
+            from .site_routes import site_bp
+            app.register_blueprint(site_bp)
+            print("✅ Blueprint 'site_bp' enregistré")
+        except Exception as e:
+            print(f"❌ Erreur lors de l'enregistrement du blueprint 'site_bp': {e}")
     
     return True
 
@@ -116,6 +132,33 @@ URL_PATTERNS = {
             'GET /rechercher - Recherche utilisateurs (admin+)',
             'GET /inactifs - Utilisateurs inactifs (admin+)'
         ]
+    },
+    #  Documentation des routes sites
+    'sites': {
+        'prefix': '/api/sites',
+        'routes': [
+            # CRUD Sites (SuperAdmin seulement)
+            'POST / - Créer site (superadmin)',
+            'PUT /<id> - Modifier site (superadmin)',
+            'DELETE /<id> - Supprimer site (superadmin)',
+            'POST /<id>/desactiver - Désactiver site (superadmin)',
+            'POST /<id>/reactiver - Réactiver site (superadmin)',
+            
+            # Consultation (selon permissions)
+            'GET / - Lister sites (admin+)',
+            'GET /<id> - Détails site (admin+)',
+            'GET /rechercher - Recherche sites (admin+)',
+            'GET /inactifs - Sites désactivés (superadmin)',
+            
+            # Fonctionnalités géographiques
+            'POST /<id>/geocoder - Forcer géocodage (superadmin)',
+            'GET /<id>/sites-proches - Sites dans un rayon (admin+)',
+            'GET /carte - Données pour carte interactive (admin+)',
+            
+            # Statistiques et utils
+            'GET /statistiques - Statistiques sites (admin+)',
+            'POST /test-geocodage - Tester géocodage adresse (superadmin)'
+        ]
     }
 }
 
@@ -138,3 +181,20 @@ def print_routes_info():
     print("   • (admin+) = Admin et Superadmin")
     print("   • (user+) = Tout utilisateur connecté")
     print("="*60)
+
+# ✅ AJOUT : Fonction utilitaire pour vérifier l'état des blueprints
+def check_blueprints_status():
+    """Vérifie quels blueprints sont disponibles"""
+    status = {
+        'api': len(api_blueprints) > 0,
+        'auth': len(auth_blueprints) > 0,
+        'users': len(user_blueprints) > 0,
+        'sites': len(site_blueprints) > 0
+    }
+    
+    print("\n📊 STATUT DES BLUEPRINTS:")
+    for module, available in status.items():
+        status_icon = "✅" if available else "❌"
+        print(f"   {status_icon} {module.capitalize()}: {'Disponible' if available else 'Non disponible'}")
+    
+    return status

@@ -87,6 +87,14 @@ def setup_logging(app):
 def register_blueprints(app):
     """Enregistrer tous les blueprints"""
     
+    import importlib.util
+    import os
+    
+    # Chemin correct : app/routes/
+    current_file = os.path.abspath(__file__)
+    app_dir = os.path.dirname(current_file)
+    routes_dir = os.path.join(app_dir, 'routes')
+    
     # Blueprint API existant (temporaire)
     try:
         from app.routes import api
@@ -95,17 +103,10 @@ def register_blueprints(app):
     except ImportError as e:
         app.logger.warning(f"⚠️ Erreur import blueprint API existant: {e}")
     
-    # 🔐 BLUEPRINT AUTH - Même méthode que votre structure existante
+    # 🔐 BLUEPRINT AUTH
     try:
         app.logger.info("🔍 Import du blueprint auth...")
         
-        import importlib.util
-        import os
-        
-        # Chemin correct : app/routes/auth.py
-        current_file = os.path.abspath(__file__)
-        app_dir = os.path.dirname(current_file)
-        routes_dir = os.path.join(app_dir, 'routes')
         auth_file_path = os.path.join(routes_dir, 'auth.py')
         
         if os.path.exists(auth_file_path):
@@ -125,11 +126,10 @@ def register_blueprints(app):
     except Exception as e:
         app.logger.error(f"❌ Erreur import blueprint auth: {e}")
     
-    # 👥 NOUVEAU BLUEPRINT USERS - Même structure
+    # 👥 BLUEPRINT USERS
     try:
         app.logger.info("🔍 Import du blueprint users...")
         
-        # Chemin : app/routes/user_routes.py
         user_routes_file_path = os.path.join(routes_dir, 'user_routes.py')
         
         if os.path.exists(user_routes_file_path):
@@ -158,6 +158,41 @@ def register_blueprints(app):
             
     except Exception as e:
         app.logger.error(f"❌ Erreur import blueprint users: {e}")
+        import traceback
+        app.logger.error(f"📋 Traceback: {traceback.format_exc()}")
+    
+    # 📍 BLUEPRINT SITES
+    try:
+        app.logger.info("🔍 Import du blueprint sites...")
+        
+        site_routes_file_path = os.path.join(routes_dir, 'site_routes.py')
+        
+        if os.path.exists(site_routes_file_path):
+            # Charger le module site_routes
+            spec = importlib.util.spec_from_file_location("app.routes.site_routes", site_routes_file_path)
+            site_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(site_module)
+            
+            # Récupérer et enregistrer le blueprint
+            site_bp = site_module.site_bp
+            app.register_blueprint(site_bp)
+            app.logger.info("✅ Blueprint sites enregistré sur /api/sites")
+            
+            # Debug: Compter les routes sites
+            route_count = 0
+            for rule in app.url_map.iter_rules():
+                if rule.rule.startswith('/api/sites'):
+                    route_count += 1
+                    app.logger.debug(f"📍 Route sites: {list(rule.methods)} {rule.rule}")
+            
+            app.logger.info(f"✅ Total routes sites enregistrées: {route_count}")
+            
+        else:
+            app.logger.warning(f"⚠️ Fichier site_routes non trouvé: {site_routes_file_path}")
+            app.logger.info("💡 Créez le fichier app/routes/site_routes.py pour activer la gestion des sites")
+            
+    except Exception as e:
+        app.logger.error(f"❌ Erreur import blueprint sites: {e}")
         import traceback
         app.logger.error(f"📋 Traceback: {traceback.format_exc()}")
     
@@ -222,7 +257,8 @@ def register_blueprints(app):
             'services': {
                 'database': 'connected',
                 'auth': 'active',
-                'users': 'active'
+                'users': 'active',
+                'sites': 'active'
             }
         }, 200
     
@@ -236,7 +272,8 @@ def register_blueprints(app):
             'certifier': '/certif',
             'endpoints': {
                 'auth': '/api/auth',
-                'users': '/api/users'
+                'users': '/api/users',
+                'sites': '/api/sites'
             }
         }, 200
 
