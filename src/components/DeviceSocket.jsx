@@ -8,7 +8,7 @@ export default function DeviceSocket() {
 
     const fetchDeviceLatestStatus2 = async () => {
       const jwt=localStorage.getItem('jwt');
-        const response = await axios.get(`http://localhost:5001/device-status-socket/${id}` , {
+        const response = await axios.get(`http://localhost:5000/device-status-socket/${id}` , {
         headers: {
           Authorization: `Bearer ${jwt}`,
         },
