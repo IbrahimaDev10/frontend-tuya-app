@@ -11,7 +11,7 @@ import { useQuery, useQueries } from '@tanstack/react-query';
 import { MyContext } from '../App';
 import { useEffect, useState } from 'react'
 import axios from 'axios';
-import Logout from './Logout';
+import Logout from '../components/auth/Logout/Logout';
 
 import '../sidebar.css'
 

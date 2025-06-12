@@ -1,22 +1,20 @@
 import { useState, createContext } from 'react'
-import reactLogo from './assets/react.svg'
-
 import './App.css'
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import DashboardContent from './components/dashboard/DashboardContent';
-import Login from './components/Login';
 import DeviceDetail from './components/DeviceDetail';
 import DeviceList from './components/DeviceList';
 import Dashboard from './components/dashboard/Dashboard';
 import DeviceDetailChart from './components/DeviceDetailChart';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import DeviceDetailGraph from './components/DeviceDetailGraph';
-import LoginPage from './pages/LoginPage';
-import PrivateRoute from './components/PrivateRoute';
 import DeviceSocket from './components/DeviceSocket';
+import { AuthProvider } from './components/auth/AuthContext';
+import Login from './components/auth/Login/Login';
+import PrivateRoute from './components/auth/PrivateRoute/PrivateRoute';
 
 
 const queryClient = new QueryClient();
@@ -43,24 +41,14 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
         <BrowserRouter>
-
-        
-           <MyContext.Provider value={values}>
+          <AuthProvider>
+            <MyContext.Provider value={values}>
               { isHideSidebarAndHeader!==false && 
                 <Header />
               }
               <Routes>
-        <Route path='/login' element={<Login />} ></Route>
-        
-           
-        
-
-        </Routes>
-    
-
-           <Routes>
-            <Route path='/connexion' element={<LoginPage />} ></Route>
-          </Routes>
+                <Route path='/connexion' element={<Login />} />
+              </Routes>
         <div className="main d-flex">
         {isHideSidebarAndHeader!==false &&
           <div className={`sidebarWrapper ${toggleSidebar ? 'visible' : 'hide'}`}>
@@ -79,7 +67,7 @@ function App() {
         
       
         {/*} <Route path='/' element={<DashboardContent />} ></Route> */}
-        <Route path='/' element={ <PrivateRoute> <Dashboard /> </PrivateRoute>} ></Route>
+        <Route path='/dash' element={ <PrivateRoute> <Dashboard /> </PrivateRoute>} ></Route>
           <Route path='/device/:id' element={<DeviceDetail />} ></Route>
           <Route path='/appareils' element={<PrivateRoute> <DeviceList /> </PrivateRoute>} ></Route>
           <Route path='/appareils_chart/:id' element={<DeviceDetailGraph />} ></Route>
@@ -94,10 +82,10 @@ function App() {
                 
         </div>
           
-        </MyContext.Provider >
-        
+            </MyContext.Provider>
+          </AuthProvider>
         </BrowserRouter>
-        </QueryClientProvider>
+      </QueryClientProvider>
         
   )
 }
