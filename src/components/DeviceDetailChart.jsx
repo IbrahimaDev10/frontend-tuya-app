@@ -6,7 +6,7 @@ import DashboardContent from './dashboard/DashboardContent';
 import { FaHome } from "react-icons/fa";
 import { FaChartLine } from "react-icons/fa";
 import { IoSettings } from "react-icons/io5";
-import DeviceDetailMenu from './dashboard/DeviceDetailMenu';
+import DeviceDetailMenu from './layout/DeviceDetailMenu';
 import { Chart } from "react-google-charts";
 import './chart.css';
 

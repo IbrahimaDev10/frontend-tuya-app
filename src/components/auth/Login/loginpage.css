@@ -1,0 +1,146 @@
+/* === GLOBAL === */
+body {
+  margin: 0;
+  padding: 0;
+  height: 100vh;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  /* background-image supprimé d'ici */
+}
+
+.bglogin {
+  width: 100%;
+  opacity: 0.6;
+  top: 0;
+  left: 0;
+  position: fixed;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* === LOGIN CONTAINER === */
+.login-page-section {
+  height: 100vh;
+  width: 100%;
+  background-color: rgba(0, 0, 0, 0.4); /* overlay semi-transparent */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.login {
+  background: #ffffff;
+  padding: 50px;
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+  width: 100%;
+  max-width: 500px;
+}
+
+/* === HEADER === */
+.login-header {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.login-header h3 {
+  font-size: 28px;
+  font-weight: bold;
+  color: #2c3e50;
+  margin: 0;
+}
+
+/* === FORMULAIRE === */
+.login-form {
+  display: flex;
+  flex-direction: column;
+}
+
+.input-group {
+  position: relative;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+}
+
+.input-icon {
+  position: absolute;
+  left: 15px;
+  font-size: 20px;
+  color: #97a4b0;
+}
+
+.input-group input {
+  width: 100%;
+  padding: 12px 12px 12px 45px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  font-size: 16px;
+  transition: border-color 0.3s ease;
+}
+
+.input-group input:focus {
+  outline: none;
+  border-color: #1976d2;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 15px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #97a4b0;
+  font-size: 18px;
+}
+
+/* === OPTIONS ET LIENS === */
+.login-options {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+  margin-bottom: 20px;
+}
+
+.login-options a {
+  color: #1976d2;
+  text-decoration: none;
+}
+
+.login-options a:hover {
+  text-decoration: underline;
+}
+
+.register-link {
+  text-align: center;
+  margin-top: 20px;
+}
+
+.register-link button {
+  background: none;
+  border: none;
+  color: #1976d2;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.register-link button:hover {
+  text-decoration: underline;
+}
+
+/* === RESPONSIVE === */
+@media screen and (max-width: 600px) {
+  .login {
+    padding: 20px;
+    margin: 10px;
+  }
+
+  .input-group input {
+    font-size: 14px;
+    padding-left: 40px;
+  }
+
+  .input-icon {
+    font-size: 16px;
+  }
+}

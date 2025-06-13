@@ -1,52 +1,22 @@
 import React from 'react'
 import { Button } from '@mui/material'
 import { Link } from 'react-router-dom'
-import { MdDashboard } from "react-icons/md";
+import { MdDashboard, MdElectricalServices, MdPerson, MdGroup } from "react-icons/md";
 import { FaAngleDown } from "react-icons/fa";
 import { FaLandmark } from "react-icons/fa";
-import { MdElectricalServices } from "react-icons/md";
 import { IoMdNotifications } from "react-icons/io";
 import { BiSolidMessageSquareDetail } from "react-icons/bi";
 import { useQuery, useQueries } from '@tanstack/react-query';
-import { MyContext } from '../App';
+import { MyContext } from '../../../App';
 import { useEffect, useState } from 'react'
 import axios from 'axios';
-import Logout from '../components/auth/Logout/Logout';
+import Logout from '../../auth/Logout/Logout';
 
-import '../sidebar.css'
+import './sidebar.css'
 
 export default function Sidebar() {
 
   const id='bfaac3ac13dc9aaa2daza6';
-  
-
-    {/*
-    const fetchSpaceList = async () => {
-        const response = await axios.get("http://localhost:5000/space-list");
-        return response.data;
-      };
-
-      const { data: spaceListData, isLoading, error } = useQuery({
-        queryKey: ['space-list'],
-        queryFn: fetchSpaceList,
-        //refetchInterval: 3000,
-       
-      });
-
-     
-      const list = spaceListData?.spaces?.data || [];
-
-      const assetQueries = useQueries({
-        queries: list.map(id => ({
-          queryKey: ['asset-name', id],
-          queryFn: async () => {
-            const response = await axios.get(`http://localhost:5000/asset-name/${id}`);
-            return response.data;
-          },
-        })),
-      }); */}
-
-   // const list = data.spaces[0].data ;
 
 
 
@@ -54,7 +24,7 @@ export default function Sidebar() {
     <div className='sidebar'>
         <ul>
             <li>
-                <Link to='/'>
+                <Link to='/dash'>
                 <Button className='w-100'>
                     <span className='icon'> 
                      <MdDashboard />
@@ -101,16 +71,27 @@ export default function Sidebar() {
                 </Link>
             </li>
             <li>
-                <Link to='/'>
+              <Link to='/dash'>
                 <Button className='w-100'>
-                    <span className='icon'> 
-                     <BiSolidMessageSquareDetail />
-                    </span>
-                   Messages
-                    <span className='icon-right'><FaAngleDown /></span>
+                  <span className='icon'>
+                    <MdPerson />
+                  </span>
+                  Mon Profil
+                  <span className='icon-right'><FaAngleDown /></span>
                 </Button>
-                </Link>
-                <Logout />
+              </Link>
+            </li>
+            <li>
+              <Link to='/dash'>
+                <Button className='w-100'>
+                  <span className='icon'>
+                    <BiSolidMessageSquareDetail />
+                  </span>
+                  Messages
+                  <span className='icon-right'><FaAngleDown /></span>
+                </Button>
+              </Link>
+              <Logout />
             </li>
         </ul>
       {/*  <ul >

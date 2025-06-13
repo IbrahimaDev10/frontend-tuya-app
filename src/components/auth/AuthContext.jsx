@@ -41,11 +41,34 @@ export const AuthProvider = ({ children }) => {
     return !!localStorage.getItem('token');
   };
 
+  const requestPasswordReset = async (email) => {
+    try {
+      const response = await axios.post(`${import.meta.env.VITE_API_URL}/auth/forgot-password`, { email });
+      return { success: true, message: response.data.message };
+    } catch (err) {
+      return { success: false, error: err.response?.data?.error || 'Erreur lors de la demande de réinitialisation' };
+    }
+  };
+
+  const resetPassword = async (token, newPassword) => {
+    try {
+      const response = await axios.post(`${import.meta.env.VITE_API_URL}/auth/reset-password`, {
+        token,
+        new_password: newPassword
+      });
+      return { success: true, message: response.data.message };
+    } catch (err) {
+      return { success: false, error: err.response?.data?.error || 'Erreur lors de la réinitialisation' };
+    }
+  };
+
   const value = {
     user,
     login,
     logout,
-    isAuthenticated
+    isAuthenticated,
+    requestPasswordReset,
+    resetPassword
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

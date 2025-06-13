@@ -1,16 +1,17 @@
 import React from 'react'
-import logo from '../assets/images/ns1.png'
-import sertec_logo from "../assets/images/sertec_logo.jpeg"
+import logo from '../../../assets/images/ns1.png'
+import sertec_logo from "../../../assets/images/sertec_logo.jpeg"
 import { IoMdMenu } from "react-icons/io";
 import { Button } from '@mui/material';
 import { SearchOff } from '@mui/icons-material';
-import SearchBox from './SearchBox';
+import SearchBox from '../SearchBox/SearchBox';
 import { CiLight } from "react-icons/ci";
 import { MdTextsms } from "react-icons/md";
 import { IoNotifications } from "react-icons/io5";
 import { FaUser } from "react-icons/fa";
-import { MyContext } from '../App';
+import { MyContext } from '../../../App';
 import { useContext } from 'react';
+import './header.css'
 
 export default function Header() {
    const { toggleSidebar, setToggleSidebar } = useContext(MyContext);
