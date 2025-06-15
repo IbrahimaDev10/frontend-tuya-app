@@ -74,7 +74,7 @@ export const AuthProvider = ({ children }) => {
   // ========================
   const isSuperadmin = () => user?.role === 'superadmin'
   const isAdmin = () => user?.role === 'admin'
-  const isClient = () => user?.role === 'client'
+  const isClient = () => user?.role === 'user'
 
   return (
     <AuthContext.Provider

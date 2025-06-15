@@ -26,6 +26,9 @@ Structure du backend :
   - Services métier (`/services`)
   - Routes API (`/routes`)
   - Utilitaires (`/utils`)
+  - Tests et Débogage :
+    - `debug_env_tuya.py` : Outils de débogage pour l'intégration Tuya
+    - `test_cloud_dev.py` et `test_cloud_dev_optimized.py` : Tests d'intégration cloud
 
 ## Patterns de Conception
 
@@ -63,6 +66,11 @@ Structure du backend :
    - Décorateurs pour l'authentification
    - Validation des rôles
 
+5. **Test Pattern**
+   - Tests d'intégration cloud
+   - Outils de débogage dédiés
+   - Tests optimisés pour les performances
+
 ## Fonctionnalités Principales
 
 1. **Authentification**
@@ -74,6 +82,7 @@ Structure du backend :
    - Connexion API Tuya
    - Contrôle des appareils
    - Surveillance des données
+   - Tests d'intégration cloud
 
 3. **Gestion Multi-Rôles**
    - SuperAdmin : gestion globale
@@ -96,10 +105,17 @@ Structure du backend :
    - Optimisation des requêtes API
    - Gestion du cache
    - Pagination des données
+   - Tests de performance optimisés
 
 3. **Maintenance**
    - Structure modulaire
    - Code documenté
-   - Tests unitaires
+   - Tests unitaires et d'intégration
+   - Outils de débogage
+
+4. **Environnement**
+   - Gestion des variables d'environnement
+   - Configuration par environnement (dev/prod)
+   - Migration de base de données
 
 Ce document sera mis à jour au fur et à mesure de l'évolution du projet et des nouveaux patterns identifiés.
