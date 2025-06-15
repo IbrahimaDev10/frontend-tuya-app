@@ -1,0 +1,55 @@
+import axios from 'axios';
+
+const API = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+
+/**
+ * Authentification
+ */
+export const login = (email, password) =>
+  axios.post(`${API}/auth/login`, { email, password });
+
+export const logout = (token) =>
+  axios.post(`${API}/auth/logout`, {}, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+
+export const getProfile = (token) =>
+  axios.get(`${API}/auth/profile`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+
+export const verifyToken = (token) =>
+  axios.get(`${API}/auth/verify-token`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+
+/**
+ * Mise à jour du profil (utilisateur connecté)
+ */
+export const updateProfile = (data, token) =>
+  axios.put(`${API}/auth/profile`, data, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+
+/**
+ * Changement de mot de passe (utilisateur connecté)
+ */
+export const changePassword = (old_password, new_password, token) =>
+  axios.post(`${API}/auth/change-password`, {
+    old_password,
+    new_password
+  }, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+
+/**
+ * Réinitialisation de mot de passe (utilisateur anonyme)
+ */
+export const forgotPassword = (email) =>
+  axios.post(`${API}/auth/forgot-password`, { email });
+
+export const resetPassword = (token_reset, new_password) =>
+  axios.post(`${API}/auth/reset-password`, {
+    token: token_reset,
+    new_password
+  });
