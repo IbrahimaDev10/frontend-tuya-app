@@ -12,7 +12,7 @@ migrate = Migrate()
 jwt = JWTManager()
 
 def create_app():
-    """Factory pour créer l'application Flask - Version améliorée"""
+    """Factory pour créer l'application Flask - Version améliorée avec Devices"""
     
     # Créer l'app Flask
     app = Flask(__name__)
@@ -44,6 +44,14 @@ def create_app():
         app.logger.info("✅ Modèles importés avec succès")
     except ImportError as e:
         app.logger.warning(f"⚠️ Erreur import modèles: {e}")
+    
+    # ✅ NOUVEAU : Importer les services pour s'assurer qu'ils sont disponibles
+    try:
+        from app.services.tuya_service import TuyaClient
+        from app.services.device_service import DeviceService
+        app.logger.info("✅ Services Tuya et Device importés avec succès")
+    except ImportError as e:
+        app.logger.warning(f"⚠️ Erreur import services: {e}")
     
     # Register blueprints - Version améliorée
     register_blueprints(app)
@@ -95,13 +103,13 @@ def register_blueprints(app):
     app_dir = os.path.dirname(current_file)
     routes_dir = os.path.join(app_dir, 'routes')
     
-    # Blueprint API existant (temporaire)
-    try:
-        from app.routes import api
-        app.register_blueprint(api)
-        app.logger.info("✅ Blueprint API existant enregistré")
-    except ImportError as e:
-        app.logger.warning(f"⚠️ Erreur import blueprint API existant: {e}")
+    # ❌ DÉSACTIVÉ : Blueprint API existant (remplacé par device_routes)
+    # try:
+    #     from app.routes import api
+    #     app.register_blueprint(api)
+    #     app.logger.info("✅ Blueprint API existant enregistré")
+    # except ImportError as e:
+    #     app.logger.warning(f"⚠️ Erreur import blueprint API existant: {e}")
     
     # 🔐 BLUEPRINT AUTH
     try:
@@ -196,23 +204,42 @@ def register_blueprints(app):
         import traceback
         app.logger.error(f"📋 Traceback: {traceback.format_exc()}")
     
-    # 🔮 BLUEPRINTS FUTURS - Prêts pour l'expansion
-    
-    # Blueprint devices (à créer)
+    # 🔥 NOUVEAU : BLUEPRINT DEVICES (PRIORITÉ)
     try:
+        app.logger.info("🔍 Import du blueprint devices...")
+        
         device_routes_file_path = os.path.join(routes_dir, 'device_routes.py')
+        
         if os.path.exists(device_routes_file_path):
+            # Charger le module device_routes
             spec = importlib.util.spec_from_file_location("app.routes.device_routes", device_routes_file_path)
             device_module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(device_module)
             
+            # Récupérer et enregistrer le blueprint
             device_bp = device_module.device_bp
             app.register_blueprint(device_bp)
             app.logger.info("✅ Blueprint devices enregistré sur /api/devices")
+            
+            # Debug: Compter les routes devices
+            route_count = 0
+            for rule in app.url_map.iter_rules():
+                if rule.rule.startswith('/api/devices'):
+                    route_count += 1
+                    app.logger.debug(f"📍 Route devices: {list(rule.methods)} {rule.rule}")
+            
+            app.logger.info(f"✅ Total routes devices enregistrées: {route_count}")
+            
         else:
-            app.logger.debug("ℹ️ Blueprint devices pas encore créé")
+            app.logger.error(f"❌ Fichier device_routes non trouvé: {device_routes_file_path}")
+            app.logger.error("💥 CRITIQUE: Le fichier device_routes.py est requis pour l'intégration Tuya!")
+            
     except Exception as e:
-        app.logger.debug(f"ℹ️ Blueprint devices non disponible: {e}")
+        app.logger.error(f"❌ Erreur import blueprint devices: {e}")
+        import traceback
+        app.logger.error(f"📋 Traceback: {traceback.format_exc()}")
+    
+    # 🔮 BLUEPRINTS FUTURS - Prêts pour l'expansion
     
     # Blueprint alerts (à créer)
     try:
@@ -247,6 +274,25 @@ def register_blueprints(app):
             'routes': sorted(routes, key=lambda x: x['path'])
         }
     
+    @app.route('/debug/tuya')
+    def debug_tuya():
+        """Route pour vérifier l'état de Tuya"""
+        try:
+            from app.services.tuya_service import TuyaClient
+            tuya_client = TuyaClient()
+            connection_info = tuya_client.get_connection_info()
+            
+            return {
+                'tuya_service': 'available',
+                'connection_info': connection_info,
+                'auto_connect_test': tuya_client.auto_connect_from_env()
+            }
+        except Exception as e:
+            return {
+                'tuya_service': 'error',
+                'error': str(e)
+            }, 500
+    
     @app.route('/certif')
     def health_check():
         """Route de santé pour vérifier que l'API fonctionne"""
@@ -258,7 +304,9 @@ def register_blueprints(app):
                 'database': 'connected',
                 'auth': 'active',
                 'users': 'active',
-                'sites': 'active'
+                'sites': 'active',
+                'devices': 'active',  # ✅ NOUVEAU
+                'tuya': 'active'       # ✅ NOUVEAU
             }
         }, 200
     
@@ -270,10 +318,12 @@ def register_blueprints(app):
             'version': '1.0.0',
             'documentation': '/debug/routes',
             'certifier': '/certif',
+            'tuya_debug': '/debug/tuya',  # ✅ NOUVEAU
             'endpoints': {
                 'auth': '/api/auth',
                 'users': '/api/users',
-                'sites': '/api/sites'
+                'sites': '/api/sites',
+                'devices': '/api/devices'  # ✅ NOUVEAU
             }
         }, 200
 
