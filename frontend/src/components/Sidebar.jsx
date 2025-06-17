@@ -26,6 +26,12 @@ const Sidebar = ({ isOpen, onClose }) => {
         },
         {
           icon: '🏢',
+          label: 'Gestion des Sites',
+          path: '/sites',
+          active: window.location.pathname === '/sites'
+        },
+        {
+          icon: '🏢',
           label: 'Gestion des Structures',
           path: '/structures'
         },
@@ -55,6 +61,12 @@ const Sidebar = ({ isOpen, onClose }) => {
           label: 'Gestion des Utilisateurs',
           path: '/users',
           active: window.location.pathname === '/users'
+        },
+        {
+          icon: '🏢',
+          label: 'Gestion des Sites',
+          path: '/sites',
+          active: window.location.pathname === '/sites'
         },
         {
           icon: '👤',

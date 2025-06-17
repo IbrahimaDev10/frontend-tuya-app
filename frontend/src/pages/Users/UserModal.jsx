@@ -18,6 +18,8 @@ const UserModal = ({ user, onClose, onSave }) => {
   })
   const [errors, setErrors] = useState({})
   const [loading, setLoading] = useState(false)
+  const [clients, setClients] = useState([]);
+
 
   const isEdit = !!user
 
@@ -30,9 +32,23 @@ const UserModal = ({ user, onClose, onSave }) => {
         telephone: user.telephone || '',
         role: user.role || 'user',
         client_id: user.client_id || ''
-      })
+      });
     }
-  }, [user])
+  
+    if (isSuperadmin()) {
+      UserService.listerClients()
+        .then(response => {
+          const data = response.data;
+          // Adapte ici selon la structure réelle de ta réponse
+          setClients(Array.isArray(data) ? data : data.clients || []);
+        })
+        .catch(err => {
+          console.error('Erreur chargement clients:', err);
+          setClients([]);
+        });
+    }
+  }, [user]);
+  
 
   const handleChange = (e) => {
     const { name, value } = e.target
@@ -194,7 +210,12 @@ const UserModal = ({ user, onClose, onSave }) => {
                       className={`input ${errors.client_id ? 'input-error' : ''}`}
                     >
                       <option value="">Sélectionner un client</option>
-                      {/* Options des clients à implémenter */}
+                      {clients.map(client => (
+                            <option key={client.id} value={client.id}>
+                                {client.nom}
+                            </option>
+                            ))}
+
                     </select>
                     {errors.client_id && (
                       <span className="input-error-message">{errors.client_id}</span>
