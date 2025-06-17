@@ -135,10 +135,13 @@ const ClientModal = ({ client, onClose, onSave }) => {
                 await navigator.clipboard.writeText(mot_de_passe)
           // Ajouter un message de succès           
           Swal.fire({
-            title: 'Admin créé avec succès!',
-            text: `Email: ${email}\nMot de passe: ${mot_de_passe}\n\n(copié dans le presse-papier) Veuillez noter ces informations.`,
+            title: 'Admin créé avec succès !',
+            html: `
+              <p><strong>Mot de passe :</strong> ${mot_de_passe}</p>
+              <p>(Copié dans le presse-papier)</p>
+            `,
             icon: 'success'
-          })
+          });
         }
       }
 

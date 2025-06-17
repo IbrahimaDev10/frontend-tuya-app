@@ -6,7 +6,7 @@ import Input from '../../components/Input'
 import Swal from 'sweetalert2';
 import './UserModal.css'
 
-const UserModal = ({ user, onClose, onSave }) => {
+const UserModal = ({ user, onClose, onSave, clients = [] }) => {
   const { isSuperadmin } = useAuth()
   const [formData, setFormData] = useState({
     prenom: '',
@@ -18,7 +18,7 @@ const UserModal = ({ user, onClose, onSave }) => {
   })
   const [errors, setErrors] = useState({})
   const [loading, setLoading] = useState(false)
-  const [clients, setClients] = useState([]);
+  
 
 
   const isEdit = !!user
@@ -32,22 +32,10 @@ const UserModal = ({ user, onClose, onSave }) => {
         telephone: user.telephone || '',
         role: user.role || 'user',
         client_id: user.client_id || ''
-      });
+      })
     }
+  }, [user])
   
-    if (isSuperadmin()) {
-      UserService.listerClients()
-        .then(response => {
-          const data = response.data;
-          // Adapte ici selon la structure réelle de ta réponse
-          setClients(Array.isArray(data) ? data : data.clients || []);
-        })
-        .catch(err => {
-          console.error('Erreur chargement clients:', err);
-          setClients([]);
-        });
-    }
-  }, [user]);
   
 
   const handleChange = (e) => {
@@ -111,10 +99,14 @@ const UserModal = ({ user, onClose, onSave }) => {
           await navigator.clipboard.writeText(response.data.mot_de_passe_temporaire)
           // Ajouter un message de succès           
           Swal.fire({
-            title: 'Utilisateur créé avec succès!',
-            text: `Mot de passe temporaire: ${response.data.mot_de_passe_temporaire}\n\n(copié dans le presse-papier) Veuillez noter ce mot de passe.`,
+            title: 'Utilisateur créé avec succès !',
+            html: `
+              <p><strong>Mot de passe :</strong> ${response.data.mot_de_passe_temporaire}</p>
+              <p>(Copié dans le presse-papier)</p>
+            `,
             icon: 'success'
-          })
+          });
+          
         }
       }
 
@@ -211,10 +203,11 @@ const UserModal = ({ user, onClose, onSave }) => {
                     >
                       <option value="">Sélectionner un client</option>
                       {clients.map(client => (
-                            <option key={client.id} value={client.id}>
-                                {client.nom}
-                            </option>
-                            ))}
+                        <option key={client.id} value={client.id}>
+                            {client.nom_entreprise || client.nom}
+                        </option>
+                        ))}
+
 
                     </select>
                     {errors.client_id && (

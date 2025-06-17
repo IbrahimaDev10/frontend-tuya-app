@@ -26,23 +26,38 @@ const UserManagement = () => {
   const [stats, setStats] = useState({})
   const [toast, setToast] = useState(null)
 
+  const [roleFilter, setRoleFilter] = useState('')
+  const [clientFilter, setClientFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+  const [statusClientFilter, setStatusClientFilter] = useState('')
+
   const Layout = isSuperadmin() ? SuperAdminLayout : AdminLayout
 
   useEffect(() => {
     loadData()
+      // Réinitialise les filtres quand on change d'onglet
+  setSearchTerm('')
+  setRoleFilter('')
+  setClientFilter('')
+  setStatusFilter('')
+  setStatusClientFilter('') 
   }, [selectedTab])
 
   const loadData = async () => {
     try {
       setLoading(true)
-      
+  
       if (selectedTab === 'users') {
-        const [usersResponse, statsResponse] = await Promise.all([
+        const [usersResponse, statsResponse, clientsResponse] = await Promise.all([
           UserService.listerUtilisateurs(),
-          UserService.obtenirStatistiques()
+          UserService.obtenirStatistiques(),
+          isSuperadmin() ? UserService.listerClients() : Promise.resolve({ data: { data: [] } })
         ])
         setUsers(usersResponse.data.data)
         setStats(statsResponse.data.data)
+        if (isSuperadmin()) {
+          setClients(clientsResponse.data.data)
+        }
       } else if (selectedTab === 'clients' && isSuperadmin()) {
         const clientsResponse = await UserService.listerClients()
         setClients(clientsResponse.data.data)
@@ -53,6 +68,7 @@ const UserManagement = () => {
       setLoading(false)
     }
   }
+  
 
   const showToast = (message, type = 'info') => {
     setToast({ message, type })
@@ -128,6 +144,34 @@ const UserManagement = () => {
     })
   }
 
+  const handleDeactivateClient = (client) => {
+    const action = client.actif ? 'désactiver' : 'réactiver'
+    setConfirmAction({
+      type: 'toggleClient',
+      client,
+      title: `${action.charAt(0).toUpperCase() + action.slice(1)} le client`,
+      message: `Êtes-vous sûr de vouloir ${action} ${client.nom_entreprise} ?`,
+      confirmText: action.charAt(0).toUpperCase() + action.slice(1),
+      onConfirm: () => toggleClientStatus(client)
+    })
+  }
+
+  const toggleClientStatus = async (client) => {
+  try {
+    if (client.actif) {
+      await UserService.desactiverClient(client.id)
+    } else {
+      await UserService.reactiverClient(client.id)
+    }
+    loadData()
+    showToast(`Client ${client.actif ? 'désactivé' : 'réactivé'} avec succès`, 'success')
+  } catch (error) {
+    showToast(error.response?.data?.error || 'Erreur lors de l\'opération', 'error')
+  }
+  setConfirmAction(null)
+}
+
+
   const confirmDeleteUser = async (userId) => {
     try {
       await UserService.supprimerUtilisateur(userId)
@@ -179,6 +223,36 @@ const UserManagement = () => {
     )
   }
 
+  const getFilteredUsers = () => {
+    return users.filter(user => {
+      const matchRole = roleFilter ? user.role === roleFilter : true
+      const matchClient = clientFilter
+  ? String(user.client_id) === String(clientFilter)
+  : true
+
+  const matchStatus = statusFilter
+  ? String(user.actif) === (statusFilter === 'actif' ? 'true' : 'false')
+  : true
+
+
+      return matchRole && matchClient && matchStatus
+    })
+  }
+  const getFilteredClients = () => {
+    return clients.filter(client => {
+      const matchStatus =
+        statusClientFilter === ''
+          ? true
+          : statusClientFilter === 'actif'
+          ? client.actif === true
+          : client.actif === false;
+  
+      return matchStatus;
+    });
+  };
+  
+  
+
   return (
     <Layout>
       <div className="user-management">
@@ -195,6 +269,43 @@ const UserManagement = () => {
               }}
               className="search-input"
             />
+
+                {selectedTab === 'users' && (
+                <div className="filter-bar">
+                    <select onChange={(e) => setRoleFilter(e.target.value)} value={roleFilter}>
+                    <option value="">Tous les rôles</option>
+                    <option value="superadmin">Superadmin</option>
+                    <option value="admin">Admin</option>
+                    <option value="user">Utilisateur</option>
+                    </select>
+
+                    {isSuperadmin() && (
+                    <select onChange={(e) => setClientFilter(e.target.value)} value={clientFilter}>
+                        <option value="">Tous les clients</option>
+                        {clients.map(client => (
+                        <option key={client.id} value={client.id}>{client.nom_entreprise}</option>
+                        ))}
+                    </select>
+                    )}
+
+                    <select onChange={(e) => setStatusFilter(e.target.value)} value={statusFilter}>
+                    <option value="">Tous</option>
+                    <option value="actif">Actifs</option>
+                    <option value="inactif">Inactifs</option>
+                    </select>
+                </div>
+                )}
+
+                {selectedTab === 'clients' && (
+                <div className="filter-bar">
+                    <select onChange={(e) => setStatusClientFilter(e.target.value)} value={statusClientFilter}>
+                    <option value="">Tous</option>
+                    <option value="actif">Actifs</option>
+                    <option value="inactif">Inactifs</option>
+                    </select>
+                </div>
+                )}
+
             <Button
               variant="primary"
               onClick={selectedTab === 'users' ? handleCreateUser : handleCreateClient}
@@ -285,30 +396,36 @@ const UserManagement = () => {
         {/* Contenu des onglets */}
         {selectedTab === 'users' ? (
           <UsersTable
-            users={users}
-            onEdit={handleEditUser}
-            onDelete={handleDeleteUser}
-            onToggleStatus={handleDeactivateUser}
-            onGeneratePassword={generatePassword}
-            isSuperadmin={isSuperadmin()}
-          />
+          users={getFilteredUsers()}
+          onEdit={handleEditUser}
+          onDelete={handleDeleteUser}
+          onToggleStatus={handleDeactivateUser}
+          onGeneratePassword={generatePassword}
+          isSuperadmin={isSuperadmin()}
+        />
+        
         ) : (
-          <ClientsTable
-            clients={clients}
-            onEdit={handleEditClient}
-            onDelete={() => {}}
-            isSuperadmin={isSuperadmin()}
-          />
+            <ClientsTable
+                clients={getFilteredClients()}
+                onEdit={handleEditClient}
+                onDelete={() => {}}
+                isSuperadmin={isSuperadmin()}
+                onToggleStatus={handleDeactivateClient}
+                />
+
+          
         )}
 
         {/* Modals */}
         {showUserModal && (
-          <UserModal
-            user={selectedUser}
-            onClose={() => setShowUserModal(false)}
-            onSave={handleUserSaved}
-          />
-        )}
+                <UserModal
+                    user={selectedUser}
+                    onClose={() => setShowUserModal(false)}
+                    onSave={handleUserSaved}
+                    clients={clients} // ✅ envoie les clients ici
+                />
+                )}
+
 
         {showClientModal && (
           <ClientModal
@@ -365,7 +482,8 @@ const UsersTable = ({ users, onEdit, onDelete, onToggleStatus, onGeneratePasswor
               </span>
             </td>
             {isSuperadmin && (
-              <td>{user.client?.nom_entreprise || 'N/A'}</td>
+              <td>{user.client_nom || 'N/A'}</td>
+
             )}
             <td>
               <span className={`status-badge ${user.actif ? 'active' : 'inactive'}`}>
@@ -413,7 +531,8 @@ const UsersTable = ({ users, onEdit, onDelete, onToggleStatus, onGeneratePasswor
 )
 
 // Composant tableau des clients
-const ClientsTable = ({ clients, onEdit, onDelete, isSuperadmin }) => (
+const ClientsTable = ({ clients, onEdit, onDelete, isSuperadmin, onToggleStatus }) => (
+
   <div className="table-container">
     <table className="data-table">
       <thead>
@@ -445,6 +564,14 @@ const ClientsTable = ({ clients, onEdit, onDelete, isSuperadmin }) => (
                 >
                   ✏️
                 </Button>
+                <Button
+                    variant="secondary"
+                    size="small"
+                    onClick={() => onToggleStatus(client)}
+                    >
+                    {client.actif ? '❌' : '✅'}
+                    </Button>
+
               </div>
             </td>
           </tr>

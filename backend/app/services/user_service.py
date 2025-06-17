@@ -129,13 +129,15 @@ class UserService:
             if not utilisateur_demandeur.is_superadmin():
                 return None, "Seul le superadmin peut voir tous les clients"
             
-            clients = Client.query.filter_by(actif=True).order_by(Client.nom_entreprise).all()
+            # ⚠️ Supprimer le filtre actif=True pour retourner aussi les clients inactifs
+            clients = Client.query.order_by(Client.nom_entreprise).all()
             liste_clients = [client.to_dict() for client in clients]
             
             return liste_clients, None
-            
+
         except Exception as e:
             return None, f"Erreur lors de la récupération: {str(e)}"
+
     
     def desactiver_client(self, client_id: str, utilisateur_desactivateur: User) -> Tuple[bool, str]:
         """Désactiver un client (et tous ses utilisateurs)"""
@@ -362,13 +364,16 @@ class UserService:
             else:
                 return None, "Permission insuffisante"
             
-            utilisateurs = query.filter_by(actif=True).order_by(User.prenom, User.nom).all()
+            # 🔁 SUPPRIME le filtre actif=True pour permettre au frontend de filtrer
+            utilisateurs = query.order_by(User.prenom, User.nom).all()
+            
             liste_utilisateurs = [user.to_dict(include_sensitive=True) for user in utilisateurs]
             
             return liste_utilisateurs, None
-            
+
         except Exception as e:
             return None, f"Erreur lors de la récupération: {str(e)}"
+
     
     def obtenir_utilisateur(self, utilisateur_id: str, utilisateur_demandeur: User) -> Tuple[Optional[Dict], Optional[str]]:
         """Obtenir les détails d'un utilisateur"""
