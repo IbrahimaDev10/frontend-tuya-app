@@ -3,6 +3,7 @@ from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
+from flask_mail import Mail  # ✅ NOUVEAU : Import Flask-Mail
 import logging
 import os
 
@@ -10,9 +11,10 @@ import os
 db = SQLAlchemy()
 migrate = Migrate()
 jwt = JWTManager()
+mail = Mail()  # ✅ NOUVEAU : Instance Flask-Mail
 
 def create_app():
-    """Factory pour créer l'application Flask - Version améliorée avec Devices"""
+    """Factory pour créer l'application Flask - Version améliorée avec Devices et Mail"""
     
     # Créer l'app Flask
     app = Flask(__name__)
@@ -38,6 +40,17 @@ def create_app():
     db.init_app(app)
     migrate.init_app(app, db)
     
+    # ✅ NOUVEAU : Initialize Flask-Mail
+    mail.init_app(app)
+    
+    # Vérifier et afficher le statut de la configuration mail
+    if config.is_mail_configured():
+        app.logger.info("✅ Service mail configuré et activé")
+        app.logger.info(f"📧 SMTP: {app.config.get('MAIL_SERVER')}:{app.config.get('MAIL_PORT')}")
+        app.logger.info(f"📧 Expéditeur: {app.config.get('MAIL_DEFAULT_SENDER')}")
+    else:
+        app.logger.warning("⚠️ Service mail non configuré - fonctionnalités email désactivées")
+    
     # ✅ AJOUTÉ : Importer tous les modèles pour que Flask-Migrate les trouve
     try:
         from app import models
@@ -52,6 +65,13 @@ def create_app():
         app.logger.info("✅ Services Tuya et Device importés avec succès")
     except ImportError as e:
         app.logger.warning(f"⚠️ Erreur import services: {e}")
+    
+    # ✅ NOUVEAU : Importer le service mail
+    try:
+        from app.services.mail_service import MailService
+        app.logger.info("✅ Service Mail importé avec succès")
+    except ImportError as e:
+        app.logger.warning(f"⚠️ Erreur import service mail: {e}")
     
     # Register blueprints - Version améliorée
     register_blueprints(app)
@@ -239,6 +259,38 @@ def register_blueprints(app):
         import traceback
         app.logger.error(f"📋 Traceback: {traceback.format_exc()}")
     
+    # ✅ NOUVEAU : BLUEPRINT MAIL
+    try:
+        app.logger.info("🔍 Import du blueprint mail...")
+        
+        mail_routes_file_path = os.path.join(routes_dir, 'mail_routes.py')
+        
+        if os.path.exists(mail_routes_file_path):
+            # Charger le module mail_routes
+            spec = importlib.util.spec_from_file_location("app.routes.mail_routes", mail_routes_file_path)
+            mail_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mail_module)
+            
+            # Récupérer et enregistrer le blueprint
+            mail_bp = mail_module.mail_bp
+            app.register_blueprint(mail_bp)
+            app.logger.info("✅ Blueprint mail enregistré sur /api/mail")
+            
+            # Debug: Compter les routes mail
+            route_count = 0
+            for rule in app.url_map.iter_rules():
+                if rule.rule.startswith('/api/mail'):
+                    route_count += 1
+                    app.logger.debug(f"📍 Route mail: {list(rule.methods)} {rule.rule}")
+            
+            app.logger.info(f"✅ Total routes mail enregistrées: {route_count}")
+            
+        else:
+            app.logger.info("ℹ️ Blueprint mail pas encore créé - fonctionnalités email intégrées dans les autres blueprints")
+            
+    except Exception as e:
+        app.logger.debug(f"ℹ️ Blueprint mail non disponible: {e}")
+    
     # 🔮 BLUEPRINTS FUTURS - Prêts pour l'expansion
     
     # Blueprint alerts (à créer)
@@ -293,9 +345,38 @@ def register_blueprints(app):
                 'error': str(e)
             }, 500
     
+    # ✅ NOUVEAU : Route de debug pour le service mail
+    @app.route('/debug/mail')
+    def debug_mail():
+        """Route pour vérifier l'état du service mail"""
+        try:
+            from app.services.mail_service import MailService
+            
+            config_status = app.config.get('MAIL_USERNAME') is not None
+            
+            return {
+                'mail_service': 'available' if config_status else 'not_configured',
+                'config': {
+                    'server': app.config.get('MAIL_SERVER'),
+                    'port': app.config.get('MAIL_PORT'),
+                    'use_tls': app.config.get('MAIL_USE_TLS'),
+                    'username_configured': app.config.get('MAIL_USERNAME') is not None,
+                    'sender': app.config.get('MAIL_DEFAULT_SENDER')
+                },
+                'enabled': MailService.is_enabled() if hasattr(MailService, 'is_enabled') else config_status
+            }
+        except Exception as e:
+            return {
+                'mail_service': 'error',
+                'error': str(e)
+            }, 500
+    
     @app.route('/certif')
     def health_check():
         """Route de santé pour vérifier que l'API fonctionne"""
+        # Vérifier le statut du service mail
+        mail_status = 'configured' if app.config.get('MAIL_USERNAME') else 'not_configured'
+        
         return {
             'status': 'certifier',
             'message': 'SERTEC IoT API est opérationnelle',
@@ -305,8 +386,9 @@ def register_blueprints(app):
                 'auth': 'active',
                 'users': 'active',
                 'sites': 'active',
-                'devices': 'active',  # ✅ NOUVEAU
-                'tuya': 'active'       # ✅ NOUVEAU
+                'devices': 'active',
+                'tuya': 'active',
+                'mail': mail_status  # ✅ NOUVEAU
             }
         }, 200
     
@@ -318,12 +400,14 @@ def register_blueprints(app):
             'version': '1.0.0',
             'documentation': '/debug/routes',
             'certifier': '/certif',
-            'tuya_debug': '/debug/tuya',  # ✅ NOUVEAU
+            'tuya_debug': '/debug/tuya',
+            'mail_debug': '/debug/mail',  # ✅ NOUVEAU
             'endpoints': {
                 'auth': '/api/auth',
                 'users': '/api/users',
                 'sites': '/api/sites',
-                'devices': '/api/devices'  # ✅ NOUVEAU
+                'devices': '/api/devices',
+                'mail': '/api/mail'  # ✅ NOUVEAU (optionnel)
             }
         }, 200
 

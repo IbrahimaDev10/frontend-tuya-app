@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}SERTEC IoT{% endblock %}</title>
+    <style>
+        /* Reset et base */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333333;
+            background-color: #f4f6f9;
+            padding: 20px 0;
+        }
+        
+        /* Container principal */
+        .email-container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        
+        /* Header avec logo */
+        .header {
+            background: linear-gradient(135deg, #4fc3f7 0%, #29b6f6 100%);
+            color: white;
+            text-align: center;
+            padding: 40px 30px;
+        }
+        
+        .logo {
+            font-size: 32px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .header-subtitle {
+            font-size: 16px;
+            opacity: 0.9;
+            font-weight: 300;
+        }
+        
+        /* Contenu principal */
+        .content {
+            padding: 40px 30px;
+        }
+        
+        .content h1, .content h2 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+        }
+        
+        .content h1 {
+            font-size: 28px;
+            font-weight: 600;
+        }
+        
+        .content h2 {
+            font-size: 24px;
+            font-weight: 600;
+        }
+        
+        .content p {
+            margin-bottom: 16px;
+            font-size: 16px;
+            color: #555555;
+        }
+        
+        /* Boutons */
+        .btn {
+            display: inline-block;
+            padding: 16px 32px;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 16px;
+            text-align: center;
+            transition: all 0.3s ease;
+            margin: 20px 0;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #42a5f5 0%, #1e88e5 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(66, 165, 245, 0.4);
+        }
+        
+        .btn-danger {
+            background: linear-gradient(135deg, #26c6da 0%, #00acc1 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(38, 198, 218, 0.4);
+        }
+        
+        /* Zones d'alerte */
+        .alert {
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid;
+        }
+        
+        .alert-warning {
+            background-color: #fff3cd;
+            border-color: #ffc107;
+            color: #856404;
+        }
+        
+        .alert-info {
+            background-color: #d1ecf1;
+            border-color: #17a2b8;
+            color: #0c5460;
+        }
+        
+        .alert-success {
+            background-color: #d4edda;
+            border-color: #28a745;
+            color: #155724;
+        }
+        
+        .alert-danger {
+            background-color: #f8d7da;
+            border-color: #dc3545;
+            color: #721c24;
+        }
+        
+        /* Token display */
+        .token-box {
+            background-color: #f8f9fa;
+            padding: 16px;
+            border-radius: 8px;
+            border: 1px dashed #dee2e6;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            word-break: break-all;
+            margin: 20px 0;
+        }
+        
+        /* Center content */
+        .text-center {
+            text-align: center;
+        }
+        
+        /* Footer */
+        .footer {
+            background-color: #f8f9fa;
+            padding: 30px;
+            text-align: center;
+            border-top: 1px solid #dee2e6;
+        }
+        
+        .footer p {
+            margin-bottom: 8px;
+            font-size: 14px;
+            color: #6c757d;
+        }
+        
+        .footer a {
+            color: #1e88e5;
+            text-decoration: none;
+        }
+        
+        .footer a:hover {
+            text-decoration: underline;
+        }
+        
+        /* Responsive */
+        @media only screen and (max-width: 600px) {
+            .email-container {
+                margin: 0 10px;
+                border-radius: 8px;
+            }
+            
+            .header, .content, .footer {
+                padding: 20px 15px;
+            }
+            
+            .logo {
+                font-size: 28px;
+            }
+            
+            .content h1 {
+                font-size: 24px;
+            }
+            
+            .content h2 {
+                font-size: 20px;
+            }
+            
+            .btn {
+                display: block;
+                width: 100%;
+                box-sizing: border-box;
+            }
+        }
+        
+        /* Emoji styling */
+        .emoji {
+            font-size: 1.2em;
+            margin-right: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <!-- Header -->
+        <div class="header">
+            <div class="logo">🏭 SERTEC</div>
+            <div class="header-subtitle">Des expertises au service de l'Innovation</div>
+        </div>
+        
+        <!-- Contenu principal -->
+        <div class="content">
+            {% block content %}{% endblock %}
+        </div>
+        
+        <!-- Footer -->
+        <div class="footer">
+            <p><strong>© {{ current_year or 2025 }} SERTEC Ingénierie</strong></p>
+            <p>Solutions IoT et automatisation industrielle</p>
+            <p style="margin-top: 15px; font-size: 13px; color: #adb5bd;">
+                Cet email a été envoyé automatiquement, merci de ne pas y répondre.<br>
+                Pour toute question : <a href="mailto:{{ support_email or 'support@sertec.com' }}">{{ support_email or 'support@sertec.com' }}</a>
+            </p>
+        </div>
+    </div>
+</body>
+</html>

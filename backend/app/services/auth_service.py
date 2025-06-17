@@ -1,9 +1,11 @@
 from flask_jwt_extended import create_access_token, create_refresh_token
 from app import db
 from app.models import User, Client
+from app.services.mail_service import MailService  # ✅ NOUVEAU : Import du service mail
 from datetime import datetime, timedelta
 import secrets
 import re
+import logging
 
 class AuthService:
     def __init__(self):
@@ -68,6 +70,14 @@ class AuthService:
             
             db.session.add(user)
             db.session.commit()
+            
+            # ✅ NOUVEAU : Envoyer email de bienvenue
+            if MailService.is_enabled():
+                welcome_result = MailService.send_welcome_email(user.email, user.nom_complet)
+                if welcome_result['success']:
+                    logging.info(f"Email de bienvenue envoyé à {user.email}")
+                else:
+                    logging.warning(f"Échec envoi email bienvenue: {welcome_result['message']}")
             
             return user, None
             
@@ -233,6 +243,15 @@ class AuthService:
             user.set_password(new_password)
             db.session.commit()
             
+            # ✅ NOUVEAU : Envoyer notification de changement
+            if MailService.is_enabled():
+                notification_result = MailService.send_password_changed_notification(
+                    user.email, 
+                    user.nom_complet
+                )
+                if notification_result['success']:
+                    logging.info(f"Notification changement mot de passe envoyée à {user.email}")
+            
             return True, "Mot de passe modifié avec succès"
             
         except Exception as e:
@@ -240,7 +259,10 @@ class AuthService:
             return False, f"Erreur lors du changement: {str(e)}"
     
     def forgot_password(self, email):
-        """Demander la réinitialisation du mot de passe"""
+        """
+        Demander la réinitialisation du mot de passe avec envoi d'email
+        ✅ AMÉLIORÉ : Avec envoi d'email et durée de 5 minutes
+        """
         try:
             email = email.lower().strip()
             user = User.query.filter_by(email=email, actif=True).first()
@@ -252,24 +274,50 @@ class AuthService:
             # Générer un token de réinitialisation
             reset_token = secrets.token_urlsafe(32)
             
-            # Stocker le token avec expiration (1 heure)
+            # ✅ MODIFIÉ : Expiration à 5 minutes au lieu d'1 heure
+            expires_at = datetime.utcnow() + timedelta(minutes=5)
+            
+            # Stocker le token avec expiration (5 minutes)
             self.reset_tokens[reset_token] = {
                 'user_id': user.id,
                 'email': user.email,
-                'expires_at': datetime.utcnow() + timedelta(hours=1)
+                'expires_at': expires_at
             }
             
-            # En production, envoyer un email ici
-            # self._send_reset_email(user, reset_token)
-            
-            # Pour le développement, on retourne le token
-            return True, f"Token de réinitialisation généré: {reset_token}"
+            # ✅ NOUVEAU : Envoyer l'email de réinitialisation
+            if MailService.is_enabled():
+                email_result = MailService.send_password_reset_email(
+                    user_email=user.email,
+                    username=user.nom_complet,
+                    reset_token=reset_token,
+                    expires_minutes=5
+                )
+                
+                if email_result['success']:
+                    logging.info(f"Email de réinitialisation envoyé à {user.email}")
+                    return True, "Un email de réinitialisation a été envoyé. Le lien expire dans 5 minutes."
+                else:
+                    # Si l'email n'a pas pu être envoyé, supprimer le token
+                    if reset_token in self.reset_tokens:
+                        del self.reset_tokens[reset_token]
+                    logging.error(f"Échec envoi email réinitialisation: {email_result['message']}")
+                    return False, "Erreur lors de l'envoi de l'email. Veuillez réessayer."
+            else:
+                # Service mail non configuré - mode développement
+                logging.warning("Service mail non configuré - token retourné pour développement")
+                return True, f"Token de réinitialisation (dev): {reset_token}"
             
         except Exception as e:
+            # Nettoyer le token en cas d'erreur
+            if 'reset_token' in locals() and reset_token in self.reset_tokens:
+                del self.reset_tokens[reset_token]
             return False, f"Erreur lors de la demande: {str(e)}"
     
     def reset_password(self, token, new_password):
-        """Réinitialiser le mot de passe avec un token"""
+        """
+        Réinitialiser le mot de passe avec un token
+        ✅ AMÉLIORÉ : Avec notification par email
+        """
         try:
             # Vérifier le token
             if token not in self.reset_tokens:
@@ -277,10 +325,10 @@ class AuthService:
             
             token_data = self.reset_tokens[token]
             
-            # Vérifier l'expiration
+            # Vérifier l'expiration (5 minutes)
             if datetime.utcnow() > token_data['expires_at']:
                 del self.reset_tokens[token]
-                return False, "Token expiré"
+                return False, "Token expiré. Veuillez refaire une demande de réinitialisation."
             
             # Valider le nouveau mot de passe
             if not self._validate_password(new_password):
@@ -295,6 +343,15 @@ class AuthService:
             # Changer le mot de passe avec TA méthode
             user.set_password(new_password)
             db.session.commit()
+            
+            # ✅ NOUVEAU : Envoyer notification de changement réussi
+            if MailService.is_enabled():
+                notification_result = MailService.send_password_changed_notification(
+                    user.email, 
+                    user.nom_complet
+                )
+                if notification_result['success']:
+                    logging.info(f"Notification changement mot de passe envoyée à {user.email}")
             
             # Supprimer le token utilisé
             del self.reset_tokens[token]
@@ -331,11 +388,65 @@ class AuthService:
             target_user.set_password(new_password)
             db.session.commit()
             
+            # ✅ NOUVEAU : Envoyer notification à l'utilisateur
+            if MailService.is_enabled():
+                notification_result = MailService.send_password_changed_notification(
+                    target_user.email, 
+                    target_user.nom_complet
+                )
+                if notification_result['success']:
+                    logging.info(f"Notification réinitialisation admin envoyée à {target_user.email}")
+            
             return True, f"Mot de passe réinitialisé pour {target_user.nom_complet}"  # TA propriété
             
         except Exception as e:
             db.session.rollback()
             return False, f"Erreur lors de la réinitialisation: {str(e)}"
+    
+    def get_reset_token_info(self, token):
+        """
+        ✅ NOUVEAU : Vérifier les informations d'un token de réinitialisation
+        Utile pour valider le token côté frontend avant la soumission
+        """
+        if token not in self.reset_tokens:
+            return None, "Token invalide"
+        
+        token_data = self.reset_tokens[token]
+        
+        if datetime.utcnow() > token_data['expires_at']:
+            del self.reset_tokens[token]
+            return None, "Token expiré"
+        
+        # Calculer le temps restant
+        time_remaining = token_data['expires_at'] - datetime.utcnow()
+        seconds_remaining = int(time_remaining.total_seconds())
+        
+        return {
+            'valid': True,
+            'email': token_data['email'],
+            'seconds_remaining': seconds_remaining,
+            'expires_at': token_data['expires_at'].isoformat()
+        }, None
+    
+    def cleanup_expired_tokens(self):
+        """
+        ✅ NOUVEAU : Nettoyer les tokens expirés
+        À appeler périodiquement (ex: avec un cron job)
+        """
+        current_time = datetime.utcnow()
+        expired_tokens = []
+        
+        for token, data in self.reset_tokens.items():
+            if current_time > data['expires_at']:
+                expired_tokens.append(token)
+        
+        for token in expired_tokens:
+            del self.reset_tokens[token]
+        
+        if expired_tokens:
+            logging.info(f"Nettoyé {len(expired_tokens)} tokens expirés")
+        
+        return len(expired_tokens)
     
     def _validate_user_data(self, data):
         """Valider les données utilisateur selon TON modèle"""
