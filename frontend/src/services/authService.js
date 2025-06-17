@@ -68,5 +68,32 @@ export const resetPassword = (token_reset, new_password) =>
     new_password
   });
 
+// ============== ✅ NOUVELLES FONCTIONS AJOUTÉES ==============
+
+/**
+ * Vérifier un token de réinitialisation (avant soumission)
+ */
+export const verifyResetToken = (token_reset) =>
+  axios.post(`${API}/auth/verify-reset-token`, { token: token_reset });
+
+/**
+ * Réinitialisation de mot de passe avec confirmation
+ */
+export const resetPasswordConfirm = (token_reset, new_password, confirm_password) =>
+  axios.post(`${API}/auth/reset-password-confirm`, {
+    token: token_reset,
+    new_password,
+    confirm_password
+  });
+
+/**
+ * Renouveler le token d'accès
+ */
+export const refreshToken = (refresh_token) =>
+  axios.post(`${API}/auth/refresh-token`, {}, {
+    headers: { Authorization: `Bearer ${refresh_token}` }
+  });
+
+
 // Exporter l'instance axios configurée pour d'autres services
 export { apiClient };
