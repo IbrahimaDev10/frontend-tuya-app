@@ -96,3 +96,13 @@
       font-size: 0.9rem;
     }
   }
+
+  .btn-danger {
+    background: #dc3545;
+    color: white;
+  }
+  
+  .btn-danger:hover:not(:disabled) {
+    background: #c82333;
+    transform: translateY(-1px);
+  }

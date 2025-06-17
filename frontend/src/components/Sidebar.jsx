@@ -11,7 +11,7 @@ const Sidebar = ({ isOpen, onClose }) => {
         icon: '🏠',
         label: 'Tableau de bord',
         path: '/dashboard',
-        active: true
+        active: window.location.pathname === '/dashboard'
       }
     ]
 
@@ -21,7 +21,8 @@ const Sidebar = ({ isOpen, onClose }) => {
         {
           icon: '👥',
           label: 'Gestion des Utilisateurs',
-          path: '/users'
+          path: '/users',
+          active: window.location.pathname === '/users'
         },
         {
           icon: '🏢',
@@ -49,6 +50,12 @@ const Sidebar = ({ isOpen, onClose }) => {
     if (isAdmin()) {
       return [
         ...baseItems,
+        {
+          icon: '👥',
+          label: 'Gestion des Utilisateurs',
+          path: '/users',
+          active: window.location.pathname === '/users'
+        },
         {
           icon: '👤',
           label: 'Gestion des Clients',
@@ -108,6 +115,12 @@ const Sidebar = ({ isOpen, onClose }) => {
 
   const sidebarItems = getSidebarItems()
 
+  const handleNavigation = (path) => {
+    // Utiliser window.location pour le moment
+    window.location.href = path
+    onClose()
+  }
+
   return (
     <>
       {isOpen && <div className="sidebar-overlay" onClick={onClose}></div>}
@@ -136,18 +149,13 @@ const Sidebar = ({ isOpen, onClose }) => {
           <ul className="sidebar-menu">
             {sidebarItems.map((item, index) => (
               <li key={index} className="sidebar-item">
-                <a 
-                  href={item.path}
+                <button 
                   className={`sidebar-link ${item.active ? 'active' : ''}`}
-                  onClick={(e) => {
-                    e.preventDefault()
-                    // Ici tu pourras ajouter la navigation avec React Router
-                    console.log('Navigate to:', item.path)
-                  }}
+                  onClick={() => handleNavigation(item.path)}
                 >
                   <span className="sidebar-icon">{item.icon}</span>
                   <span className="sidebar-label">{item.label}</span>
-                </a>
+                </button>
               </li>
             ))}
           </ul>

@@ -1,6 +1,6 @@
 import React from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
-import { AuthProvider, useAuth } from './store/authContext' // Ajout de useAuth
+import { AuthProvider, useAuth } from './store/authContext'
 import ProtectedRoute from './routes/ProtectedRoute'
 import Login from './auth/Login'
 import ForgotPassword from './auth/ForgotPassword'
@@ -8,6 +8,7 @@ import ResetPassword from './auth/ResetPassword'
 import AdminDashboard from './dashboards/AdminDashboard'
 import SuperAdminDashboard from './dashboards/SuperAdminDashboard'
 import ClientDashboard from './dashboards/ClientDashboard'
+import UserManagement from './pages/Users/UserManagement'
 import NotFound from './pages/NotFound'
 import './App.css'
 
@@ -28,6 +29,17 @@ function App() {
               element={
                 <ProtectedRoute>
                   <DashboardRouter />
+                </ProtectedRoute>
+              }
+            />
+            
+            <Route
+              path="/users"
+              element={
+                <ProtectedRoute>
+                  <AdminRoute>
+                    <UserManagement />
+                  </AdminRoute>
                 </ProtectedRoute>
               }
             />
@@ -55,6 +67,17 @@ const DashboardRouter = () => {
   }
 
   return <Navigate to="/login" replace />
+}
+
+// Composant pour protéger les routes admin
+const AdminRoute = ({ children }) => {
+  const { isAdmin, isSuperadmin } = useAuth()
+  
+  if (isAdmin() || isSuperadmin()) {
+    return children
+  }
+  
+  return <Navigate to="/dashboard" replace />
 }
 
 export default App

@@ -1,0 +1,141 @@
+.modal-content.large {
+    max-width: 600px;
+  }
+  
+  .modal-content.small {
+    max-width: 400px;
+  }
+  
+  .form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+  
+  .form-section {
+    margin-bottom: 2rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid #e9ecef;
+  }
+  
+  .form-section:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+  }
+  
+  .form-section h4 {
+    color: #333;
+    font-size: 1.1rem;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  
+  .section-description {
+    color: #666;
+    font-size: 0.9rem;
+    margin-bottom: 1rem;
+    font-style: italic;
+  }
+  
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+  
+  .form-group select {
+    padding: 0.75rem;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+    background: white;
+    font-family: inherit;
+  }
+  
+  .form-group select:focus {
+    outline: none;
+    border-color: #007bff;
+    box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+  }
+  
+  .textarea {
+    min-height: 80px;
+    resize: vertical;
+    font-family: inherit;
+  }
+  
+  .password-section {
+    background: #f8f9fa;
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+  }
+  
+  .checkbox-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+  
+  .checkbox-group input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+  }
+  
+  .checkbox-group label {
+    font-size: 0.9rem;
+    color: #333;
+    cursor: pointer;
+    margin: 0;
+  }
+  
+  .info-box {
+    background: #e3f2fd;
+    border: 1px solid #bbdefb;
+    border-radius: 6px;
+    padding: 1rem;
+    margin-top: 1rem;
+  }
+  
+  .info-box strong {
+    color: #1976d2;
+  }
+  
+  @media (max-width: 768px) {
+    .modal-content.large {
+      max-width: 90vw;
+      margin: 1rem;
+    }
+  
+    .form-grid {
+      grid-template-columns: 1fr;
+    }
+  
+    .form-section {
+      padding-bottom: 1rem;
+    }
+  
+    .password-section {
+      padding: 0.75rem;
+    }
+  }
+  
+  @media (max-width: 480px) {
+    .modal-content.large {
+      max-width: 95vw;
+      margin: 0.5rem;
+    }
+  
+    .form-section h4 {
+      font-size: 1rem;
+    }
+  
+    .section-description {
+      font-size: 0.8rem;
+    }
+  }

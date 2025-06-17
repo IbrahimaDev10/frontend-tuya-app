@@ -2,6 +2,20 @@ import axios from 'axios';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
+// Configuration axios avec intercepteur pour les tokens
+const apiClient = axios.create({
+  baseURL: API,
+});
+
+// Intercepteur pour ajouter automatiquement le token
+apiClient.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
 /**
  * Authentification
  */
@@ -53,3 +67,6 @@ export const resetPassword = (token_reset, new_password) =>
     token: token_reset,
     new_password
   });
+
+// Exporter l'instance axios configurée pour d'autres services
+export { apiClient };
