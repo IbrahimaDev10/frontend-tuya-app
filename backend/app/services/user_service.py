@@ -3,6 +3,8 @@ from app.models.user import User
 from app.models.client import Client
 from datetime import datetime
 from typing import Optional, Tuple, List, Dict, Any
+from app.utils.token_manager import ActivationTokenManager
+from app.services.mail_service import MailService
 import secrets
 import string
 
@@ -63,26 +65,59 @@ class UserService:
                 email=email_admin,
                 telephone=telephone_admin,
                 role='admin',
-                client_id=nouveau_client.id
+                client_id=nouveau_client.id,
+                actif=False  # ✅ CHANGEMENT : Créer inactif
             )
             
-            # 🔐 Générer un mot de passe temporaire pour l'admin
-            mot_de_passe_temporaire = self._generer_mot_de_passe_temporaire()
-            admin_client.set_password(mot_de_passe_temporaire)
+            # 🔐 CHANGEMENT : Créer avec un mot de passe temporaire (sera remplacé lors de l'activation)
+            admin_client.set_password("temp_password_will_be_replaced")
             
             db.session.add(admin_client)
+            db.session.flush()  # Pour obtenir l'ID de l'admin
+            
+            # 📧 NOUVEAU : Générer token d'activation et envoyer email
+            from app.utils.token_manager import ActivationTokenManager
+            from app.services.mail_service import MailService
+
+            print(f"🔍 Génération token pour admin:")
+            print(f"   - ID: {admin_client.id}")
+            print(f"   - Email: {email_admin}")
+            print(f"   - Prénom: {prenom_admin}")
+            print(f"   - Nom: {nom_admin}")
+
+            # Nouveau code correct avec la bonne variable
+            token = ActivationTokenManager.generate_token(admin_client.id, email_admin, 86400)  # 24h
+            print(f"🎫 Token généré: {token}")
+
+            # Vérifier que le token est bien enregistré
+            validation = ActivationTokenManager.validate_token(token)
+            print(f"✅ Validation immédiate du token: {validation}")
+                
+            # Envoyer l'email d'activation
+            email_result = MailService.send_admin_activation_email(
+                user_email=email_admin,
+                prenom=prenom_admin,
+                nom=nom_admin,
+                client_name=nouveau_client.nom_entreprise,
+                activation_token=token,
+                expires_hours=24
+            )
+
+            print(f"📧 Résultat envoi email: {email_result}")
+            
             db.session.commit()
             
-            # 🎉 Préparer le résultat complet
+            # 🎉 Préparer le résultat modifié
             resultat = {
                 'client': nouveau_client.to_dict(),
                 'admin_client': admin_client.to_dict(),
-                'mot_de_passe_temporaire': mot_de_passe_temporaire,
+                'token_activation': token,  # Pour debug/test seulement
+                'email_result': email_result,
                 'identifiants_connexion': {
                     'email': email_admin,
-                    'mot_de_passe': mot_de_passe_temporaire
+                    'status': 'En attente d\'activation'
                 },
-                'message_instructions': f"Transférez ces identifiants à l'administrateur de {nouveau_client.nom_entreprise}"
+                'message_instructions': f"Un email d'activation a été envoyé à {email_admin}"
             }
             
             return resultat, None
@@ -231,6 +266,324 @@ class UserService:
             db.session.rollback()
             return False, f"Erreur lors de la réactivation: {str(e)}"
     
+    # =================== NOUVELLES MÉTHODES POUR L'ACTIVATION ===================
+    
+    def activer_admin(self, token: str, mot_de_passe: str, confirmation_mot_de_passe: str) -> Tuple[Optional[Dict], Optional[str]]:
+        """Activer un compte admin avec définition du mot de passe"""
+        try:
+            print(f"🔍 === DEBUG ACTIVATION ===")
+            print(f"🎫 Token reçu: {token}")
+            print(f"🔒 Mot de passe fourni: {'*' * len(mot_de_passe)}")
+            print(f"🔒 Confirmation fournie: {'*' * len(confirmation_mot_de_passe)}")
+            
+            # Validation du token avec debug complet
+            print(f"🎫 Tentative d'import de ActivationTokenManager...")
+            
+            # Essayez différents imports pour identifier le bon
+            try:
+                from app.utils.token_manager import ActivationTokenManager
+                print(f"✅ Import réussi depuis app.utils.token_manager")
+            except ImportError as e:
+                print(f"❌ Échec import app.utils.token_manager: {e}")
+                try:
+                    from app.utils.activation_token_manager import ActivationTokenManager
+                    print(f"✅ Import réussi depuis app.utils.activation_token_manager")
+                except ImportError as e2:
+                    print(f"❌ Échec import app.utils.activation_token_manager: {e2}")
+                    return None, f"Impossible d'importer ActivationTokenManager"
+            
+            print(f"🎫 Appel de ActivationTokenManager.validate_token...")
+            print(f"🎫 Méthode validate_token: {ActivationTokenManager.validate_token}")
+            
+            validation = ActivationTokenManager.validate_token(token)
+            
+            print(f"🎫 === RÉSULTAT VALIDATION ===")
+            print(f"Type: {type(validation)}")
+            print(f"Contenu: {validation}")
+            print(f"Clés disponibles: {list(validation.keys()) if isinstance(validation, dict) else 'Pas un dict'}")
+            print(f"=== FIN VALIDATION ===")
+            
+            # Test de toutes les structures possibles
+            user_id = None
+            is_valid = False
+            error_message = "Token invalide"
+            
+            if isinstance(validation, dict):
+                print(f"✅ C'est un dictionnaire")
+                
+                # Structure 1: {'valid': True/False, 'user_id': '...', 'message': '...'}
+                if 'valid' in validation:
+                    print(f"📋 Structure avec 'valid': {validation['valid']}")
+                    is_valid = validation['valid']
+                    user_id = validation.get('user_id')
+                    error_message = validation.get('message', 'Token invalide')
+                    
+                    # ✅ NOUVEAU : Structure spécifique avec admin_info
+                    if is_valid and not user_id and 'admin_info' in validation:
+                        print(f"📋 Structure avec admin_info détectée")
+                        admin_info = validation['admin_info']
+                        print(f"📋 Admin info: {admin_info}")
+                        
+                        # Récupérer l'user_id depuis la base via l'email
+                        if 'email' in admin_info:
+                            # SUPPRIMÉ: from app.models import User  # ← PROBLÈME ÉTAIT ICI
+                            admin_user = User.query.filter_by(email=admin_info['email']).first()
+                            if admin_user:
+                                user_id = admin_user.id
+                                print(f"📋 User ID trouvé via email: {user_id}")
+                            else:
+                                print(f"❌ Utilisateur non trouvé avec email: {admin_info['email']}")
+                
+                # Structure 2: {'success': True/False, 'data': {...}}
+                elif 'success' in validation:
+                    print(f"📋 Structure avec 'success': {validation['success']}")
+                    is_valid = validation['success']
+                    if 'data' in validation and isinstance(validation['data'], dict):
+                        user_id = validation['data'].get('user_id')
+                    else:
+                        user_id = validation.get('user_id')
+                    error_message = validation.get('message', 'Token invalide')
+                
+                # Structure 3: Directement les données
+                elif 'user_id' in validation:
+                    print(f"📋 Structure directe avec user_id")
+                    is_valid = True
+                    user_id = validation['user_id']
+                    error_message = validation.get('message', 'Token valide')
+                
+                else:
+                    print(f"❌ Structure inconnue")
+                    print(f"Clés disponibles: {list(validation.keys())}")
+                    return None, f"Structure de validation inconnue: {validation}"
+            
+            elif isinstance(validation, bool):
+                print(f"📋 Validation est un boolean: {validation}")
+                is_valid = validation
+                if not is_valid:
+                    return None, "Token invalide"
+            
+            elif validation is None:
+                print(f"❌ Validation est None")
+                return None, "Erreur de validation du token"
+            
+            else:
+                print(f"❌ Type de validation inattendu: {type(validation)}")
+                return None, f"Format de validation inattendu: {type(validation)}"
+            
+            print(f"🎯 Résultats de parsing:")
+            print(f"   - is_valid: {is_valid}")
+            print(f"   - user_id: {user_id}")
+            print(f"   - error_message: {error_message}")
+            
+            if not is_valid:
+                return None, error_message
+            
+            if not user_id:
+                return None, "ID utilisateur manquant dans la validation"
+            
+            print(f"👤 Recherche utilisateur avec ID: {user_id}")
+            
+            # Récupérer l'utilisateur (User est déjà importé en haut du fichier)
+            utilisateur = User.query.get(user_id)
+            if not utilisateur:
+                print(f"❌ Utilisateur non trouvé avec ID: {user_id}")
+                return None, "Utilisateur non trouvé"
+            
+            print(f"✅ Utilisateur trouvé: {utilisateur.email} (actif: {utilisateur.actif})")
+            
+            # Vérifications
+            if utilisateur.actif:
+                return None, "Ce compte est déjà activé"
+            
+            if mot_de_passe != confirmation_mot_de_passe:
+                return None, "Les mots de passe ne correspondent pas"
+            
+            if len(mot_de_passe) < 8:
+                return None, "Le mot de passe doit contenir au moins 8 caractères"
+            
+            print(f"🔒 Activation du compte en cours...")
+            
+            # Activer le compte
+            utilisateur.set_password(mot_de_passe)
+            utilisateur.actif = True
+            
+            # Invalider le token
+            ActivationTokenManager.use_token(token)
+            
+            db.session.commit()
+            
+            print(f"✅ Compte activé avec succès pour {utilisateur.email}")
+            
+            # 📧 Envoyer email de confirmation
+            from app.services.mail_service import MailService
+            
+            # Récupérer les infos du client
+            client_name = "SERTEC IoT"
+            if utilisateur.client:
+                client_name = utilisateur.client.nom_entreprise
+            
+            email_result = MailService.send_activation_confirmation_email(
+                user_email=utilisateur.email,
+                prenom=utilisateur.prenom,
+                nom=utilisateur.nom,
+                client_name=client_name
+            )
+            
+            print(f"📧 Email de confirmation: {email_result}")
+            
+            resultat = {
+                'utilisateur': utilisateur.to_dict(),
+                'email_confirmation': email_result,
+                'message': f"✅ Compte activé avec succès ! Un email de confirmation a été envoyé à {utilisateur.email}"
+            }
+            
+            return resultat, None
+            
+        except Exception as e:
+            db.session.rollback()
+            print(f"❌ ERREUR DANS ACTIVER_ADMIN: {str(e)}")
+            import traceback
+            print(f"❌ TRACEBACK:")
+            traceback.print_exc()
+            return None, f"Erreur lors de l'activation: {str(e)}"
+    
+    def valider_token_activation(self, token: str) -> Tuple[Optional[Dict], Optional[str]]:
+        """Valider un token d'activation sans le consommer (pour vérification côté frontend)"""
+        try:
+            from app.utils.token_manager import ActivationTokenManager
+            
+            token_data = ActivationTokenManager.validate_token(token)
+            if not token_data:
+                return None, "Token invalide ou expiré"
+            
+            # Récupérer les infos de l'admin
+            admin = User.query.get(token_data['user_id'])
+            if not admin:
+                return None, "Utilisateur non trouvé"
+            
+            if admin.actif:
+                return None, "Ce compte est déjà activé"
+            
+            # Calculer le temps restant
+            import time
+            temps_restant = int(token_data['expires_at'] - time.time())
+            
+            resultat = {
+                'admin_info': {
+                    'prenom': admin.prenom,
+                    'nom': admin.nom,
+                    'email': admin.email,
+                    'entreprise': admin.client.nom_entreprise if admin.client else None
+                },
+                'temps_restant_secondes': temps_restant,
+                'temps_restant_heures': round(temps_restant / 3600, 1)
+            }
+            
+            return resultat, None
+            
+        except Exception as e:
+            return None, f"Erreur lors de la validation: {str(e)}"
+    
+    def regenerer_token_activation(self, admin_id: str, utilisateur_regenerateur: User) -> Tuple[Optional[str], Optional[str]]:
+        """Régénérer un token d'activation pour un admin inactif"""
+        try:
+            if not utilisateur_regenerateur.is_superadmin():
+                return None, "Seul le superadmin peut régénérer des tokens"
+            
+            admin = User.query.get(admin_id)
+            if not admin:
+                return None, "Administrateur non trouvé"
+            
+            if admin.actif:
+                return None, "Ce compte est déjà activé"
+            
+            if admin.role != 'admin':
+                return None, "Cette action n'est disponible que pour les administrateurs"
+            
+            # Révoquer les anciens tokens de cet utilisateur
+            from app.utils.token_manager import ActivationTokenManager
+            from app.services.mail_service import MailService
+            
+            ActivationTokenManager.revoke_user_tokens(admin.id)
+            
+            # Générer nouveau token
+            token = ActivationTokenManager.generate_token(admin.id, admin.email)
+            
+            # Renvoyer l'email
+            email_result = MailService.send_admin_activation_email(
+                user_email=admin.email,
+                prenom=admin.prenom,
+                nom=admin.nom,
+                client_name=admin.client.nom_entreprise if admin.client else "Entreprise",
+                activation_token=token,
+                expires_hours=24
+            )
+            
+            if email_result['success']:
+                return token, None
+            else:
+                return token, f"Token généré mais email non envoyé: {email_result['message']}"
+            
+        except Exception as e:
+            return None, f"Erreur lors de la régénération: {str(e)}"
+    
+    def lister_admins_en_attente(self, utilisateur_demandeur: User) -> Tuple[Optional[List[Dict]], Optional[str]]:
+        """Lister les administrateurs en attente d'activation - SUPERADMIN SEULEMENT"""
+        try:
+            if not utilisateur_demandeur.is_superadmin():
+                return None, "Seul le superadmin peut voir les admins en attente"
+            
+            admins_inactifs = User.query.filter_by(
+                role='admin',
+                actif=False
+            ).order_by(User.date_creation.desc()).all()
+            
+            liste_admins = []
+            for admin in admins_inactifs:
+                admin_dict = admin.to_dict(include_sensitive=True)
+                admin_dict['entreprise'] = admin.client.nom_entreprise if admin.client else None
+                admin_dict['jours_depuis_creation'] = (datetime.utcnow() - admin.date_creation).days
+                liste_admins.append(admin_dict)
+            
+            return liste_admins, None
+            
+        except Exception as e:
+            return None, f"Erreur lors de la récupération: {str(e)}"
+    
+    def generer_et_envoyer_nouveau_mot_de_passe(self, utilisateur_id: str, utilisateur_generateur: User) -> Tuple[Optional[str], Optional[str]]:
+        """Générer un nouveau mot de passe et l'envoyer par email (pour fonction reset existante)"""
+        try:
+            # Générer le nouveau mot de passe
+            nouveau_mot_de_passe = self._generer_mot_de_passe_temporaire()
+            succes, message = self.reinitialiser_mot_de_passe(utilisateur_id, nouveau_mot_de_passe, utilisateur_generateur)
+            
+            if not succes:
+                return None, message
+            
+            # Récupérer l'utilisateur pour l'email
+            utilisateur = User.query.get(utilisateur_id)
+            if not utilisateur:
+                return None, "Utilisateur non trouvé"
+            
+            # Envoyer par email
+            from app.services.mail_service import MailService
+            email_result = MailService.send_new_password_email(
+                user_email=utilisateur.email,
+                prenom=utilisateur.prenom,
+                nom=utilisateur.nom,
+                new_password=nouveau_mot_de_passe,
+                admin_name=utilisateur_generateur.nom_complet if utilisateur_generateur.id != utilisateur.id else None
+            )
+            
+            if email_result['success']:
+                return nouveau_mot_de_passe, None
+            else:
+                return nouveau_mot_de_passe, f"Mot de passe généré mais email non envoyé: {email_result['message']}"
+                
+        except Exception as e:
+            return None, f"Erreur lors de la génération: {str(e)}"
+        
+
     # =================== GESTION DES UTILISATEURS ===================
     
     def creer_utilisateur(self, donnees_utilisateur: Dict[str, Any], utilisateur_createur: User) -> Tuple[Optional[User], Optional[str]]:
@@ -423,6 +776,8 @@ class UserService:
             
         except Exception as e:
             db.session.rollback()
+        except Exception as e:
+            db.session.rollback()
             return False, f"Erreur lors de la désactivation: {str(e)}"
     
     def reactiver_utilisateur(self, utilisateur_id: str, utilisateur_reactivateur: User) -> Tuple[bool, str]:
@@ -548,7 +903,8 @@ class UserService:
                     'total_superadmins': User.query.filter_by(role='superadmin', actif=True).count(),
                     'total_admins': User.query.filter_by(role='admin', actif=True).count(),
                     'total_users': User.query.filter_by(role='user', actif=True).count(),
-                    'utilisateurs_inactifs': User.query.filter_by(actif=False).count()
+                    'utilisateurs_inactifs': User.query.filter_by(actif=False).count(),
+                    'admins_en_attente': User.query.filter_by(role='admin', actif=False).count()
                 }
             else:
                 # Stats pour le client de l'admin
@@ -574,12 +930,12 @@ class UserService:
             if not donnees.get(champ) or not str(donnees[champ]).strip():
                 return False
         
-        # Valider l'email
+        # Valider l'email - CORRECTION ICI
         import re
         email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
         if not re.match(email_pattern, donnees['email']):
             return False
-        
+    
         return True
     
     def _valider_mot_de_passe(self, mot_de_passe: str) -> bool:
@@ -628,3 +984,29 @@ class UserService:
         """Vérifier si un utilisateur peut en supprimer un autre"""
         # Même logique que modification pour le moment
         return self._peut_modifier_utilisateur(utilisateur_supprimeur, utilisateur_cible)
+    
+    # =================== MÉTHODES UTILITAIRES POUR DEBUG ===================
+    
+    def nettoyer_tokens_expires(self) -> Dict[str, int]:
+        """Nettoyer les tokens expirés (méthode utilitaire)"""
+        try:
+            from app.utils.token_manager import ActivationTokenManager
+            
+            tokens_supprimes = ActivationTokenManager.cleanup_expired()
+            stats = ActivationTokenManager.get_stats()
+            
+            return {
+                'tokens_supprimes': tokens_supprimes,
+                'stats_actuelles': stats
+            }
+        except Exception as e:
+            return {'erreur': str(e)}
+    
+    def obtenir_stats_tokens(self) -> Dict[str, Any]:
+        """Obtenir les statistiques des tokens (debug)"""
+        try:
+            from app.utils.token_manager import ActivationTokenManager
+            return ActivationTokenManager.get_stats()
+        except Exception as e:
+            return {'erreur': str(e)}
+    
