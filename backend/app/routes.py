@@ -9,7 +9,7 @@ tuya_client = TuyaClient()
 
 @api.route("/", methods=["GET"])
 def index():
-    return 'yesssssssssss'
+    return 'Le Serveur'
 
 @api.route("/connexion", methods=["POST"])
 def login():

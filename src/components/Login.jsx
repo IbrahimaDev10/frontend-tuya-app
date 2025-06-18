@@ -33,7 +33,7 @@ export default function Login() {
     e.preventDefault();
 
     try {
-      const {data} = await axios.post("http://localhost:5001/token", formData);
+      const {data} = await axios.post("http://localhost:5000/token", formData);
 
     if(data.success) {
       localStorage.setItem("jwt", data.jwt);

@@ -30,7 +30,8 @@ ENV/
 instance/
 .webassets-cache
 
-# Node.js
+# React
+
 node_modules/
 dist/
 build/
