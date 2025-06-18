@@ -140,7 +140,7 @@ const Sidebar = ({ isOpen, onClose }) => {
       <aside className={`sidebar ${isOpen ? 'sidebar-open' : ''}`}>
         <div className="sidebar-header">
           <div className="sidebar-logo">
-            <span>LOGO</span>
+             <img src="/src/assets/images/logob.png" alt="Logo" />
           </div>
           <button className="sidebar-close" onClick={onClose}>
             ×

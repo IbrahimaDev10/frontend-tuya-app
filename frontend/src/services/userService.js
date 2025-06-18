@@ -65,7 +65,7 @@ class UserService {
   }
 
   async genererMotDePasse(utilisateurId) {
-    return apiClient.post(`/users/${utilisateurId}/generer-mot-de-passe`);
+    return apiClient.post(`/users/${utilisateurId}/envoyer-nouveau-mot-de-passe`);
   }
 
   // =================== PROFIL UTILISATEUR ===================

@@ -40,12 +40,12 @@ const Navbar = ({ onMenuToggle }) => {
           </button>
           
           <div className="navbar-logo">
-            <span>LOGO</span>
+            <img src="/src/assets/images/logob.png" alt="Logo" />
           </div>
         </div>
 
         <div className="navbar-center">
-          <h1>Sertec Tech</h1>
+          <h1>Sertec Ingénierie</h1>
         </div>
 
         <div className="navbar-right">

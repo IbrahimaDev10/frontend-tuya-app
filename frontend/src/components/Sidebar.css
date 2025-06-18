@@ -37,10 +37,11 @@
     height: 60px;
   }
   
-  .sidebar-logo span {
-    font-weight: bold;
-    color: #007bff;
-    font-size: 1.2rem;
+  .sidebar-logo img {
+    height: 40px; 
+    width: auto;
+    max-width: 150px;
+    object-fit: contain;
   }
   
   .sidebar-close {

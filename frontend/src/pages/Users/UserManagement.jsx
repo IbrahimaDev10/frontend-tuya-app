@@ -206,7 +206,7 @@ const UserManagement = () => {
       // Copier dans le presse-papier
       await navigator.clipboard.writeText(password)
       
-      showToast(`Mot de passe généré pour ${userName}: ${password} (copié dans le presse-papier)`, 'success')
+      showToast(`Mot de passe généré pour ${userName}`, 'success')
     } catch (error) {
       showToast('Erreur lors de la génération du mot de passe', 'error')
     }
