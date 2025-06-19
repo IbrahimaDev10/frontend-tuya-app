@@ -8,7 +8,9 @@ import ResetPassword from './auth/ResetPassword'
 import AdminDashboard from './dashboards/AdminDashboard'
 import SuperAdminDashboard from './dashboards/SuperAdminDashboard'
 import ClientDashboard from './dashboards/ClientDashboard'
-import UserManagement from './pages/Users/UserManagement'
+import UserManagement from './pages/users/UserManagement'
+import SiteManagement from './pages/sites/SiteManagement'
+import DeviceManagement from './pages/Devices/DeviceManagement'
 import NotFound from './pages/NotFound'
 import './App.css'
 
@@ -37,13 +39,36 @@ function App() {
               path="/users"
               element={
                 <ProtectedRoute>
-                  <AdminRoute>
+                  <AdminOrClientRoute>
                     <UserManagement />
-                  </AdminRoute>
+                  </AdminOrClientRoute>
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/sites"
+              element={
+                <ProtectedRoute>
+                  <AdminOrClientRoute>
+                    <SiteManagement />
+                  </AdminOrClientRoute>
                 </ProtectedRoute>
               }
             />
             
+            <Route
+                path="/devices"
+                element={
+                  <ProtectedRoute>
+                    <AdminOrClientRoute>
+                      <DeviceManagement />
+                    </AdminOrClientRoute>
+                  </ProtectedRoute>
+                }
+              />
+
+
             {/* Redirection par défaut */}
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="*" element={<NotFound />} />
@@ -70,10 +95,10 @@ const DashboardRouter = () => {
 }
 
 // Composant pour protéger les routes admin
-const AdminRoute = ({ children }) => {
-  const { isAdmin, isSuperadmin } = useAuth()
+const AdminOrClientRoute = ({ children }) => {
+  const { isAdmin, isSuperadmin, isClient } = useAuth()
   
-  if (isAdmin() || isSuperadmin()) {
+  if (isAdmin() || isSuperadmin() || isClient()) {
     return children
   }
   

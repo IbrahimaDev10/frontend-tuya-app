@@ -37,8 +37,9 @@ const Sidebar = ({ isOpen, onClose }) => {
         },
         {
           icon: '📱',
-          label: 'Tous les Appareils',
-          path: '/devices'
+          label: 'Gestion des Appareils',
+          path: '/devices',
+          active: window.location.pathname === '/devices'
         },
         {
           icon: '📊',
@@ -75,8 +76,9 @@ const Sidebar = ({ isOpen, onClose }) => {
         },
         {
           icon: '📱',
-          label: 'Appareils Structure',
-          path: '/structure-devices'
+          label: 'Gestion des Appareils',
+          path: '/devices',
+          active: window.location.pathname === '/devices'
         },
         {
           icon: '📋',
@@ -102,7 +104,8 @@ const Sidebar = ({ isOpen, onClose }) => {
         {
           icon: '📱',
           label: 'Mes Appareils',
-          path: '/my-devices'
+          path: '/devices',
+          active: window.location.pathname === '/devices'
         },
         {
           icon: '🔄',
