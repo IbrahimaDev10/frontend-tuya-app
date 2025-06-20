@@ -5,6 +5,7 @@ import ProtectedRoute from './routes/ProtectedRoute'
 import Login from './auth/Login'
 import ForgotPassword from './auth/ForgotPassword'
 import ResetPassword from './auth/ResetPassword'
+import AdminActivation from './auth/AdminActivation'
 import AdminDashboard from './dashboards/AdminDashboard'
 import SuperAdminDashboard from './dashboards/SuperAdminDashboard'
 import ClientDashboard from './dashboards/ClientDashboard'
@@ -22,8 +23,9 @@ function App() {
           <Routes>
             {/* Routes publiques */}
             <Route path="/login" element={<Login />} />
-            <Route path="/forgot-password" element={<ForgotPassword />} />
-            <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/activer-admin/:token" element={<AdminActivation />} />
             
             {/* Routes protégées */}
             <Route

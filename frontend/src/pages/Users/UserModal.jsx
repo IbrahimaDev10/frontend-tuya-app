@@ -106,7 +106,21 @@ const UserModal = ({ user, onClose, onSave, clients = [] }) => {
             `,
             icon: 'success'
           });
-          
+        } else if (response.data.lien_activation) {
+          // Cas d'un administrateur créé avec lien d'activation
+          Swal.fire({
+            title: 'Administrateur créé avec succès !',
+            html: `
+              <p>Un email d'activation a été envoyé à <strong>${formData.email}</strong></p>
+              <p>L'administrateur devra cliquer sur le lien pour activer son compte.</p>
+            `,
+            icon: 'success'
+          });
+        } else {
+          Swal.fire({
+            title: 'Utilisateur créé avec succès !',
+            icon: 'success'
+          });
         }
       }
 

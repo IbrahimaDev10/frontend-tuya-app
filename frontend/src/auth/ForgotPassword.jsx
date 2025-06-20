@@ -43,7 +43,7 @@ const ForgotPassword = () => {
       <div className="auth-card">
         <div className="auth-header">
           <div className="logo-placeholder">
-            <span>LOGO</span>
+          <img src="/src/assets/images/sertec_logo.jpeg" alt="Logo" />
           </div>
           <h2>Mot de passe oublié</h2>
           <p>Entrez votre email pour recevoir un lien de réinitialisation</p>

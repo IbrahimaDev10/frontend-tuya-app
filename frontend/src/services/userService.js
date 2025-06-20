@@ -91,6 +91,31 @@ class UserService {
   async listerUtilisateursInactifs() {
     return apiClient.get('/users/inactifs');
   }
+
+  // =================== ACTIVATION ADMIN ===================
+  
+  async activerAdmin(token, motDePasse, confirmMotDePasse) {
+    return apiClient.post(`/users/activer-admin/${token}`, {
+      mot_de_passe: motDePasse,
+      confirmpasse: confirmMotDePasse
+    });
+  }
+
+  async validerTokenActivation(token) {
+    return apiClient.get(`/users/valider-token-activation/${token}`);
+  }
+
+  async regenererTokenActivation(adminId) {
+    return apiClient.post(`/users/${adminId}/regenerer-token-activation`);
+  }
+
+  async listerAdminsEnAttente() {
+    return apiClient.get('/users/admins-en-attente');
+  }
+
+  async envoyerNouveauMotDePasse(utilisateurId) {
+    return apiClient.post(`/users/${utilisateurId}/envoyer-nouveau-mot-de-passe`);
+  }
 }
 
 export default new UserService();

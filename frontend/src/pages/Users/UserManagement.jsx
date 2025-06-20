@@ -7,6 +7,7 @@ import Button from '../../components/Button'
 import Input from '../../components/Input'
 import UserModal from './UserModal'
 import ClientModal from './ClientModal'
+import PendingAdmins from './PendingAdmins'
 import ConfirmModal from '../../components/ConfirmModal'
 import Toast from '../../components/Toast'
 import './UserManagement.css'
@@ -306,12 +307,14 @@ const UserManagement = () => {
                 </div>
                 )}
 
-            <Button
-              variant="primary"
-              onClick={selectedTab === 'users' ? handleCreateUser : handleCreateClient}
-            >
-              + {selectedTab === 'users' ? 'Nouvel utilisateur' : 'Nouveau client'}
-            </Button>
+            {selectedTab !== 'pending' && (
+              <Button
+                variant="primary"
+                onClick={selectedTab === 'users' ? handleCreateUser : handleCreateClient}
+              >
+                + {selectedTab === 'users' ? 'Nouvel utilisateur' : 'Nouveau client'}
+              </Button>
+            )}
           </div>
         </div>
 
@@ -390,6 +393,12 @@ const UserManagement = () => {
             >
               Clients
             </button>
+            <button
+              className={`tab ${selectedTab === 'pending' ? 'active' : ''}`}
+              onClick={() => setSelectedTab('pending')}
+            >
+              Admins en attente
+            </button>
           </div>
         )}
 
@@ -404,7 +413,7 @@ const UserManagement = () => {
           isSuperadmin={isSuperadmin()}
         />
         
-        ) : (
+        ) : selectedTab === 'clients' ? (
             <ClientsTable
                 clients={getFilteredClients()}
                 onEdit={handleEditClient}
@@ -412,9 +421,9 @@ const UserManagement = () => {
                 isSuperadmin={isSuperadmin()}
                 onToggleStatus={handleDeactivateClient}
                 />
-
-          
-        )}
+        ) : selectedTab === 'pending' ? (
+          <PendingAdmins />
+        ) : null}
 
         {/* Modals */}
         {showUserModal && (

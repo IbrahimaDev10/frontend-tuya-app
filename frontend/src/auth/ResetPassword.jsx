@@ -220,6 +220,7 @@ const ResetPassword = () => {
       <div className="auth-card">
         <div className="auth-header">
           <div className="logo-placeholder">
+          <img src="/src/assets/images/sertec_logo.jpeg" alt="Logo" />
             <span>{tokenValid ? '🔐' : '❌'}</span>
           </div>
           <h2>

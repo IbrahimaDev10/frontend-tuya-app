@@ -79,7 +79,7 @@ const Login = () => {
       <div className="auth-card">
         <div className="auth-header">
           <div className="logo-placeholder">
-            <img src="../assets/images/sertec_logo.jpeg" alt="Logo" />
+            <img src="/src/assets/images/sertec_logo.jpeg" alt="Logo" />
           </div>
           <h2>Connexion</h2>
           <p>Accédez à votre espace de gestion</p>

@@ -52,6 +52,13 @@
     gap: 1rem;
   }
   
+  /* Image */
+.auth-header .logo-placeholder img{
+  height:105px;
+ }
+ 
+ 
+
   .error-message {
     background: #fee;
     color: #c33;
