@@ -43,11 +43,13 @@
     background: #007bff;
   }
   
-  .navbar-logo span {
-    font-weight: bold;
-    color: #007bff;
-    font-size: 1.2rem;
+  
+    .navbar-logo img {
+    height: 40px; /* Ajustez selon vos besoins */
+    width: auto;
+    max-width: 150px;
   }
+  
   
   .navbar-center h1 {
     font-size: 1.2rem;

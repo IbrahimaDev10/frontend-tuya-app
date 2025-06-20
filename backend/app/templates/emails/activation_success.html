@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Compte activé avec succès</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }
+        .container { max-width: 600px; margin: 0 auto; background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .header { text-align: center; margin-bottom: 30px; }
+        .success-icon { font-size: 48px; color: #28a745; margin-bottom: 20px; }
+        .title { color: #333; font-size: 24px; margin-bottom: 20px; }
+        .content { color: #555; line-height: 1.6; margin-bottom: 30px; }
+        .login-button { display: inline-block; background-color: #007bff; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+        .login-button:hover { background-color: #0056b3; }
+        .info-box { background-color: #e9ecef; padding: 15px; border-radius: 5px; margin: 20px 0; }
+        .footer { text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; color: #777; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="success-icon">✅</div>
+            <h1 class="title">Compte activé avec succès !</h1>
+        </div>
+        
+        <div class="content">
+            <p>Bonjour <strong>{{ username }}</strong>,</p>
+            
+            <p>🎉 <strong>Excellente nouvelle !</strong> Votre compte administrateur pour <strong>{{ client_name }}</strong> a été activé avec succès le {{ timestamp }}.</p>
+            
+            <div class="info-box">
+                <p><strong>📧 Email de connexion :</strong> {{ user_email }}</p>
+                <p><strong>🏢 Entreprise :</strong> {{ client_name }}</p>
+                <p><strong>👤 Rôle :</strong> Administrateur</p>
+            </div>
+            
+            <p>Vous pouvez maintenant vous connecter à la plateforme {{ platform_name }} et :</p>
+            <ul>
+                <li>🏢 Gérer votre entreprise</li>
+                <li>👥 Créer et gérer vos utilisateurs</li>
+                <li>📱 Administrer vos appareils IoT</li>
+                <li>📊 Consulter vos données et statistiques</li>
+                <li>⚙️ Configurer les paramètres de votre compte</li>
+            </ul>
+            
+            <div style="text-align: center;">
+                <a href="{{ login_url }}" class="login-button">🚀 Se connecter maintenant</a>
+            </div>
+            
+            <p><strong>💡 Conseils pour bien commencer :</strong></p>
+            <ul>
+                <li>Complétez les informations de votre profil</li>
+                <li>Explorez le tableau de bord</li>
+                <li>Consultez la documentation d'aide</li>
+                <li>Créez vos premiers utilisateurs si nécessaire</li>
+            </ul>
+        </div>
+        
+        <div class="footer">
+            <p>🔐 Votre compte est maintenant sécurisé et prêt à être utilisé</p>
+            <p>Si vous rencontrez des difficultés, contactez notre support : {{ support_email }}</p>
+            <p>© {{ current_year }} {{ platform_name }} - Tous droits réservés</p>
+        </div>
+    </div>
+</body>
+</html>

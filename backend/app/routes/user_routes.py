@@ -3,6 +3,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.services.user_service import UserService
 from app.models.user import User
 from functools import wraps
+import time
 
 # Créer le blueprint
 user_bp = Blueprint('users', __name__, url_prefix='/api/users')
@@ -84,6 +85,122 @@ def validate_json_data(required_fields=None):
         return decorated_function
     return decorator
 
+# =================== NOUVELLES ROUTES POUR L'ACTIVATION ADMIN ===================
+
+@user_bp.route('/activer-admin/<token>', methods=['POST'])
+@validate_json_data(['mot_de_passe', 'confirmpasse'])
+def activer_admin(data, token):
+    """Activer un compte administrateur avec token - ROUTE PUBLIQUE"""
+    try:
+        resultat, erreur = user_service.activer_admin(
+            token, 
+            data['mot_de_passe'],
+            data['confirmpasse']
+        )
+        
+        if erreur:
+            return jsonify({'error': erreur}), 400
+        
+        # ✅ CORRECTION - resultat est un dict avec les clés: utilisateur, email_confirmation, message
+        utilisateur_dict = resultat['utilisateur']  # Déjà un dictionnaire
+        nom_complet = f"{utilisateur_dict['prenom']} {utilisateur_dict['nom']}"
+        
+        return jsonify({
+            'success': True,
+            'message': f'Compte administrateur {nom_complet} activé avec succès',
+            'utilisateur': utilisateur_dict,  # Déjà un dict
+            'email_confirmation': resultat['email_confirmation'],
+            'service_message': resultat['message'],  # Message du service
+            'instructions': 'Vous pouvez maintenant vous connecter avec votre email et mot de passe'
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
+@user_bp.route('/valider-token-activation/<token>', methods=['GET'])
+def valider_token_activation(token):
+    """Valider un token d'activation sans le consommer - ROUTE PUBLIQUE"""
+    try:
+        resultat, erreur = user_service.valider_token_activation(token)
+        
+        if erreur:
+            return jsonify({
+                'valid': False,
+                'error': erreur
+            }), 400
+        
+        return jsonify({
+            'valid': True,
+            'admin_info': resultat['admin_info'],
+            'temps_restant_secondes': resultat['temps_restant_secondes'],
+            'temps_restant_heures': resultat['temps_restant_heures']
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
+@user_bp.route('/<admin_id>/regenerer-token-activation', methods=['POST'])
+@superadmin_required
+def regenerer_token_activation(current_user, admin_id):
+    """Régénérer un token d'activation pour un admin - SUPERADMIN SEULEMENT"""
+    try:
+        token, erreur = user_service.regenerer_token_activation(admin_id, current_user)
+        
+        if erreur:
+            return jsonify({'error': erreur}), 400
+        
+        return jsonify({
+            'success': True,
+            'message': 'Nouveau token d\'activation généré et email envoyé',
+            'token': token  # Pour debug - à retirer en production
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
+@user_bp.route('/admins-en-attente', methods=['GET'])
+@superadmin_required
+def lister_admins_en_attente(current_user):
+    """Lister les administrateurs en attente d'activation - SUPERADMIN SEULEMENT"""
+    try:
+        admins, erreur = user_service.lister_admins_en_attente(current_user)
+        
+        if erreur:
+            return jsonify({'error': erreur}), 403
+        
+        return jsonify({
+            'success': True,
+            'data': admins,
+            'total': len(admins)
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
+@user_bp.route('/<utilisateur_id>/envoyer-nouveau-mot-de-passe', methods=['POST'])
+@admin_required
+def envoyer_nouveau_mot_de_passe(current_user, utilisateur_id):
+    """Générer et envoyer un nouveau mot de passe par email"""
+    try:
+        mot_de_passe, erreur = user_service.generer_et_envoyer_nouveau_mot_de_passe(utilisateur_id, current_user)
+        
+        if erreur:
+            return jsonify({'error': erreur}), 400
+        
+        # Récupérer l'utilisateur pour l'email
+        utilisateur = User.query.get(utilisateur_id)
+        if not utilisateur:
+            return jsonify({'error': 'Utilisateur non trouvé'}), 404
+        
+        return jsonify({
+            'success': True,
+            'message': 'Nouveau mot de passe généré et envoyé par email',
+            'destinataire': utilisateur.email
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
 # =================== GESTION DES CLIENTS ===================
 
 @user_bp.route('/clients', methods=['POST'])
@@ -97,19 +214,19 @@ def creer_client(data, current_user):
         if erreur:
             return jsonify({'error': erreur}), 400
         
-        # Réponse enrichie avec toutes les informations
+        # Réponse adaptée au nouveau système
         return jsonify({
             'success': True,
-            'message': f"✅ Client '{resultat['client']['nom_entreprise']}' et admin '{resultat['admin_client']['nom_complet']}' créés avec succès",
+            'message': f"✅ Client '{resultat['client']['nom_entreprise']}' créé avec succès",
             'data': {
                 'client': resultat['client'],
-                'admin_client': resultat['admin_client'],
-                'identifiants_admin': resultat['identifiants_connexion']
+                'admin_client': resultat['admin_client']
             },
             'instructions': {
                 'action_suivante': resultat['message_instructions'],
-                'connexion_admin': f"L'admin peut se connecter avec : {resultat['identifiants_connexion']['email']} / {resultat['identifiants_connexion']['mot_de_passe']}",
-                'securite': "⚠️ L'admin doit changer son mot de passe à la première connexion"
+                'email_envoye': resultat['email_result']['success'] if 'email_result' in resultat else False,
+                'status_admin': 'En attente d\'activation par email',
+                'securite': "L'admin doit activer son compte via l'email reçu"
             }
         }), 201
         
@@ -205,13 +322,14 @@ def supprimer_client(current_user, client_id):
         
     except Exception as e:
         return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+    
 
 # =================== GESTION DES UTILISATEURS ===================
 
 @user_bp.route('/', methods=['POST'])
 @admin_required
 @validate_json_data(['prenom', 'nom', 'email'])
-def creer_utilisateur(data, current_user):  # ✅ CORRIGÉ : data en premier
+def creer_utilisateur(data, current_user):
     """Créer un nouvel utilisateur"""
     try:
         utilisateur, mot_de_passe_temporaire = user_service.creer_utilisateur(data, current_user)
@@ -349,7 +467,7 @@ def supprimer_utilisateur(current_user, utilisateur_id):
 @user_bp.route('/<utilisateur_id>/reset-password', methods=['POST'])
 @admin_required
 @validate_json_data(['nouveau_mot_de_passe'])
-def reinitialiser_mot_de_passe(data, current_user, utilisateur_id):  # ✅ CORRIGÉ : data en premier
+def reinitialiser_mot_de_passe(data, current_user, utilisateur_id):
     """Réinitialiser le mot de passe d'un utilisateur"""
     try:
         succes, message = user_service.reinitialiser_mot_de_passe(
@@ -539,6 +657,38 @@ def lister_utilisateurs_inactifs(current_user):
     except Exception as e:
         return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
 
+# =================== ROUTES DE DEBUG ===================
+
+@user_bp.route('/debug/tokens/stats', methods=['GET'])
+@superadmin_required
+def obtenir_stats_tokens(current_user):
+    """Obtenir les statistiques des tokens - DEBUG SUPERADMIN"""
+    try:
+        stats = user_service.obtenir_stats_tokens()
+        
+        return jsonify({
+            'success': True,
+            'data': stats
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
+@user_bp.route('/debug/tokens/cleanup', methods=['POST'])
+@superadmin_required
+def nettoyer_tokens(current_user):
+    """Nettoyer les tokens expirés - DEBUG SUPERADMIN"""
+    try:
+        resultat = user_service.nettoyer_tokens_expires()
+        
+        return jsonify({
+            'success': True,
+            'data': resultat
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
 # =================== ROUTE DE TEST ===================
 
 @user_bp.route('/test-superadmin', methods=['GET'])
@@ -586,4 +736,4 @@ def not_found(error):
 
 @user_bp.errorhandler(500)
 def internal_error(error):
-    return jsonify({'error': 'Erreur serveur interne'}), 500
+    return jsonify({'error': 'Erreur serveur interne'}), 500    
