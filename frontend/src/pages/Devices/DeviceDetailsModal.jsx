@@ -338,22 +338,23 @@ const DeviceDetailsModal = ({ device, onClose }) => {
               <div className="info-section">
                 <h4>Seuils configurés</h4>
                 <div className="info-grid">
-                  <div className="info-item">
-                    <label>Tension min:</label>
-                    <span>{formatValue(device?.seuil_tension_min, 'V')}</span>
-                  </div>
-                  <div className="info-item">
-                    <label>Tension max:</label>
-                    <span>{formatValue(device?.seuil_tension_max, 'V')}</span>
-                  </div>
-                  <div className="info-item">
-                    <label>Courant max:</label>
-                    <span>{formatValue(device?.seuil_courant_max, 'A')}</span>
-                  </div>
-                  <div className="info-item">
-                    <label>Puissance max:</label>
-                    <span>{formatValue(device?.seuil_puissance_max, 'W')}</span>
-                  </div>
+                <div className="info-item">
+  <label>Tension min:</label>
+  <span>{formatValue(device?.seuils?.tension_min, 'V')}</span>
+</div>
+<div className="info-item">
+  <label>Tension max:</label>
+  <span>{formatValue(device?.seuils?.tension_max, 'V')}</span>
+</div>
+<div className="info-item">
+  <label>Courant max:</label>
+  <span>{formatValue(device?.seuils?.courant_max, 'A')}</span>
+</div>
+<div className="info-item">
+  <label>Puissance max:</label>
+  <span>{formatValue(device?.seuils?.puissance_max, 'W')}</span>
+</div>
+
                 </div>
               </div>
 

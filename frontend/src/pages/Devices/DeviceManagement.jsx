@@ -151,7 +151,7 @@ const DeviceManagement = () => {
 
   const confirmUnassignDevice = async (device) => {
     try {
-      const response = await DeviceService.desassignerAppareil(device.id || device.tuya_device_id)
+      const response = await DeviceService.desassignerAppareil(device.tuya_device_id)
       if (response.data.success) {
         showToast(response.data.message, 'success')
         loadData()

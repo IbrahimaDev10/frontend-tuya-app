@@ -24,8 +24,8 @@ class DeviceService {
     });
   }
 
-  async desassignerAppareil(deviceId) {
-    return apiClient.post(`/devices/${deviceId}/desassigner`);
+  async desassignerAppareil(tuyaDeviceId) {
+    return apiClient.post(`/devices/${tuyaDeviceId}/desassigner`);
   }
 
   // =================== GESTION CRUD DES APPAREILS ===================
