@@ -9,7 +9,7 @@ import AdminActivation from './auth/AdminActivation'
 import AdminDashboard from './dashboards/AdminDashboard'
 import SuperAdminDashboard from './dashboards/SuperAdminDashboard'
 import ClientDashboard from './dashboards/ClientDashboard'
-import UserManagement from './pages/users/UserManagement'
+import UserManagement from './pages/Users/UserManagement'
 import SiteManagement from './pages/sites/SiteManagement'
 import DeviceManagement from './pages/Devices/DeviceManagement'
 import NotFound from './pages/NotFound'
@@ -26,6 +26,7 @@ function App() {
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/activer-admin/:token" element={<AdminActivation />} />
+        <Route path="/activer-utilisateur/:token" element={<AdminActivation />} />
             
             {/* Routes protégées */}
             <Route

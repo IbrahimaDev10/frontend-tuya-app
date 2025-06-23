@@ -58,6 +58,10 @@ class UserService {
     return apiClient.delete(`/users/${utilisateurId}/supprimer?forcer=${forcer}`);
   }
 
+  async supprimerSuperadmin(superadminId, forcer = false) {
+    return apiClient.delete(`/users/${superadminId}/supprimer-superadmin?forcer=${forcer}`);
+  }
+
   async reinitialiserMotDePasse(utilisateurId, nouveauMotDePasse) {
     return apiClient.post(`/users/${utilisateurId}/reset-password`, {
       nouveau_mot_de_passe: nouveauMotDePasse
@@ -101,6 +105,13 @@ class UserService {
     });
   }
 
+  async activerUtilisateur(token, motDePasse, confirmMotDePasse) {
+    return apiClient.post(`/users/activer-utilisateur/${token}`, {
+      mot_de_passe: motDePasse,
+      confirmpasse: confirmMotDePasse
+    });
+  }
+
   async validerTokenActivation(token) {
     return apiClient.get(`/users/valider-token-activation/${token}`);
   }
@@ -109,9 +120,36 @@ class UserService {
     return apiClient.post(`/users/${adminId}/regenerer-token-activation`);
   }
 
+  /**
+   * Créer et envoyer un token d'activation pour un utilisateur existant
+   * @param {string} utilisateurId - ID de l'utilisateur
+   */
+  async creerActivationUtilisateur(utilisateurId) {
+    return apiClient.post(`/users/${utilisateurId}/creer-activation`);
+  }
+
+   /**
+   * Lister les utilisateurs en attente d'activation selon les permissions
+   * @param {boolean} inclureTousRoles - Inclure tous les rôles 
+   */
+  async listerUtilisateursEnAttente(inclureTousRoles = false) {
+    const params = inclureTousRoles ? { inclure_tous_roles: 'true' } : {};
+    return apiClient.get('/users/utilisateurs-en-attente', { params });
+  }
+
+
   async listerAdminsEnAttente() {
     return apiClient.get('/users/admins-en-attente');
   }
+
+/**
+   * Supprimer un utilisateur en attente d'activation
+   * @param {string} utilisateurId - ID de l'utilisateur
+   */
+  async supprimerUtilisateurEnAttente(utilisateurId) {
+    return apiClient.delete(`/users/${utilisateurId}/supprimer-en-attente`);
+  }
+
 
   async envoyerNouveauMotDePasse(utilisateurId) {
     return apiClient.post(`/users/${utilisateurId}/envoyer-nouveau-mot-de-passe`);
