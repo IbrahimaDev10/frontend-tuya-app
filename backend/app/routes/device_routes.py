@@ -126,9 +126,12 @@ def synchroniser_tuya(current_user):
 @device_bp.route('/non-assignes', methods=['GET'])
 @superadmin_required
 def lister_non_assignes(current_user):
-    """Lister les appareils non-assignés - SUPERADMIN SEULEMENT"""
+    """Lister les appareils non-assignés avec statuts réels - SUPERADMIN SEULEMENT"""
     try:
-        resultat = device_service.get_non_assigned_devices()
+        # ✅ AJOUT: Paramètre pour contrôler le refresh
+        refresh = request.args.get('refresh', 'true').lower() == 'true'
+        
+        resultat = device_service.get_non_assigned_devices(refresh_status=refresh)
         
         if not resultat.get('success'):
             return jsonify({'error': resultat.get('error', 'Erreur récupération')}), 400
@@ -139,12 +142,15 @@ def lister_non_assignes(current_user):
             'success': True,
             'data': appareils,
             'total': len(appareils),
-            'message': f'{len(appareils)} appareils non-assignés trouvés'
+            'stats': resultat.get('stats', {}),
+            'last_refresh': resultat.get('last_refresh'),
+            'message': resultat.get('message', f'{len(appareils)} appareils non-assignés trouvés')
         }), 200
         
     except Exception as e:
         print(f"Erreur liste non-assignés: {str(e)}")
         return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
 
 @device_bp.route('/<device_id>/assigner', methods=['POST'])
 @superadmin_required
@@ -191,17 +197,22 @@ def desassigner_appareil(current_user, device_id):
 @device_bp.route('/', methods=['GET'])
 @admin_required
 def lister_appareils(current_user):
-    """Lister les appareils selon les permissions"""
+    """Lister les appareils selon les permissions avec statuts réels"""
     try:
         # Paramètres optionnels
         site_id = request.args.get('site_id')
         inclure_non_assignes = request.args.get('inclure_non_assignes', 'false').lower() == 'true'
+        refresh = request.args.get('refresh', 'true').lower() == 'true'  # ✅ AJOUT
         
         # Seul le superadmin peut inclure les non-assignés
         if inclure_non_assignes and not current_user.is_superadmin():
             return jsonify({'error': 'Seul le superadmin peut voir les appareils non-assignés'}), 403
         
-        resultat = device_service.get_all_devices(current_user, inclure_non_assignes)
+        resultat = device_service.get_all_devices(
+            current_user, 
+            inclure_non_assignes, 
+            refresh_status=refresh  # ✅ AJOUT
+        )
         
         if not resultat.get('success'):
             return jsonify({'error': resultat.get('error', 'Erreur récupération')}), 403
@@ -216,15 +227,19 @@ def lister_appareils(current_user):
             'success': True,
             'data': appareils,
             'total': len(appareils),
+            'stats': resultat.get('stats', {}),  # ✅ AJOUT
+            'last_sync': resultat.get('last_sync'),  # ✅ AJOUT
             'filtres': {
                 'site_id': site_id,
-                'inclure_non_assignes': inclure_non_assignes
+                'inclure_non_assignes': inclure_non_assignes,
+                'refresh': refresh  # ✅ AJOUT
             }
         }), 200
         
     except Exception as e:
         print(f"Erreur liste appareils: {str(e)}")
         return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
 
 @device_bp.route('/<device_id>', methods=['GET'])
 @admin_required
@@ -612,10 +627,9 @@ def get_graphique_puissance(current_user, device_id):
 
 @device_bp.route('/<device_id>/statut', methods=['GET'])
 @admin_required
-def get_device_status(current_user, device_id):
-    """Obtenir le statut actuel d'un appareil"""
+def get_device_status_enhanced(current_user, device_id):
+    """Obtenir le statut actuel d'un appareil avec vérification en temps réel"""
     try:
-        # ✅ CORRIGÉ: Utilise la fonction utilitaire
         device = find_device_by_id_or_tuya_id(device_id)
         
         if not device:
@@ -624,8 +638,15 @@ def get_device_status(current_user, device_id):
         if not device.peut_etre_vu_par_utilisateur(current_user):
             return jsonify({'error': 'Accès interdit à cet appareil'}), 403
         
-        # Statut depuis Tuya via DeviceService
-        statut_tuya = device_service.get_device_status(device.tuya_device_id)
+        # ✅ AMÉLIORATION: Vérifier le statut en ligne d'abord
+        check_online = device_service.check_device_online_status(device.tuya_device_id)
+        
+        # ✅ AMÉLIORATION: Données temps réel si en ligne
+        real_time_data = {}
+        if check_online.get('is_online', False):
+            real_time_result = device_service.get_device_real_time_data(device.tuya_device_id)
+            if real_time_result.get('success'):
+                real_time_data = real_time_result.get('data', {})
         
         return jsonify({
             'success': True,
@@ -636,7 +657,13 @@ def get_device_status(current_user, device_id):
                 'nom': device.nom_appareil
             },
             'statut_bdd': device.to_dict(include_stats=True, include_tuya_info=True),
-            'statut_tuya': statut_tuya if statut_tuya.get('success') else None
+            'statut_online': {
+                'is_online': check_online.get('is_online', False),
+                'checked_at': check_online.get('checked_at'),
+                'changed': check_online.get('changed', False)
+            },
+            'real_time_data': real_time_data,
+            'timestamp': datetime.utcnow().isoformat()
         }), 200
         
     except Exception as e:
@@ -679,6 +706,63 @@ def obtenir_statistiques(current_user):
     except Exception as e:
         print(f"Erreur statistiques: {str(e)}")
         return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
+
+
+@device_bp.route('/statistiques-temps-reel', methods=['GET'])
+@admin_required
+def statistiques_temps_reel(current_user):
+    """Obtenir les statistiques en temps réel avec refresh des statuts"""
+    try:
+        # Refresh les statuts avant de calculer les stats
+        if current_user.is_superadmin():
+            refresh_result = device_service.refresh_all_device_statuses()
+        
+        # Récupérer les stats
+        if hasattr(device_service, 'get_device_statistics'):
+            resultat = device_service.get_device_statistics()
+        else:
+            # Fallback
+            from app.models.device import Device
+            
+            if current_user.is_superadmin():
+                total = Device.query.count()
+                assignes = Device.query.filter_by(statut_assignation='assigne').count()
+                non_assignes = Device.query.filter_by(statut_assignation='non_assigne').count()
+                en_ligne = Device.query.filter_by(en_ligne=True).count()
+                hors_ligne = Device.query.filter_by(en_ligne=False).count()
+            else:
+                user_devices = Device.query.filter_by(client_id=current_user.client_id).all()
+                total = len(user_devices)
+                assignes = total
+                non_assignes = 0
+                en_ligne = sum(1 for d in user_devices if d.en_ligne)
+                hors_ligne = total - en_ligne
+            
+            resultat = {
+                'success': True,
+                'statistiques': {
+                    'total': total,
+                    'assignes': assignes,
+                    'non_assignes': non_assignes,
+                    'en_ligne': en_ligne,
+                    'hors_ligne': hors_ligne
+                }
+            }
+        
+        # Ajouter métadonnées
+        stats = resultat.get('statistiques', {})
+        stats['last_refresh'] = datetime.utcnow().isoformat()
+        stats['user_type'] = 'superadmin' if current_user.is_superadmin() else 'client'
+        
+        return jsonify({
+            'success': True,
+            'data': stats
+        }), 200
+        
+    except Exception as e:
+        print(f"Erreur statistiques temps réel: {str(e)}")
+        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500        
 
 # =================== ROUTES UTILITAIRES ===================
 
@@ -1028,6 +1112,250 @@ def batch_operation(data, current_user):
         
     except Exception as e:
         print(f"Erreur opération batch: {str(e)}")
+        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
+
+
+
+# =================== ROUTES MANQUANTES À AJOUTER ===================
+
+@device_bp.route('/refresh-all-statuses', methods=['POST'])
+@admin_required
+def refresh_all_statuses(current_user):
+    """Forcer la synchronisation de tous les statuts d'appareils"""
+    try:
+        resultat = device_service.refresh_all_device_statuses()
+        
+        return jsonify({
+            'success': resultat.get('success', False),
+            'message': resultat.get('message', 'Synchronisation effectuée'),
+            'stats': resultat.get('stats', {}),
+            'timestamp': resultat.get('timestamp')
+        }), 200 if resultat.get('success') else 400
+        
+    except Exception as e:
+        print(f"Erreur refresh statuts: {str(e)}")
+        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
+@device_bp.route('/<device_id>/check-status', methods=['GET'])
+@admin_required
+def check_device_status(current_user, device_id):
+    """Vérifier rapidement le statut en ligne d'un appareil"""
+    try:
+        device = find_device_by_id_or_tuya_id(device_id)
+        
+        if not device:
+            return jsonify({'error': f'Appareil non trouvé: {device_id}'}), 404
+        
+        if not device.peut_etre_vu_par_utilisateur(current_user):
+            return jsonify({'error': 'Accès interdit à cet appareil'}), 403
+        
+        resultat = device_service.check_device_online_status(device.tuya_device_id)
+        
+        return jsonify({
+            'success': resultat.get('success', False),
+            'device_info': {
+                'uuid': device.id,
+                'tuya_device_id': device.tuya_device_id,
+                'nom': device.nom_appareil
+            },
+            'is_online': resultat.get('is_online', False),
+            'changed': resultat.get('changed', False),
+            'checked_at': resultat.get('checked_at')
+        }), 200
+        
+    except Exception as e:
+        print(f"Erreur check status {device_id}: {str(e)}")
+        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
+@device_bp.route('/<device_id>/force-status-update', methods=['POST'])
+@admin_required
+def force_status_update(current_user, device_id):
+    """Forcer la mise à jour du statut depuis l'endpoint liste Tuya"""
+    try:
+        device = find_device_by_id_or_tuya_id(device_id)
+        
+        if not device:
+            return jsonify({'error': f'Appareil non trouvé: {device_id}'}), 404
+        
+        if not device.peut_etre_vu_par_utilisateur(current_user):
+            return jsonify({'error': 'Accès interdit à cet appareil'}), 403
+        
+        resultat = device_service.force_status_from_list_endpoint(device.tuya_device_id)
+        
+        return jsonify({
+            'success': resultat.get('success', False),
+            'device_info': {
+                'uuid': device.id,
+                'tuya_device_id': device.tuya_device_id,
+                'nom': device.nom_appareil
+            },
+            'old_status': resultat.get('old_status'),
+            'new_status': resultat.get('new_status'),
+            'changed': resultat.get('changed', False),
+            'source': resultat.get('source')
+        }), 200 if resultat.get('success') else 400
+        
+    except Exception as e:
+        print(f"Erreur force status {device_id}: {str(e)}")
+        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
+@device_bp.route('/<device_id>/real-time-data', methods=['GET'])
+@admin_required
+def get_real_time_data(current_user, device_id):
+    """Récupérer les données en temps réel avec statut"""
+    try:
+        device = find_device_by_id_or_tuya_id(device_id)
+        
+        if not device:
+            return jsonify({'error': f'Appareil non trouvé: {device_id}'}), 404
+        
+        if not device.peut_etre_vu_par_utilisateur(current_user):
+            return jsonify({'error': 'Accès interdit à cet appareil'}), 403
+        
+        resultat = device_service.get_device_real_time_data(device.tuya_device_id)
+        
+        return jsonify({
+            'success': resultat.get('success', False),
+            'device_info': {
+                'uuid': device.id,
+                'tuya_device_id': device.tuya_device_id,
+                'nom': device.nom_appareil
+            },
+            'is_online': resultat.get('is_online', False),
+            'data': resultat.get('data', {}),
+            'timestamp': resultat.get('timestamp'),
+            'message': resultat.get('message', '')
+        }), 200
+        
+    except Exception as e:
+        print(f"Erreur real-time data {device_id}: {str(e)}")
+        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
+@device_bp.route('/batch-status-check', methods=['POST'])
+@admin_required
+@validate_json_data(['device_ids'])
+def batch_status_check(data, current_user):
+    """Vérifier le statut de plusieurs appareils en une fois"""
+    try:
+        device_ids = data['device_ids']
+        
+        if not isinstance(device_ids, list) or len(device_ids) == 0:
+            return jsonify({'error': 'device_ids doit être une liste non vide'}), 400
+        
+        if len(device_ids) > 50:
+            return jsonify({'error': 'Maximum 50 appareils par vérification'}), 400
+        
+        # Convertir les UUIDs en tuya_device_ids si nécessaire
+        tuya_device_ids = []
+        device_mapping = {}
+        
+        for device_id in device_ids:
+            device = find_device_by_id_or_tuya_id(device_id)
+            if device and device.peut_etre_vu_par_utilisateur(current_user):
+                tuya_device_ids.append(device.tuya_device_id)
+                device_mapping[device.tuya_device_id] = {
+                    'uuid': device.id,
+                    'nom': device.nom_appareil,
+                    'original_id': device_id
+                }
+        
+        # Vérification batch via device_service
+        resultat = device_service.batch_check_devices_status(tuya_device_ids)
+        
+        # Enrichir les résultats avec les infos des appareils
+        if resultat.get('success'):
+            enriched_results = []
+            for result in resultat.get('results', []):
+                tuya_id = result['device_id']
+                device_info = device_mapping.get(tuya_id, {})
+                
+                enriched_results.append({
+                    **result,
+                    'device_uuid': device_info.get('uuid'),
+                    'device_nom': device_info.get('nom'),
+                    'original_device_id': device_info.get('original_id')
+                })
+            
+            resultat['results'] = enriched_results
+        
+        return jsonify(resultat), 200 if resultat.get('success') else 400
+        
+    except Exception as e:
+        print(f"Erreur batch status check: {str(e)}")
+        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
+@device_bp.route('/debug/tuya-inconsistency/<device_id>', methods=['GET'])
+@admin_required
+def debug_tuya_inconsistency(current_user, device_id):
+    """Diagnostiquer les incohérences entre endpoints Tuya"""
+    try:
+        device = find_device_by_id_or_tuya_id(device_id)
+        
+        if not device:
+            return jsonify({'error': f'Appareil non trouvé: {device_id}'}), 404
+        
+        if not device.peut_etre_vu_par_utilisateur(current_user):
+            return jsonify({'error': 'Accès interdit à cet appareil'}), 403
+        
+        resultat = device_service.diagnose_tuya_inconsistency(device.tuya_device_id)
+        
+        return jsonify({
+            'success': resultat.get('success', False),
+            'device_info': {
+                'uuid': device.id,
+                'tuya_device_id': device.tuya_device_id,
+                'nom': device.nom_appareil
+            },
+            'diagnostic': {
+                'endpoint_liste': resultat.get('endpoint_liste', {}),
+                'endpoint_individuel': resultat.get('endpoint_individuel', {}),
+                'consistent': resultat.get('consistent', False),
+                'recommended_source': resultat.get('recommended_source')
+            }
+        }), 200
+        
+    except Exception as e:
+        print(f"Erreur diagnostic Tuya {device_id}: {str(e)}")
+        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
+@device_bp.route('/smart-sync', methods=['POST'])
+@admin_required
+def smart_sync(current_user):
+    """Synchronisation intelligente selon les permissions utilisateur"""
+    try:
+        data = request.get_json() or {}
+        force_full_sync = data.get('force_full_sync', False)
+        
+        if current_user.is_superadmin():
+            # Superadmin peut faire une sync complète
+            if force_full_sync:
+                resultat = device_service.sync_all_devices()
+            else:
+                resultat = device_service.refresh_all_device_statuses()
+        else:
+            # Utilisateur normal : refresh seulement ses appareils
+            resultat = device_service.get_all_devices(current_user, False, True)
+            # Transformer en format sync
+            if resultat.get('success'):
+                stats = resultat.get('stats', {})
+                resultat = {
+                    'success': True,
+                    'message': f"Synchronisation utilisateur: {stats.get('total', 0)} appareils",
+                    'stats': stats,
+                    'sync_type': 'user_devices_only'
+                }
+        
+        return jsonify({
+            'success': resultat.get('success', False),
+            'message': resultat.get('message', 'Synchronisation effectuée'),
+            'stats': resultat.get('stats', {}),
+            'sync_type': resultat.get('sync_type', 'full' if current_user.is_superadmin() else 'user'),
+            'timestamp': datetime.utcnow().isoformat()
+        }), 200 if resultat.get('success') else 400
+        
+    except Exception as e:
+        print(f"Erreur smart sync: {str(e)}")
         return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
 
 # =================== GESTION DES ERREURS ===================

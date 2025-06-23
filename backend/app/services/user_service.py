@@ -1,17 +1,17 @@
-from app import db
+from app import db, get_redis  # ✅ NOUVEAU : Import get_redis
 from app.models.user import User
 from app.models.client import Client
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Tuple, List, Dict, Any
-from app.utils.token_manager import ActivationTokenManager
 from app.services.mail_service import MailService
 import secrets
 import string
-
+import json
 
 class UserService:
     def __init__(self):
-        pass
+        # ✅ NOUVEAU : Redis d'abord, sinon ActivationTokenManager comme fallback
+        self.redis = get_redis()
     
     # =================== GESTION DES CLIENTS ===================
     
@@ -66,31 +66,28 @@ class UserService:
                 telephone=telephone_admin,
                 role='admin',
                 client_id=nouveau_client.id,
-                actif=False  # ✅ CHANGEMENT : Créer inactif
+                actif=False  # Créer inactif
             )
             
-            # 🔐 CHANGEMENT : Créer avec un mot de passe temporaire (sera remplacé lors de l'activation)
+            # Créer avec un mot de passe temporaire (sera remplacé lors de l'activation)
             admin_client.set_password("temp_password_will_be_replaced")
             
             db.session.add(admin_client)
             db.session.flush()  # Pour obtenir l'ID de l'admin
             
-            # 📧 NOUVEAU : Générer token d'activation et envoyer email
-            from app.utils.token_manager import ActivationTokenManager
-            from app.services.mail_service import MailService
-
+            # ✅ NOUVEAU : Générer token d'activation avec Redis
             print(f"🔍 Génération token pour admin:")
             print(f"   - ID: {admin_client.id}")
             print(f"   - Email: {email_admin}")
             print(f"   - Prénom: {prenom_admin}")
             print(f"   - Nom: {nom_admin}")
 
-            # Nouveau code correct avec la bonne variable
-            token = ActivationTokenManager.generate_token(admin_client.id, email_admin, 86400)  # 24h
+            # Générer token d'activation
+            token = self._generate_activation_token(admin_client.id, email_admin, 'admin', 86400)  # 24h
             print(f"🎫 Token généré: {token}")
 
             # Vérifier que le token est bien enregistré
-            validation = ActivationTokenManager.validate_token(token)
+            validation = self._validate_activation_token(token)
             print(f"✅ Validation immédiate du token: {validation}")
                 
             # Envoyer l'email d'activation
@@ -107,7 +104,7 @@ class UserService:
             
             db.session.commit()
             
-            # 🎉 Préparer le résultat modifié
+            # 🎉 Préparer le résultat
             resultat = {
                 'client': nouveau_client.to_dict(),
                 'admin_client': admin_client.to_dict(),
@@ -164,7 +161,6 @@ class UserService:
             if not utilisateur_demandeur.is_superadmin():
                 return None, "Seul le superadmin peut voir tous les clients"
             
-            # ⚠️ Supprimer le filtre actif=True pour retourner aussi les clients inactifs
             clients = Client.query.order_by(Client.nom_entreprise).all()
             liste_clients = [client.to_dict() for client in clients]
             
@@ -172,7 +168,6 @@ class UserService:
 
         except Exception as e:
             return None, f"Erreur lors de la récupération: {str(e)}"
-
     
     def desactiver_client(self, client_id: str, utilisateur_desactivateur: User) -> Tuple[bool, str]:
         """Désactiver un client (et tous ses utilisateurs)"""
@@ -191,6 +186,9 @@ class UserService:
             utilisateurs_client = User.query.filter_by(client_id=client_id).all()
             for utilisateur in utilisateurs_client:
                 utilisateur.actif = False
+            
+            # ✅ NOUVEAU : Invalider tous les tokens d'activation de ce client
+            self._invalidate_client_tokens(client_id)
             
             db.session.commit()
             return True, f"Client {client.nom_entreprise} et ses {len(utilisateurs_client)} utilisateurs désactivés"
@@ -223,15 +221,16 @@ class UserService:
             
             nom_client = client.nom_entreprise
             
+            # ✅ NOUVEAU : Supprimer tous les tokens d'activation de ce client
+            self._invalidate_client_tokens(client_id)
+            
             if forcer:
-                # Suppression forcée avec CASCADE (vos modèles ont cascade='all, delete-orphan')
-                # SQLAlchemy va automatiquement supprimer toutes les données liées
+                # Suppression forcée avec CASCADE
                 db.session.delete(client)
                 message = (f"Client '{nom_client}' et TOUTES ses données supprimés définitivement "
                           f"({nb_utilisateurs} utilisateurs, {nb_sites} sites, {nb_appareils} appareils)")
             else:
                 # Suppression simple (seulement client + utilisateurs)
-                # Supprimer d'abord les utilisateurs
                 User.query.filter_by(client_id=client_id).delete()
                 db.session.delete(client)
                 message = f"Client '{nom_client}' et ses {nb_utilisateurs} utilisateurs supprimés"
@@ -256,9 +255,6 @@ class UserService:
             # Réactiver le client
             client.actif = True
             
-            # Optionnel: réactiver aussi les utilisateurs (demander confirmation)
-            # Pour l'instant, on laisse les utilisateurs dans leur état actuel
-            
             db.session.commit()
             return True, f"Client {client.nom_entreprise} réactivé (utilisateurs gardent leur état actuel)"
             
@@ -266,7 +262,7 @@ class UserService:
             db.session.rollback()
             return False, f"Erreur lors de la réactivation: {str(e)}"
     
-    # =================== NOUVELLES MÉTHODES POUR L'ACTIVATION ===================
+    # =================== NOUVELLES MÉTHODES POUR L'ACTIVATION AVEC REDIS ===================
     
     def activer_admin(self, token: str, mot_de_passe: str, confirmation_mot_de_passe: str) -> Tuple[Optional[Dict], Optional[str]]:
         """Activer un compte admin avec définition du mot de passe"""
@@ -276,114 +272,24 @@ class UserService:
             print(f"🔒 Mot de passe fourni: {'*' * len(mot_de_passe)}")
             print(f"🔒 Confirmation fournie: {'*' * len(confirmation_mot_de_passe)}")
             
-            # Validation du token avec debug complet
-            print(f"🎫 Tentative d'import de ActivationTokenManager...")
-            
-            # Essayez différents imports pour identifier le bon
-            try:
-                from app.utils.token_manager import ActivationTokenManager
-                print(f"✅ Import réussi depuis app.utils.token_manager")
-            except ImportError as e:
-                print(f"❌ Échec import app.utils.token_manager: {e}")
-                try:
-                    from app.utils.activation_token_manager import ActivationTokenManager
-                    print(f"✅ Import réussi depuis app.utils.activation_token_manager")
-                except ImportError as e2:
-                    print(f"❌ Échec import app.utils.activation_token_manager: {e2}")
-                    return None, f"Impossible d'importer ActivationTokenManager"
-            
-            print(f"🎫 Appel de ActivationTokenManager.validate_token...")
-            print(f"🎫 Méthode validate_token: {ActivationTokenManager.validate_token}")
-            
-            validation = ActivationTokenManager.validate_token(token)
+            # ✅ NOUVEAU : Validation du token avec Redis
+            validation = self._validate_activation_token(token)
             
             print(f"🎫 === RÉSULTAT VALIDATION ===")
             print(f"Type: {type(validation)}")
             print(f"Contenu: {validation}")
-            print(f"Clés disponibles: {list(validation.keys()) if isinstance(validation, dict) else 'Pas un dict'}")
             print(f"=== FIN VALIDATION ===")
             
-            # Test de toutes les structures possibles
-            user_id = None
-            is_valid = False
-            error_message = "Token invalide"
+            if not validation or not validation.get('valid'):
+                return None, validation.get('message', 'Token invalide ou expiré')
             
-            if isinstance(validation, dict):
-                print(f"✅ C'est un dictionnaire")
-                
-                # Structure 1: {'valid': True/False, 'user_id': '...', 'message': '...'}
-                if 'valid' in validation:
-                    print(f"📋 Structure avec 'valid': {validation['valid']}")
-                    is_valid = validation['valid']
-                    user_id = validation.get('user_id')
-                    error_message = validation.get('message', 'Token invalide')
-                    
-                    # ✅ NOUVEAU : Structure spécifique avec admin_info
-                    if is_valid and not user_id and 'admin_info' in validation:
-                        print(f"📋 Structure avec admin_info détectée")
-                        admin_info = validation['admin_info']
-                        print(f"📋 Admin info: {admin_info}")
-                        
-                        # Récupérer l'user_id depuis la base via l'email
-                        if 'email' in admin_info:
-                            # SUPPRIMÉ: from app.models import User  # ← PROBLÈME ÉTAIT ICI
-                            admin_user = User.query.filter_by(email=admin_info['email']).first()
-                            if admin_user:
-                                user_id = admin_user.id
-                                print(f"📋 User ID trouvé via email: {user_id}")
-                            else:
-                                print(f"❌ Utilisateur non trouvé avec email: {admin_info['email']}")
-                
-                # Structure 2: {'success': True/False, 'data': {...}}
-                elif 'success' in validation:
-                    print(f"📋 Structure avec 'success': {validation['success']}")
-                    is_valid = validation['success']
-                    if 'data' in validation and isinstance(validation['data'], dict):
-                        user_id = validation['data'].get('user_id')
-                    else:
-                        user_id = validation.get('user_id')
-                    error_message = validation.get('message', 'Token invalide')
-                
-                # Structure 3: Directement les données
-                elif 'user_id' in validation:
-                    print(f"📋 Structure directe avec user_id")
-                    is_valid = True
-                    user_id = validation['user_id']
-                    error_message = validation.get('message', 'Token valide')
-                
-                else:
-                    print(f"❌ Structure inconnue")
-                    print(f"Clés disponibles: {list(validation.keys())}")
-                    return None, f"Structure de validation inconnue: {validation}"
-            
-            elif isinstance(validation, bool):
-                print(f"📋 Validation est un boolean: {validation}")
-                is_valid = validation
-                if not is_valid:
-                    return None, "Token invalide"
-            
-            elif validation is None:
-                print(f"❌ Validation est None")
-                return None, "Erreur de validation du token"
-            
-            else:
-                print(f"❌ Type de validation inattendu: {type(validation)}")
-                return None, f"Format de validation inattendu: {type(validation)}"
-            
-            print(f"🎯 Résultats de parsing:")
-            print(f"   - is_valid: {is_valid}")
-            print(f"   - user_id: {user_id}")
-            print(f"   - error_message: {error_message}")
-            
-            if not is_valid:
-                return None, error_message
-            
+            user_id = validation.get('user_id')
             if not user_id:
                 return None, "ID utilisateur manquant dans la validation"
             
             print(f"👤 Recherche utilisateur avec ID: {user_id}")
             
-            # Récupérer l'utilisateur (User est déjà importé en haut du fichier)
+            # Récupérer l'utilisateur
             utilisateur = User.query.get(user_id)
             if not utilisateur:
                 print(f"❌ Utilisateur non trouvé avec ID: {user_id}")
@@ -407,17 +313,14 @@ class UserService:
             utilisateur.set_password(mot_de_passe)
             utilisateur.actif = True
             
-            # Invalider le token
-            ActivationTokenManager.use_token(token)
+            # ✅ NOUVEAU : Invalider le token dans Redis
+            self._use_activation_token(token)
             
             db.session.commit()
             
             print(f"✅ Compte activé avec succès pour {utilisateur.email}")
             
-            # 📧 Envoyer email de confirmation
-            from app.services.mail_service import MailService
-            
-            # Récupérer les infos du client
+            # Envoyer email de confirmation
             client_name = "SERTEC IoT"
             if utilisateur.client:
                 client_name = utilisateur.client.nom_entreprise
@@ -442,22 +345,23 @@ class UserService:
         except Exception as e:
             db.session.rollback()
             print(f"❌ ERREUR DANS ACTIVER_ADMIN: {str(e)}")
-            import traceback
-            print(f"❌ TRACEBACK:")
-            traceback.print_exc()
             return None, f"Erreur lors de l'activation: {str(e)}"
     
     def valider_token_activation(self, token: str) -> Tuple[Optional[Dict], Optional[str]]:
         """Valider un token d'activation sans le consommer (pour vérification côté frontend)"""
         try:
-            from app.utils.token_manager import ActivationTokenManager
+            # ✅ NOUVEAU : Validation avec Redis
+            token_data = self._validate_activation_token(token)
             
-            token_data = ActivationTokenManager.validate_token(token)
-            if not token_data:
-                return None, "Token invalide ou expiré"
+            if not token_data or not token_data.get('valid'):
+                return None, token_data.get('message', 'Token invalide ou expiré')
+            
+            user_id = token_data.get('user_id')
+            if not user_id:
+                return None, "Données utilisateur manquantes"
             
             # Récupérer les infos de l'admin
-            admin = User.query.get(token_data['user_id'])
+            admin = User.query.get(user_id)
             if not admin:
                 return None, "Utilisateur non trouvé"
             
@@ -465,8 +369,13 @@ class UserService:
                 return None, "Ce compte est déjà activé"
             
             # Calculer le temps restant
-            import time
-            temps_restant = int(token_data['expires_at'] - time.time())
+            expires_at = token_data.get('expires_at')
+            if expires_at:
+                if isinstance(expires_at, str):
+                    expires_at = datetime.fromisoformat(expires_at)
+                temps_restant = int((expires_at - datetime.utcnow()).total_seconds())
+            else:
+                temps_restant = 0
             
             resultat = {
                 'admin_info': {
@@ -475,8 +384,8 @@ class UserService:
                     'email': admin.email,
                     'entreprise': admin.client.nom_entreprise if admin.client else None
                 },
-                'temps_restant_secondes': temps_restant,
-                'temps_restant_heures': round(temps_restant / 3600, 1)
+                'temps_restant_secondes': max(0, temps_restant),
+                'temps_restant_heures': round(max(0, temps_restant) / 3600, 1)
             }
             
             return resultat, None
@@ -500,14 +409,11 @@ class UserService:
             if admin.role != 'admin':
                 return None, "Cette action n'est disponible que pour les administrateurs"
             
-            # Révoquer les anciens tokens de cet utilisateur
-            from app.utils.token_manager import ActivationTokenManager
-            from app.services.mail_service import MailService
-            
-            ActivationTokenManager.revoke_user_tokens(admin.id)
+            # ✅ NOUVEAU : Révoquer les anciens tokens de cet utilisateur
+            self._revoke_user_activation_tokens(admin.id)
             
             # Générer nouveau token
-            token = ActivationTokenManager.generate_token(admin.id, admin.email)
+            token = self._generate_activation_token(admin.id, admin.email, 'admin', 86400)  # 24h
             
             # Renvoyer l'email
             email_result = MailService.send_admin_activation_email(
@@ -528,24 +434,65 @@ class UserService:
             return None, f"Erreur lors de la régénération: {str(e)}"
     
     def lister_admins_en_attente(self, utilisateur_demandeur: User) -> Tuple[Optional[List[Dict]], Optional[str]]:
-        """Lister les administrateurs en attente d'activation - SUPERADMIN SEULEMENT"""
+        """Lister les administrateurs en attente d'activation - SELON LES PERMISSIONS"""
         try:
-            if not utilisateur_demandeur.is_superadmin():
-                return None, "Seul le superadmin peut voir les admins en attente"
-            
-            admins_inactifs = User.query.filter_by(
-                role='admin',
-                actif=False
-            ).order_by(User.date_creation.desc()).all()
+            if utilisateur_demandeur.is_superadmin():
+                # 🔧 SUPERADMIN : Voit TOUS les admins en attente de TOUS les clients
+                admins_inactifs = User.query.filter_by(
+                    role='admin',
+                    actif=False
+                ).order_by(User.date_creation.desc()).all()
+                
+                scope_message = "tous les clients"
+                
+            elif utilisateur_demandeur.is_admin():
+                # 🏢 ADMIN CLIENT : Voit SEULEMENT les admins de SON client en attente
+                admins_inactifs = User.query.filter_by(
+                    role='admin',
+                    actif=False,
+                    client_id=utilisateur_demandeur.client_id  # ✅ RESTRICTION : Seulement son client
+                ).order_by(User.date_creation.desc()).all()
+                
+                scope_message = f"client '{utilisateur_demandeur.client.nom_entreprise}'" if utilisateur_demandeur.client else "votre client"
+                
+            else:
+                return None, "Permission insuffisante pour voir les admins en attente"
             
             liste_admins = []
             for admin in admins_inactifs:
                 admin_dict = admin.to_dict(include_sensitive=True)
                 admin_dict['entreprise'] = admin.client.nom_entreprise if admin.client else None
                 admin_dict['jours_depuis_creation'] = (datetime.utcnow() - admin.date_creation).days
+                
+                # ✅ Ajouter info token d'activation
+                admin_dict['has_activation_token'] = self._user_has_activation_token(admin.id)
+                admin_dict['nb_tokens_actifs'] = self._count_user_activation_tokens(admin.id)
+                
+                # ✅ Permissions de suppression
+                admin_dict['peut_etre_supprime'] = self._peut_supprimer_utilisateur_en_attente(utilisateur_demandeur, admin)
+                
+                # ✅ Indiquer si c'est dans le scope
+                if utilisateur_demandeur.is_superadmin():
+                    admin_dict['dans_mon_scope'] = True
+                elif utilisateur_demandeur.is_admin():
+                    admin_dict['dans_mon_scope'] = (admin.client_id == utilisateur_demandeur.client_id)
+                
                 liste_admins.append(admin_dict)
             
-            return liste_admins, None
+            # ✅ Métadonnées enrichies
+            metadata = {
+                'scope': scope_message,
+                'total_admins': len(liste_admins),
+                'permissions': {
+                    'peut_voir_tous_clients': utilisateur_demandeur.is_superadmin(),
+                    'client_restriction': utilisateur_demandeur.client_id if utilisateur_demandeur.is_admin() else None
+                }
+            }
+            
+            return {
+                'admins': liste_admins,
+                'metadata': metadata
+            }, None
             
         except Exception as e:
             return None, f"Erreur lors de la récupération: {str(e)}"
@@ -566,7 +513,6 @@ class UserService:
                 return None, "Utilisateur non trouvé"
             
             # Envoyer par email
-            from app.services.mail_service import MailService
             email_result = MailService.send_new_password_email(
                 user_email=utilisateur.email,
                 prenom=utilisateur.prenom,
@@ -582,12 +528,11 @@ class UserService:
                 
         except Exception as e:
             return None, f"Erreur lors de la génération: {str(e)}"
-        
 
     # =================== GESTION DES UTILISATEURS ===================
     
-    def creer_utilisateur(self, donnees_utilisateur: Dict[str, Any], utilisateur_createur: User) -> Tuple[Optional[User], Optional[str]]:
-        """Créer un nouvel utilisateur selon les règles de permissions"""
+    def creer_utilisateur(self, donnees_utilisateur: Dict[str, Any], utilisateur_createur: User) -> Tuple[Optional[Dict], Optional[str]]:
+        """Créer un nouvel utilisateur selon les règles de permissions avec activation par email"""
         try:
             # Validation des données de base
             if not self._valider_donnees_utilisateur(donnees_utilisateur):
@@ -602,50 +547,113 @@ class UserService:
             role = donnees_utilisateur.get('role', 'user')
             client_id = donnees_utilisateur.get('client_id')
             
-            # RÈGLES DE PERMISSIONS :
+            # RÈGLES DE PERMISSIONS
             if utilisateur_createur.is_superadmin():
                 # SUPERADMIN peut créer n'importe qui, n'importe où
                 if role == 'superadmin':
                     client_id = None
                 elif role in ['admin', 'user'] and not client_id:
                     return None, "client_id requis pour les admin/user"
-                
+            
             elif utilisateur_createur.is_admin():
                 # ADMIN peut créer seulement des USERS dans SON client
                 if role != 'user':
                     return None, "Un admin ne peut créer que des utilisateurs 'user'"
                 client_id = utilisateur_createur.client_id
-                
+            
             else:
                 return None, "Permission insuffisante pour créer des utilisateurs"
             
             # Vérifier que le client existe si spécifié
+            client = None
             if client_id:
                 client = Client.query.get(client_id)
                 if not client or not client.actif:
                     return None, "Client non trouvé ou inactif"
             
-            # Créer l'utilisateur
+            # 👤 ÉTAPE 1: Créer l'utilisateur INACTIF
             nouvel_utilisateur = User(
                 prenom=donnees_utilisateur['prenom'].strip(),
                 nom=donnees_utilisateur['nom'].strip(),
                 email=donnees_utilisateur['email'].lower().strip(),
                 telephone=donnees_utilisateur.get('telephone', '').strip() or None,
                 role=role,
-                client_id=client_id
+                client_id=client_id,
+                actif=False  # Créer inactif, sera activé lors de l'activation
             )
             
-            # Générer un mot de passe temporaire si pas fourni
-            mot_de_passe = donnees_utilisateur.get('mot_de_passe')
-            if not mot_de_passe:
-                mot_de_passe = self._generer_mot_de_passe_temporaire()
-            
-            nouvel_utilisateur.set_password(mot_de_passe)
+            # Créer avec un mot de passe temporaire (sera remplacé lors de l'activation)
+            nouvel_utilisateur.set_password("temp_password_will_be_replaced")
             
             db.session.add(nouvel_utilisateur)
+            db.session.flush()  # Pour obtenir l'ID de l'utilisateur
+            
+            # ✅ NOUVEAU : Générer token d'activation avec Redis
+            print(f"🔍 Génération token pour utilisateur:")
+            print(f"   - ID: {nouvel_utilisateur.id}")
+            print(f"   - Email: {nouvel_utilisateur.email}")
+            print(f"   - Prénom: {nouvel_utilisateur.prenom}")
+            print(f"   - Nom: {nouvel_utilisateur.nom}")
+            print(f"   - Rôle: {nouvel_utilisateur.role}")
+
+            # Générer le token d'activation selon le type d'utilisateur
+            token = self._generate_activation_token(nouvel_utilisateur.id, nouvel_utilisateur.email, role, 86400)  # 24h
+            print(f"🎫 Token généré: {token}")
+
+            # Vérifier que le token est bien enregistré
+            validation = self._validate_activation_token(token)
+            print(f"✅ Validation immédiate du token: {validation}")
+            
+            # Envoyer l'email d'activation selon le rôle
+            if role == 'admin':
+                # Email pour admin client
+                email_result = MailService.send_admin_activation_email(
+                    user_email=nouvel_utilisateur.email,
+                    prenom=nouvel_utilisateur.prenom,
+                    nom=nouvel_utilisateur.nom,
+                    client_name=client.nom_entreprise if client else "Système",
+                    activation_token=token,
+                    expires_hours=24
+                )
+            elif role == 'superadmin':
+                # Email pour superadmin
+                email_result = MailService.send_superadmin_activation_email(
+                    user_email=nouvel_utilisateur.email,
+                    prenom=nouvel_utilisateur.prenom,
+                    nom=nouvel_utilisateur.nom,
+                    activation_token=token,
+                    expires_hours=24
+                )
+            else:
+                # Email pour utilisateur standard
+                email_result = MailService.send_user_activation_email(
+                    user_email=nouvel_utilisateur.email,
+                    prenom=nouvel_utilisateur.prenom,
+                    nom=nouvel_utilisateur.nom,
+                    client_name=client.nom_entreprise if client else "Système",
+                    activation_token=token,
+                    expires_hours=24
+                )
+
+            print(f"📧 Résultat envoi email: {email_result}")
+            
             db.session.commit()
             
-            return nouvel_utilisateur, mot_de_passe if not donnees_utilisateur.get('mot_de_passe') else None
+            # 🎉 Préparer le résultat
+            resultat = {
+                'utilisateur': nouvel_utilisateur.to_dict(),
+                'utilisateur_objet': nouvel_utilisateur,  # Objet complet pour éviter les erreurs
+                'token_activation': token,  # Pour debug/test seulement
+                'email_result': email_result,
+                'identifiants_connexion': {
+                    'email': nouvel_utilisateur.email,
+                    'status': 'En attente d\'activation'
+                },
+                'message_instructions': f"Un email d'activation a été envoyé à {nouvel_utilisateur.email}",
+                'client_info': client.to_dict() if client else None
+            }
+            
+            return resultat, None
             
         except Exception as e:
             db.session.rollback()
@@ -717,7 +725,6 @@ class UserService:
             else:
                 return None, "Permission insuffisante"
             
-            # 🔁 SUPPRIME le filtre actif=True pour permettre au frontend de filtrer
             utilisateurs = query.order_by(User.prenom, User.nom).all()
             
             liste_utilisateurs = [user.to_dict(include_sensitive=True) for user in utilisateurs]
@@ -726,7 +733,6 @@ class UserService:
 
         except Exception as e:
             return None, f"Erreur lors de la récupération: {str(e)}"
-
     
     def obtenir_utilisateur(self, utilisateur_id: str, utilisateur_demandeur: User) -> Tuple[Optional[Dict], Optional[str]]:
         """Obtenir les détails d'un utilisateur"""
@@ -749,6 +755,10 @@ class UserService:
                 'peut_supprimer': self._peut_supprimer_utilisateur(utilisateur_demandeur, utilisateur_cible)
             }
             
+            # ✅ NOUVEAU : Ajouter info token d'activation si inactif
+            if not utilisateur_cible.actif:
+                donnees_utilisateur['has_activation_token'] = self._user_has_activation_token(utilisateur_cible.id)
+            
             return donnees_utilisateur, None
             
         except Exception as e:
@@ -770,12 +780,14 @@ class UserService:
                 return False, "Vous ne pouvez pas vous désactiver vous-même"
             
             utilisateur_cible.actif = False
+            
+            # ✅ NOUVEAU : Invalider tous les tokens d'activation de cet utilisateur
+            self._revoke_user_activation_tokens(utilisateur_cible.id)
+            
             db.session.commit()
             
             return True, f"Utilisateur {utilisateur_cible.nom_complet} désactivé"
             
-        except Exception as e:
-            db.session.rollback()
         except Exception as e:
             db.session.rollback()
             return False, f"Erreur lors de la désactivation: {str(e)}"
@@ -830,6 +842,9 @@ class UserService:
                              f"Utilisez forcer=True pour supprimer définitivement.")
             
             nom_utilisateur = utilisateur_cible.nom_complet
+            
+            # ✅ NOUVEAU : Invalider tous les tokens d'activation de cet utilisateur
+            self._revoke_user_activation_tokens(utilisateur_cible.id)
             
             if forcer:
                 # Suppression forcée - SQLAlchemy gère les CASCADE
@@ -904,7 +919,9 @@ class UserService:
                     'total_admins': User.query.filter_by(role='admin', actif=True).count(),
                     'total_users': User.query.filter_by(role='user', actif=True).count(),
                     'utilisateurs_inactifs': User.query.filter_by(actif=False).count(),
-                    'admins_en_attente': User.query.filter_by(role='admin', actif=False).count()
+                    'admins_en_attente': User.query.filter_by(role='admin', actif=False).count(),
+                    # ✅ NOUVEAU : Stats tokens d'activation
+                    'tokens_activation_stats': self._get_activation_tokens_stats()
                 }
             else:
                 # Stats pour le client de l'admin
@@ -920,6 +937,311 @@ class UserService:
         except Exception as e:
             return None, f"Erreur lors du calcul des statistiques: {str(e)}"
     
+    # =================== MÉTHODES REDIS POUR TOKENS D'ACTIVATION ===================
+    
+    def _generate_activation_token(self, user_id: str, email: str, role: str, expires_in_seconds: int = 86400) -> str:
+        """Générer un token d'activation et le stocker dans Redis"""
+        try:
+            # Générer un token unique
+            token = secrets.token_urlsafe(32)
+            
+            # Calculer l'expiration
+            expires_at = datetime.utcnow() + timedelta(seconds=expires_in_seconds)
+            
+            # Données du token
+            token_data = {
+                'user_id': user_id,
+                'email': email,
+                'role': role,
+                'type': 'activation',
+                'created_at': datetime.utcnow().isoformat(),
+                'expires_at': expires_at.isoformat(),
+                'used': False
+            }
+            
+            # Stocker dans Redis avec TTL
+            redis_key = f"activation_token:{token}"
+            
+            if self.redis:
+                self.redis.setex(redis_key, expires_in_seconds, json.dumps(token_data))
+                print(f"✅ Token stocké dans Redis: {redis_key}")
+            else:
+                # Fallback vers ActivationTokenManager si Redis indisponible
+                print(f"⚠️ Redis indisponible, utilisation du fallback ActivationTokenManager")
+                try:
+                    from app.utils.token_manager import ActivationTokenManager
+                    return ActivationTokenManager.generate_token(user_id, email, expires_in_seconds)
+                except ImportError:
+                    raise Exception("Redis indisponible et ActivationTokenManager non trouvé")
+            
+            return token
+            
+        except Exception as e:
+            print(f"❌ Erreur génération token: {e}")
+            raise
+    
+    def _validate_activation_token(self, token: str) -> Dict[str, Any]:
+        """Valider un token d'activation depuis Redis"""
+        try:
+            redis_key = f"activation_token:{token}"
+            
+            if self.redis:
+                # Récupérer depuis Redis
+                token_data_str = self.redis.get(redis_key)
+                
+                if not token_data_str:
+                    return {'valid': False, 'message': 'Token non trouvé ou expiré'}
+                
+                # Décoder les données
+                token_data = json.loads(token_data_str)
+                
+                # Vérifier si déjà utilisé
+                if token_data.get('used', False):
+                    return {'valid': False, 'message': 'Token déjà utilisé'}
+                
+                # Vérifier l'expiration (double vérification)
+                expires_at = datetime.fromisoformat(token_data['expires_at'])
+                if datetime.utcnow() > expires_at:
+                    # Supprimer le token expiré
+                    self.redis.delete(redis_key)
+                    return {'valid': False, 'message': 'Token expiré'}
+                
+                # Token valide
+                return {
+                    'valid': True,
+                    'user_id': token_data['user_id'],
+                    'email': token_data['email'],
+                    'role': token_data['role'],
+                    'expires_at': expires_at,
+                    'message': 'Token valide'
+                }
+            
+            else:
+                # Fallback vers ActivationTokenManager
+                print(f"⚠️ Redis indisponible, utilisation du fallback pour validation")
+                try:
+                    from app.utils.token_manager import ActivationTokenManager
+                    return ActivationTokenManager.validate_token(token)
+                except ImportError:
+                    return {'valid': False, 'message': 'Service de validation indisponible'}
+            
+        except Exception as e:
+            print(f"❌ Erreur validation token: {e}")
+            return {'valid': False, 'message': f'Erreur de validation: {str(e)}'}
+    
+    def _use_activation_token(self, token: str) -> bool:
+        """Marquer un token comme utilisé (ou le supprimer)"""
+        try:
+            redis_key = f"activation_token:{token}"
+            
+            if self.redis:
+                # Supprimer le token de Redis (plus simple que de le marquer comme utilisé)
+                result = self.redis.delete(redis_key)
+                print(f"✅ Token supprimé de Redis: {redis_key} (résultat: {result})")
+                return result > 0
+            else:
+                # Fallback
+                try:
+                    from app.utils.token_manager import ActivationTokenManager
+                    ActivationTokenManager.use_token(token)
+                    return True
+                except ImportError:
+                    return False
+            
+        except Exception as e:
+            print(f"❌ Erreur utilisation token: {e}")
+            return False
+    
+    def _revoke_user_activation_tokens(self, user_id: str) -> int:
+        """Révoquer tous les tokens d'activation d'un utilisateur"""
+        try:
+            if self.redis:
+                # Chercher tous les tokens de ce user_id
+                pattern = "activation_token:*"
+                keys = self.redis.keys(pattern)
+                
+                tokens_supprimés = 0
+                for key in keys:
+                    try:
+                        token_data_str = self.redis.get(key)
+                        if token_data_str:
+                            token_data = json.loads(token_data_str)
+                            if token_data.get('user_id') == user_id:
+                                self.redis.delete(key)
+                                tokens_supprimés += 1
+                    except:
+                        continue
+                
+                print(f"✅ {tokens_supprimés} tokens d'activation supprimés pour user {user_id}")
+                return tokens_supprimés
+            else:
+                # Fallback
+                try:
+                    from app.utils.token_manager import ActivationTokenManager
+                    ActivationTokenManager.revoke_user_tokens(user_id)
+                    return 1  # On ne peut pas savoir combien exactement
+                except ImportError:
+                    return 0
+            
+        except Exception as e:
+            print(f"❌ Erreur révocation tokens: {e}")
+            return 0
+    
+    def _invalidate_client_tokens(self, client_id: str) -> int:
+        """Invalider tous les tokens d'activation d'un client"""
+        try:
+            if self.redis:
+                # Chercher tous les utilisateurs de ce client
+                users = User.query.filter_by(client_id=client_id).all()
+                total_supprimés = 0
+                
+                for user in users:
+                    total_supprimés += self._revoke_user_activation_tokens(user.id)
+                
+                print(f"✅ {total_supprimés} tokens d'activation supprimés pour client {client_id}")
+                return total_supprimés
+            else:
+                return 0
+            
+        except Exception as e:
+            print(f"❌ Erreur invalidation tokens client: {e}")
+            return 0
+    
+    def _user_has_activation_token(self, user_id: str) -> bool:
+        """Vérifier si un utilisateur a un token d'activation actif"""
+        try:
+            if self.redis:
+                pattern = "activation_token:*"
+                keys = self.redis.keys(pattern)
+                
+                for key in keys:
+                    try:
+                        token_data_str = self.redis.get(key)
+                        if token_data_str:
+                            token_data = json.loads(token_data_str)
+                            if token_data.get('user_id') == user_id and not token_data.get('used', False):
+                                # Vérifier que le token n'est pas expiré
+                                expires_at = datetime.fromisoformat(token_data['expires_at'])
+                                if datetime.utcnow() <= expires_at:
+                                    return True
+                    except:
+                        continue
+                
+                return False
+            else:
+                return False  # Sans Redis, on ne peut pas vérifier facilement
+            
+        except Exception as e:
+            print(f"❌ Erreur vérification token utilisateur: {e}")
+            return False
+    
+    def _get_activation_tokens_stats(self) -> Dict[str, int]:
+        """Obtenir les statistiques des tokens d'activation"""
+        try:
+            if self.redis:
+                pattern = "activation_token:*"
+                keys = self.redis.keys(pattern)
+                
+                stats = {
+                    'total_tokens': len(keys),
+                    'tokens_admin': 0,
+                    'tokens_user': 0,
+                    'tokens_superadmin': 0,
+                    'tokens_expires': 0
+                }
+                
+                now = datetime.utcnow()
+                
+                for key in keys:
+                    try:
+                        token_data_str = self.redis.get(key)
+                        if token_data_str:
+                            token_data = json.loads(token_data_str)
+                            
+                            # Compter par rôle
+                            role = token_data.get('role', 'user')
+                            if role == 'admin':
+                                stats['tokens_admin'] += 1
+                            elif role == 'superadmin':
+                                stats['tokens_superadmin'] += 1
+                            else:
+                                stats['tokens_user'] += 1
+                            
+                            # Compter les expirés
+                            expires_at = datetime.fromisoformat(token_data['expires_at'])
+                            if now > expires_at:
+                                stats['tokens_expires'] += 1
+                    except:
+                        continue
+                
+                return stats
+            else:
+                return {'total_tokens': 0, 'error': 'Redis indisponible'}
+            
+        except Exception as e:
+            return {'error': str(e)}
+    
+    def nettoyer_tokens_expires(self) -> Dict[str, int]:
+        """Nettoyer les tokens expirés"""
+        try:
+            if self.redis:
+                pattern = "activation_token:*"
+                keys = self.redis.keys(pattern)
+                
+                tokens_supprimes = 0
+                now = datetime.utcnow()
+                
+                for key in keys:
+                    try:
+                        token_data_str = self.redis.get(key)
+                        if token_data_str:
+                            token_data = json.loads(token_data_str)
+                            expires_at = datetime.fromisoformat(token_data['expires_at'])
+                            
+                            if now > expires_at:
+                                self.redis.delete(key)
+                                tokens_supprimes += 1
+                    except:
+                        # Token corrompu, le supprimer aussi
+                        self.redis.delete(key)
+                        tokens_supprimes += 1
+                
+                stats_apres = self._get_activation_tokens_stats()
+                
+                return {
+                    'tokens_supprimes': tokens_supprimes,
+                    'stats_actuelles': stats_apres
+                }
+            else:
+                # Fallback
+                try:
+                    from app.utils.token_manager import ActivationTokenManager
+                    tokens_supprimes = ActivationTokenManager.cleanup_expired()
+                    stats = ActivationTokenManager.get_stats()
+                    return {
+                        'tokens_supprimes': tokens_supprimes,
+                        'stats_actuelles': stats
+                    }
+                except ImportError:
+                    return {'error': 'Services indisponibles'}
+        
+        except Exception as e:
+            return {'error': str(e)}
+    
+    def obtenir_stats_tokens(self) -> Dict[str, Any]:
+        """Obtenir les statistiques des tokens (debug)"""
+        try:
+            if self.redis:
+                return self._get_activation_tokens_stats()
+            else:
+                try:
+                    from app.utils.token_manager import ActivationTokenManager
+                    return ActivationTokenManager.get_stats()
+                except ImportError:
+                    return {'error': 'Services indisponibles'}
+        except Exception as e:
+            return {'error': str(e)}
+    
     # =================== MÉTHODES PRIVÉES DE VALIDATION ===================
     
     def _valider_donnees_utilisateur(self, donnees: Dict[str, Any]) -> bool:
@@ -930,7 +1252,7 @@ class UserService:
             if not donnees.get(champ) or not str(donnees[champ]).strip():
                 return False
         
-        # Valider l'email - CORRECTION ICI
+        # Valider l'email
         import re
         email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
         if not re.match(email_pattern, donnees['email']):
@@ -965,15 +1287,15 @@ class UserService:
     
     def _peut_modifier_utilisateur(self, utilisateur_modificateur: User, utilisateur_cible: User) -> bool:
         """Vérifier si un utilisateur peut en modifier un autre"""
-        # 1️⃣ Tout le monde peut modifier son propre profil
+        # Tout le monde peut modifier son propre profil
         if utilisateur_modificateur.id == utilisateur_cible.id:
             return True
         
-        # 2️⃣ Superadmin peut tout modifier
+        # Superadmin peut tout modifier
         if utilisateur_modificateur.is_superadmin():
             return True
         
-        # 3️⃣ Admin peut modifier les users de son client (pas les autres admins/superadmins)
+        # Admin peut modifier les users de son client (pas les autres admins/superadmins)
         if utilisateur_modificateur.is_admin():
             return (utilisateur_cible.client_id == utilisateur_modificateur.client_id and 
                    utilisateur_cible.role == 'user')
@@ -984,29 +1306,711 @@ class UserService:
         """Vérifier si un utilisateur peut en supprimer un autre"""
         # Même logique que modification pour le moment
         return self._peut_modifier_utilisateur(utilisateur_supprimeur, utilisateur_cible)
+
+    # =================== MÉTHODES UTILITAIRES ET DEBUG ===================
     
-    # =================== MÉTHODES UTILITAIRES POUR DEBUG ===================
+    def debug_redis_connection(self) -> Dict[str, Any]:
+        """Tester la connexion Redis (utilitaire de debug)"""
+        try:
+            if self.redis:
+                # Test simple ping
+                result = self.redis.ping()
+                
+                # Informations sur Redis
+                info = {
+                    'redis_available': True,
+                    'ping_successful': result,
+                    'redis_info': {
+                        'version': self.redis.info().get('redis_version', 'unknown'),
+                        'connected_clients': self.redis.info().get('connected_clients', 0),
+                        'used_memory_human': self.redis.info().get('used_memory_human', 'unknown')
+                    }
+                }
+                
+                # Test d'écriture/lecture
+                test_key = "test_key_activation_service"
+                test_value = "test_value_123"
+                
+                self.redis.setex(test_key, 60, test_value)  # 1 minute
+                retrieved = self.redis.get(test_key)
+                self.redis.delete(test_key)  # Nettoyer
+                
+                info['write_read_test'] = {
+                    'success': retrieved == test_value,
+                    'written': test_value,
+                    'retrieved': retrieved
+                }
+                
+                return info
+            else:
+                return {
+                    'redis_available': False,
+                    'message': 'Redis connection not initialized'
+                }
+                
+        except Exception as e:
+            return {
+                'redis_available': False,
+                'error': str(e),
+                'fallback_available': self._test_fallback_available()
+            }
     
-    def nettoyer_tokens_expires(self) -> Dict[str, int]:
-        """Nettoyer les tokens expirés (méthode utilitaire)"""
+    def _test_fallback_available(self) -> bool:
+        """Tester si le fallback ActivationTokenManager est disponible"""
         try:
             from app.utils.token_manager import ActivationTokenManager
+            return True
+        except ImportError:
+            return False
+    
+    def get_all_activation_tokens_debug(self) -> Dict[str, Any]:
+        """Récupérer tous les tokens d'activation pour debug (SUPERADMIN ONLY)"""
+        try:
+            if self.redis:
+                pattern = "activation_token:*"
+                keys = self.redis.keys(pattern)
+                
+                tokens_info = []
+                for key in keys:
+                    try:
+                        token_data_str = self.redis.get(key)
+                        if token_data_str:
+                            token_data = json.loads(token_data_str)
+                            
+                            # Masquer des infos sensibles
+                            token_info = {
+                                'token_key': key.decode() if isinstance(key, bytes) else key,
+                                'user_id': token_data.get('user_id'),
+                                'email': token_data.get('email', '').replace('@', '@***'),  # Masquer partiellement
+                                'role': token_data.get('role'),
+                                'type': token_data.get('type'),
+                                'created_at': token_data.get('created_at'),
+                                'expires_at': token_data.get('expires_at'),
+                                'used': token_data.get('used', False),
+                                'expired': datetime.utcnow() > datetime.fromisoformat(token_data['expires_at'])
+                            }
+                            tokens_info.append(token_info)
+                    except Exception as e:
+                        tokens_info.append({
+                            'token_key': key.decode() if isinstance(key, bytes) else key,
+                            'error': f'Erreur parsing: {str(e)}'
+                        })
+                
+                return {
+                    'total_tokens': len(keys),
+                    'tokens': tokens_info,
+                    'stats': self._get_activation_tokens_stats()
+                }
+            else:
+                return {
+                    'error': 'Redis indisponible',
+                    'fallback_stats': self.obtenir_stats_tokens()
+                }
+                
+        except Exception as e:
+            return {'error': str(e)}
+    
+    def force_cleanup_all_tokens(self) -> Dict[str, int]:
+        """Forcer le nettoyage de TOUS les tokens d'activation (URGENCE SEULEMENT)"""
+        try:
+            if self.redis:
+                pattern = "activation_token:*"
+                keys = self.redis.keys(pattern)
+                
+                tokens_supprimes = 0
+                for key in keys:
+                    self.redis.delete(key)
+                    tokens_supprimes += 1
+                
+                return {
+                    'tokens_supprimes': tokens_supprimes,
+                    'message': f'TOUS les {tokens_supprimes} tokens d\'activation ont été supprimés'
+                }
+            else:
+                return {'error': 'Redis indisponible'}
+                
+        except Exception as e:
+            return {'error': str(e)}
+    
+    # =================== MÉTHODES SPÉCIFIQUES POUR DIFFÉRENTS TYPES D'ACTIVATION ===================
+    
+    def creer_et_envoyer_activation_utilisateur_simple(self, utilisateur_id: str, utilisateur_createur: User) -> Tuple[Optional[str], Optional[str]]:
+        """Créer et envoyer un token d'activation pour un utilisateur existant (réactivation)"""
+        try:
+            if not utilisateur_createur.is_admin():
+                return None, "Permission insuffisante"
             
-            tokens_supprimes = ActivationTokenManager.cleanup_expired()
-            stats = ActivationTokenManager.get_stats()
+            utilisateur = User.query.get(utilisateur_id)
+            if not utilisateur:
+                return None, "Utilisateur non trouvé"
+            
+            if utilisateur.actif:
+                return None, "Cet utilisateur est déjà actif"
+            
+            # Vérifier les permissions (même client ou superadmin)
+            if not utilisateur_createur.is_superadmin():
+                if utilisateur.client_id != utilisateur_createur.client_id:
+                    return None, "Vous ne pouvez créer des tokens que pour votre client"
+            
+            # Révoquer les anciens tokens
+            self._revoke_user_activation_tokens(utilisateur.id)
+            
+            # Générer nouveau token
+            token = self._generate_activation_token(utilisateur.id, utilisateur.email, utilisateur.role, 86400)
+            
+            # Envoyer l'email selon le rôle
+            if utilisateur.role == 'admin':
+                email_result = MailService.send_admin_activation_email(
+                    user_email=utilisateur.email,
+                    prenom=utilisateur.prenom,
+                    nom=utilisateur.nom,
+                    client_name=utilisateur.client.nom_entreprise if utilisateur.client else "Système",
+                    activation_token=token,
+                    expires_hours=24
+                )
+            elif utilisateur.role == 'superadmin':
+                email_result = MailService.send_superadmin_activation_email(
+                    user_email=utilisateur.email,
+                    prenom=utilisateur.prenom,
+                    nom=utilisateur.nom,
+                    activation_token=token,
+                    expires_hours=24
+                )
+            else:
+                email_result = MailService.send_user_activation_email(
+                    user_email=utilisateur.email,
+                    prenom=utilisateur.prenom,
+                    nom=utilisateur.nom,
+                    client_name=utilisateur.client.nom_entreprise if utilisateur.client else "Système",
+                    activation_token=token,
+                    expires_hours=24
+                )
+            
+            if email_result['success']:
+                return token, None
+            else:
+                return token, f"Token généré mais email non envoyé: {email_result['message']}"
+                
+        except Exception as e:
+            return None, f"Erreur lors de la création: {str(e)}"
+    
+    def activer_utilisateur_quelconque(self, token: str, mot_de_passe: str, confirmation_mot_de_passe: str) -> Tuple[Optional[Dict], Optional[str]]:
+        """Activer n'importe quel type d'utilisateur (admin, user, superadmin) avec le même endpoint"""
+        try:
+            print(f"🔍 === ACTIVATION UTILISATEUR GÉNÉRIQUE ===")
+            print(f"🎫 Token reçu: {token[:10]}...")
+            
+            # Validation du token
+            validation = self._validate_activation_token(token)
+            
+            if not validation or not validation.get('valid'):
+                return None, validation.get('message', 'Token invalide ou expiré')
+            
+            user_id = validation.get('user_id')
+            user_role = validation.get('role', 'user')
+            
+            if not user_id:
+                return None, "ID utilisateur manquant dans la validation"
+            
+            print(f"👤 Activation utilisateur: {user_id} (rôle: {user_role})")
+            
+            # Récupérer l'utilisateur
+            utilisateur = User.query.get(user_id)
+            if not utilisateur:
+                return None, "Utilisateur non trouvé"
+            
+            # Vérifications communes
+            if utilisateur.actif:
+                return None, "Ce compte est déjà activé"
+            
+            if mot_de_passe != confirmation_mot_de_passe:
+                return None, "Les mots de passe ne correspondent pas"
+            
+            if len(mot_de_passe) < 8:
+                return None, "Le mot de passe doit contenir au moins 8 caractères"
+            
+            # Activer le compte
+            utilisateur.set_password(mot_de_passe)
+            utilisateur.actif = True
+            
+            # Invalider le token
+            self._use_activation_token(token)
+            
+            db.session.commit()
+            
+            print(f"✅ Compte {user_role} activé avec succès pour {utilisateur.email}")
+            
+            # Envoyer email de confirmation
+            client_name = "SERTEC IoT"
+            if utilisateur.client:
+                client_name = utilisateur.client.nom_entreprise
+            
+            email_result = MailService.send_activation_confirmation_email(
+                user_email=utilisateur.email,
+                prenom=utilisateur.prenom,
+                nom=utilisateur.nom,
+                client_name=client_name
+            )
+            
+            resultat = {
+                'utilisateur': utilisateur.to_dict(),
+                'email_confirmation': email_result,
+                'message': f"✅ Compte {user_role} activé avec succès ! Un email de confirmation a été envoyé à {utilisateur.email}"
+            }
+            
+            return resultat, None
+            
+        except Exception as e:
+            db.session.rollback()
+            print(f"❌ ERREUR ACTIVATION GÉNÉRIQUE: {str(e)}")
+            return None, f"Erreur lors de l'activation: {str(e)}"
+    
+    # =================== GESTION BATCH DES TOKENS ===================
+    
+    def nettoyer_tokens_utilisateurs_supprimes(self) -> Dict[str, int]:
+        """Nettoyer les tokens d'activation des utilisateurs qui ont été supprimés de la DB"""
+        try:
+            if not self.redis:
+                return {'error': 'Redis indisponible'}
+            
+            pattern = "activation_token:*"
+            keys = self.redis.keys(pattern)
+            
+            tokens_supprimes = 0
+            tokens_gardes = 0
+            
+            for key in keys:
+                try:
+                    token_data_str = self.redis.get(key)
+                    if token_data_str:
+                        token_data = json.loads(token_data_str)
+                        user_id = token_data.get('user_id')
+                        
+                        if user_id:
+                            # Vérifier si l'utilisateur existe encore
+                            utilisateur = User.query.get(user_id)
+                            if not utilisateur:
+                                # Utilisateur supprimé, supprimer le token
+                                self.redis.delete(key)
+                                tokens_supprimes += 1
+                            else:
+                                tokens_gardes += 1
+                        else:
+                            # Token sans user_id, le supprimer
+                            self.redis.delete(key)
+                            tokens_supprimes += 1
+                    else:
+                        # Token corrompu
+                        self.redis.delete(key)
+                        tokens_supprimes += 1
+                        
+                except Exception:
+                    # Erreur de parsing, supprimer le token corrompu
+                    self.redis.delete(key)
+                    tokens_supprimes += 1
             
             return {
                 'tokens_supprimes': tokens_supprimes,
-                'stats_actuelles': stats
+                'tokens_gardes': tokens_gardes,
+                'message': f'{tokens_supprimes} tokens orphelins supprimés, {tokens_gardes} tokens valides gardés'
             }
+            
         except Exception as e:
-            return {'erreur': str(e)}
+            return {'error': str(e)}
     
-    def obtenir_stats_tokens(self) -> Dict[str, Any]:
-        """Obtenir les statistiques des tokens (debug)"""
+    def prolonger_token_activation(self, token: str, nouvelles_heures: int = 24) -> Tuple[bool, str]:
+        """Prolonger la durée de validité d'un token d'activation"""
         try:
-            from app.utils.token_manager import ActivationTokenManager
-            return ActivationTokenManager.get_stats()
+            if not self.redis:
+                return False, "Redis indisponible"
+            
+            redis_key = f"activation_token:{token}"
+            token_data_str = self.redis.get(redis_key)
+            
+            if not token_data_str:
+                return False, "Token non trouvé"
+            
+            token_data = json.loads(token_data_str)
+            
+            if token_data.get('used', False):
+                return False, "Token déjà utilisé"
+            
+            # Mettre à jour l'expiration
+            nouvelle_expiration = datetime.utcnow() + timedelta(hours=nouvelles_heures)
+            token_data['expires_at'] = nouvelle_expiration.isoformat()
+            
+            # Recalculer le TTL Redis
+            nouveau_ttl = int(nouvelles_heures * 3600)
+            
+            # Remettre dans Redis avec le nouveau TTL
+            self.redis.setex(redis_key, nouveau_ttl, json.dumps(token_data))
+            
+            return True, f"Token prolongé de {nouvelles_heures}h (expire le {nouvelle_expiration.strftime('%d/%m/%Y à %H:%M')})"
+            
         except Exception as e:
-            return {'erreur': str(e)}
+            return False, f"Erreur lors de la prolongation: {str(e)}"
     
+    def lister_tokens_expirant_bientot(self, heures: int = 2) -> List[Dict[str, Any]]:
+        """Lister les tokens qui vont expirer dans les prochaines heures"""
+        try:
+            if not self.redis:
+                return []
+            
+            pattern = "activation_token:*"
+            keys = self.redis.keys(pattern)
+            
+            limite = datetime.utcnow() + timedelta(hours=heures)
+            tokens_expirants = []
+            
+            for key in keys:
+                try:
+                    token_data_str = self.redis.get(key)
+                    if token_data_str:
+                        token_data = json.loads(token_data_str)
+                        expires_at = datetime.fromisoformat(token_data['expires_at'])
+                        
+                        if expires_at <= limite and not token_data.get('used', False):
+                            # Récupérer les infos utilisateur
+                            user_id = token_data.get('user_id')
+                            utilisateur = User.query.get(user_id) if user_id else None
+                            
+                            token_info = {
+                                'user_id': user_id,
+                                'email': token_data.get('email'),
+                                'role': token_data.get('role'),
+                                'expires_at': expires_at.isoformat(),
+                                'heures_restantes': round((expires_at - datetime.utcnow()).total_seconds() / 3600, 1),
+                                'utilisateur_existe': utilisateur is not None,
+                                'utilisateur_actif': utilisateur.actif if utilisateur else None
+                            }
+                            
+                            tokens_expirants.append(token_info)
+                            
+                except Exception:
+                    continue
+            
+            # Trier par expiration (plus urgent en premier)
+            tokens_expirants.sort(key=lambda x: x['expires_at'])
+            
+            return tokens_expirants
+            
+        except Exception as e:
+            print(f"❌ Erreur listage tokens expirants: {e}")
+            return []
+    
+    # =================== MÉTHODES SPÉCIALES DE SUPPRESSION ===================
+    
+    def supprimer_superadmin(self, superadmin_id: str, utilisateur_supprimeur: User, forcer: bool = False) -> Tuple[bool, str]:
+        """Supprimer un superadmin - SEULEMENT PAR UN AUTRE SUPERADMIN"""
+        try:
+            # ✅ VÉRIFICATION : Seul un superadmin peut supprimer un superadmin
+            if not utilisateur_supprimeur.is_superadmin():
+                return False, "Seul un superadmin peut supprimer un autre superadmin"
+            
+            superadmin_cible = User.query.get(superadmin_id)
+            if not superadmin_cible:
+                return False, "Superadmin non trouvé"
+            
+            # ✅ VÉRIFICATION : S'assurer que c'est bien un superadmin
+            if not superadmin_cible.is_superadmin():
+                return False, "Cet utilisateur n'est pas un superadmin"
+            
+            # ✅ PROTECTION : Ne pas se supprimer soi-même
+            if superadmin_cible.id == utilisateur_supprimeur.id:
+                return False, "Vous ne pouvez pas vous supprimer vous-même"
+            
+            # ✅ SÉCURITÉ : Vérifier qu'il restera au moins un superadmin actif
+            nb_superadmins_actifs = User.query.filter_by(role='superadmin', actif=True).count()
+            if nb_superadmins_actifs <= 1 and superadmin_cible.actif:
+                return False, "Impossible de supprimer le dernier superadmin actif du système"
+            
+            # ✅ VÉRIFIER : S'il y a des données critiques liées
+            nb_clients_crees = 0
+            nb_utilisateurs_crees = 0
+            
+            # Compter les clients créés par ce superadmin (si vous trackez qui a créé quoi)
+            # Pour l'instant, on suppose que les superadmins peuvent avoir créé des données importantes
+            
+            # Si pas de forçage et que le superadmin est actif avec potentiellement des données
+            if not forcer and superadmin_cible.actif:
+                return False, (f"Impossible de supprimer le superadmin '{superadmin_cible.nom_complet}' actif sans forcer. "
+                             f"Utilisez forcer=True pour confirmer la suppression définitive.")
+            
+            nom_superadmin = superadmin_cible.nom_complet
+            email_superadmin = superadmin_cible.email
+            
+            # ✅ NOUVEAU : Invalider tous les tokens d'activation de ce superadmin
+            tokens_supprimes = self._revoke_user_activation_tokens(superadmin_cible.id)
+            
+            # ✅ SUPPRESSION : Supprimer le superadmin
+            db.session.delete(superadmin_cible)
+            db.session.commit()
+            
+            message = (f"Superadmin '{nom_superadmin}' ({email_superadmin}) supprimé définitivement. "
+                      f"{tokens_supprimes} tokens d'activation invalidés.")
+            
+            return True, message
+            
+        except Exception as e:
+            db.session.rollback()
+            return False, f"Erreur lors de la suppression du superadmin: {str(e)}"
+    
+    def supprimer_utilisateur_en_attente(self, utilisateur_id: str, utilisateur_supprimeur: User) -> Tuple[bool, str]:
+        """Supprimer un utilisateur en attente d'activation (compte inactif avec token)"""
+        try:
+            utilisateur_cible = User.query.get(utilisateur_id)
+            if not utilisateur_cible:
+                return False, "Utilisateur non trouvé"
+            
+            # ✅ VÉRIFICATION : L'utilisateur doit être inactif (en attente)
+            if utilisateur_cible.actif:
+                return False, "Impossible de supprimer un utilisateur actif avec cette méthode. Utilisez la méthode de suppression standard."
+            
+            # ✅ PERMISSIONS : Vérifier qui peut supprimer
+            if utilisateur_supprimeur.is_superadmin():
+                # Superadmin peut supprimer n'importe qui en attente
+                pass
+            elif utilisateur_supprimeur.is_admin():
+                # Admin peut supprimer seulement les users de son client en attente
+                if utilisateur_cible.client_id != utilisateur_supprimeur.client_id:
+                    return False, "Vous ne pouvez supprimer que les utilisateurs en attente de votre client"
+                
+                # Admin ne peut pas supprimer un autre admin en attente
+                if utilisateur_cible.is_admin():
+                    return False, "Un admin ne peut pas supprimer un autre admin en attente"
+                
+                # Admin ne peut pas supprimer un superadmin en attente
+                if utilisateur_cible.is_superadmin():
+                    return False, "Un admin ne peut pas supprimer un superadmin en attente"
+            else:
+                return False, "Permission insuffisante pour supprimer des utilisateurs en attente"
+            
+            nom_utilisateur = utilisateur_cible.nom_complet
+            email_utilisateur = utilisateur_cible.email
+            role_utilisateur = utilisateur_cible.role
+            client_info = ""
+            
+            if utilisateur_cible.client:
+                client_info = f" (Client: {utilisateur_cible.client.nom_entreprise})"
+            
+            # ✅ NOUVEAU : Invalider tous les tokens d'activation de cet utilisateur
+            tokens_supprimes = self._revoke_user_activation_tokens(utilisateur_cible.id)
+            
+            # ✅ VÉRIFIER : Si c'est un admin en attente, vérifier s'il n'y a pas d'autres données
+            if utilisateur_cible.is_admin() and utilisateur_cible.client:
+                # Vérifier s'il y a d'autres admins actifs dans ce client
+                autres_admins_actifs = User.query.filter_by(
+                    client_id=utilisateur_cible.client_id,
+                    role='admin',
+                    actif=True
+                ).count()
+                
+                if autres_admins_actifs == 0:
+                    # Vérifier s'il y a des utilisateurs dans ce client
+                    nb_users_client = User.query.filter_by(client_id=utilisateur_cible.client_id).count()
+                    if nb_users_client > 1:  # Plus que juste cet admin
+                        return False, (f"Impossible de supprimer cet admin en attente : "
+                                     f"il n'y a aucun autre admin actif dans le client '{utilisateur_cible.client.nom_entreprise}' "
+                                     f"et il y a encore {nb_users_client - 1} utilisateurs dans ce client.")
+            
+            # ✅ SUPPRESSION : Supprimer l'utilisateur en attente
+            db.session.delete(utilisateur_cible)
+            db.session.commit()
+            
+            message = (f"Utilisateur en attente '{nom_utilisateur}' ({role_utilisateur}) "
+                      f"<{email_utilisateur}>{client_info} supprimé définitivement. "
+                      f"{tokens_supprimes} tokens d'activation invalidés.")
+            
+            return True, message
+            
+        except Exception as e:
+            db.session.rollback()
+            return False, f"Erreur lors de la suppression de l'utilisateur en attente: {str(e)}"
+    
+    def lister_utilisateurs_en_attente(self, utilisateur_demandeur: User, inclure_tous_roles: bool = False) -> Tuple[Optional[List[Dict]], Optional[str]]:
+        """Lister les utilisateurs en attente d'activation selon les permissions"""
+        try:
+            if utilisateur_demandeur.is_superadmin():
+                # 🔧 SUPERADMIN : Voit TOUS les utilisateurs en attente de TOUS les clients
+                query = User.query.filter_by(actif=False)
+                
+                if not inclure_tous_roles:
+                    # Par défaut, exclure les superadmins pour éviter la confusion
+                    query = query.filter(User.role != 'superadmin')
+                
+                scope_message = "tous les clients" if not inclure_tous_roles else "tous les clients (incluant superadmins)"
+                
+            elif utilisateur_demandeur.is_admin():
+                # 🏢 ADMIN CLIENT : Voit SEULEMENT les utilisateurs de SON client en attente
+                query = User.query.filter_by(
+                    actif=False,
+                    client_id=utilisateur_demandeur.client_id  # ✅ RESTRICTION : Seulement son client
+                )
+                
+                # Admin ne voit JAMAIS les superadmins en attente (ils n'ont pas de client_id)
+                query = query.filter(User.role != 'superadmin')
+                
+                scope_message = f"client '{utilisateur_demandeur.client.nom_entreprise}'" if utilisateur_demandeur.client else "votre client"
+                
+            else:
+                return None, "Permission insuffisante pour voir les utilisateurs en attente"
+            
+            utilisateurs_en_attente = query.order_by(User.date_creation.desc()).all()
+            
+            liste_utilisateurs = []
+            for user in utilisateurs_en_attente:
+                user_dict = user.to_dict(include_sensitive=True)
+                user_dict['entreprise'] = user.client.nom_entreprise if user.client else None
+                user_dict['jours_depuis_creation'] = (datetime.utcnow() - user.date_creation).days
+                
+                # ✅ Ajouter info tokens d'activation
+                user_dict['has_activation_token'] = self._user_has_activation_token(user.id)
+                user_dict['nb_tokens_actifs'] = self._count_user_activation_tokens(user.id)
+                
+                # ✅ Informations sur les permissions de suppression
+                user_dict['peut_etre_supprime'] = self._peut_supprimer_utilisateur_en_attente(utilisateur_demandeur, user)
+                
+                # ✅ NOUVEAU : Indiquer si c'est dans le scope de l'utilisateur demandeur
+                if utilisateur_demandeur.is_superadmin():
+                    user_dict['dans_mon_scope'] = True
+                elif utilisateur_demandeur.is_admin():
+                    user_dict['dans_mon_scope'] = (user.client_id == utilisateur_demandeur.client_id)
+                
+                liste_utilisateurs.append(user_dict)
+            
+            # ✅ NOUVEAU : Ajouter des métadonnées sur le scope
+            metadata = {
+                'scope': scope_message,
+                'total_utilisateurs': len(liste_utilisateurs),
+                'permissions': {
+                    'peut_voir_tous_clients': utilisateur_demandeur.is_superadmin(),
+                    'peut_voir_superadmins': utilisateur_demandeur.is_superadmin() and inclure_tous_roles,
+                    'client_restriction': utilisateur_demandeur.client_id if utilisateur_demandeur.is_admin() else None
+                }
+            }
+            
+            return {
+                'utilisateurs': liste_utilisateurs,
+                'metadata': metadata
+            }, None
+            
+        except Exception as e:
+            return None, f"Erreur lors de la récupération: {str(e)}"
+    
+    def supprimer_batch_utilisateurs_en_attente(self, utilisateurs_ids: List[str], utilisateur_supprimeur: User) -> Dict[str, Any]:
+        """Supprimer plusieurs utilisateurs en attente en une fois"""
+        try:
+            if not utilisateurs_ids:
+                return {'success': False, 'message': 'Aucun utilisateur spécifié'}
+            
+            resultats = {
+                'supprimes': [],
+                'erreurs': [],
+                'total_demande': len(utilisateurs_ids),
+                'total_supprime': 0,
+                'total_erreurs': 0
+            }
+            
+            for user_id in utilisateurs_ids:
+                try:
+                    succes, message = self.supprimer_utilisateur_en_attente(user_id, utilisateur_supprimeur)
+                    
+                    if succes:
+                        resultats['supprimes'].append({
+                            'user_id': user_id,
+                            'message': message
+                        })
+                        resultats['total_supprime'] += 1
+                    else:
+                        resultats['erreurs'].append({
+                            'user_id': user_id,
+                            'erreur': message
+                        })
+                        resultats['total_erreurs'] += 1
+                        
+                except Exception as e:
+                    resultats['erreurs'].append({
+                        'user_id': user_id,
+                        'erreur': f'Erreur inattendue: {str(e)}'
+                    })
+                    resultats['total_erreurs'] += 1
+            
+            # Message de résumé
+            if resultats['total_supprime'] > 0:
+                resultats['success'] = True
+                resultats['message'] = (f"{resultats['total_supprime']} utilisateurs supprimés avec succès"
+                                       f"{f', {resultats["total_erreurs"]} erreurs' if resultats['total_erreurs'] > 0 else ''}")
+            else:
+                resultats['success'] = False
+                resultats['message'] = f"Aucun utilisateur supprimé. {resultats['total_erreurs']} erreurs"
+            
+            return resultats
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'message': f'Erreur lors de la suppression batch: {str(e)}',
+                'total_demande': len(utilisateurs_ids),
+                'total_supprime': 0,
+                'total_erreurs': len(utilisateurs_ids)
+            }
+    
+    # =================== MÉTHODES PRIVÉES POUR LES NOUVELLES FONCTIONNALITÉS ===================
+    
+    def _peut_supprimer_utilisateur_en_attente(self, utilisateur_supprimeur: User, utilisateur_cible: User) -> bool:
+        """Vérifier si un utilisateur peut supprimer un utilisateur en attente"""
+        # L'utilisateur doit être inactif
+        if utilisateur_cible.actif:
+            return False
+        
+        # Superadmin peut supprimer n'importe qui en attente
+        if utilisateur_supprimeur.is_superadmin():
+            return True
+        
+        # Admin peut supprimer seulement les users de son client en attente
+        if utilisateur_supprimeur.is_admin():
+            # Même client
+            if utilisateur_cible.client_id != utilisateur_supprimeur.client_id:
+                return False
+            
+            # Pas un autre admin ou superadmin
+            if utilisateur_cible.is_admin() or utilisateur_cible.is_superadmin():
+                return False
+            
+            return True
+        
+        return False
+    
+    def _count_user_activation_tokens(self, user_id: str) -> int:
+        """Compter le nombre de tokens d'activation actifs pour un utilisateur"""
+        try:
+            if not self.redis:
+                return 0
+            
+            pattern = "activation_token:*"
+            keys = self.redis.keys(pattern)
+            
+            count = 0
+            now = datetime.utcnow()
+            
+            for key in keys:
+                try:
+                    token_data_str = self.redis.get(key)
+                    if token_data_str:
+                        token_data = json.loads(token_data_str)
+                        
+                        if (token_data.get('user_id') == user_id and 
+                            not token_data.get('used', False)):
+                            
+                            # Vérifier que le token n'est pas expiré
+                            expires_at = datetime.fromisoformat(token_data['expires_at'])
+                            if now <= expires_at:
+                                count += 1
+                except Exception:
+                    continue
+            
+            return count
+            
+        except Exception as e:
+            print(f"❌ Erreur comptage tokens utilisateur: {e}")
+            return 0
