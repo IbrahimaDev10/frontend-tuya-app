@@ -1,49 +1,80 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '../../store/authContext'
 import SuperAdminLayout from '../../layouts/SuperAdminLayout'
 import AdminLayout from '../../layouts/AdminLayout'
-import siteService from '../../services/siteService'
+import SiteService from '../../services/siteService'
+import UserService from '../../services/userService'
 import Button from '../../components/Button'
 import Input from '../../components/Input'
-import SiteModal from './SiteModal'
+import SiteModal from '../Sites/SiteModal'
+import SiteDetailsModal from './SiteDetailsModal'
 import SiteCard from './SiteCard'
-import SiteDetails from './SiteDetails'
 import ConfirmModal from '../../components/ConfirmModal'
 import Toast from '../../components/Toast'
 import './SiteManagement.css'
+import SiteMap from './SiteMap'
+
 
 const SiteManagement = () => {
   const { isSuperadmin, isAdmin } = useAuth()
   const [sites, setSites] = useState([])
+  const [clients, setClients] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
+  const [selectedClient, setSelectedClient] = useState('')
+  const [viewMode, setViewMode] = useState('cards') // 'cards' ou 'map'
   const [showSiteModal, setShowSiteModal] = useState(false)
+  const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [selectedSite, setSelectedSite] = useState(null)
-  const [showSiteDetails, setShowSiteDetails] = useState(false)
   const [confirmAction, setConfirmAction] = useState(null)
   const [stats, setStats] = useState({})
   const [toast, setToast] = useState(null)
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1)
+  const sitesPerPage = 3
+
+  const indexOfLastSite = currentPage * sitesPerPage
+  const indexOfFirstSite = indexOfLastSite - sitesPerPage
+  const currentSites = sites.slice(indexOfFirstSite, indexOfLastSite)
+  const totalPages = Math.ceil(sites.length / sitesPerPage)
+
 
   const Layout = isSuperadmin() ? SuperAdminLayout : AdminLayout
 
   useEffect(() => {
     loadData()
-  }, [])
+    if (isSuperadmin()) {
+      loadClients()
+    }
+  }, [selectedClient])
 
   const loadData = async () => {
     try {
       setLoading(true)
+      
       const [sitesResponse, statsResponse] = await Promise.all([
-        siteService.listerSites(),
-        siteService.obtenirStatistiques()
+        SiteService.listerSites(selectedClient || null),
+        SiteService.obtenirStatistiques(selectedClient || null)
       ])
-      setSites(sitesResponse.data.data || sitesResponse.data.sites || [])
-      setStats(statsResponse.data.data || statsResponse.data || {})
+      
+      setSites(sitesResponse.data.data || [])
+      setStats(statsResponse.data.data || {})
+      
     } catch (error) {
       showToast('Erreur lors du chargement des données', 'error')
-      console.error('Erreur:', error)
+      console.error('Erreur chargement:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadClients = async () => {
+    try {
+      const response = await UserService.listerClients()
+      setClients(response.data.data || [])
+    } catch (error) {
+      console.error('Erreur chargement clients:', error)
     }
   }
 
@@ -53,15 +84,14 @@ const SiteManagement = () => {
   }
 
   const handleSearch = async (term) => {
-    setSearchTerm(term)
     if (term.length < 2) {
       loadData()
       return
     }
 
     try {
-      const response = await siteService.rechercherSites(term)
-      setSites(response.data.data || response.data.sites || [])
+      const response = await SiteService.rechercherSites(term)
+      setSites(response.data.data)
     } catch (error) {
       showToast('Erreur lors de la recherche', 'error')
     }
@@ -77,109 +107,89 @@ const SiteManagement = () => {
     setShowSiteModal(true)
   }
 
-  const handleViewDetails = (site) => {
+  const handleSiteDetails = (site) => {
     setSelectedSite(site)
-    setShowSiteDetails(true)
+    setShowDetailsModal(true)
   }
 
-  const handleToggleStatus = (site) => {
+  const handleSiteSaved = () => {
+    setShowSiteModal(false)
+    loadData()
+    showToast('Site sauvegardé avec succès', 'success')
+  }
+
+  const handleDeactivateSite = (site) => {
+    const action = site.actif ? 'désactiver' : 'réactiver'
     setConfirmAction({
-      type: site.actif ? 'deactivate' : 'activate',
+      type: 'toggleSite',
       site,
-      title: site.actif ? 'Désactiver le site' : 'Réactiver le site',
-      message: `Êtes-vous sûr de vouloir ${site.actif ? 'désactiver' : 'réactiver'} le site "${site.nom_site}" ?`,
-      confirmText: site.actif ? 'Désactiver' : 'Réactiver',
+      title: `${action.charAt(0).toUpperCase() + action.slice(1)} le site`,
+      message: `Êtes-vous sûr de vouloir ${action} "${site.nom_site}" ?`,
+      confirmText: action.charAt(0).toUpperCase() + action.slice(1),
       onConfirm: () => toggleSiteStatus(site)
     })
   }
 
   const handleDeleteSite = (site) => {
     setConfirmAction({
-      type: 'delete',
+      type: 'deleteSite',
       site,
       title: 'Supprimer le site',
-      message: `Êtes-vous sûr de vouloir supprimer définitivement le site "${site.nom_site}" ?\n\nCette action est irréversible.`,
+      message: `Êtes-vous sûr de vouloir supprimer "${site.nom_site}" ? Cette action est irréversible.`,
       confirmText: 'Supprimer',
-      onConfirm: () => deleteSite(site),
-      variant: 'danger'
+      onConfirm: () => confirmDeleteSite(site.id)
     })
   }
 
   const toggleSiteStatus = async (site) => {
     try {
       if (site.actif) {
-        await siteService.desactiverSite(site.id)
-        showToast('Site désactivé avec succès', 'success')
+        await SiteService.desactiverSite(site.id)
       } else {
-        await siteService.reactiverSite(site.id)
-        showToast('Site réactivé avec succès', 'success')
+        await SiteService.reactiverSite(site.id)
       }
       loadData()
+      showToast(`Site ${site.actif ? 'désactivé' : 'réactivé'} avec succès`, 'success')
     } catch (error) {
-      showToast('Erreur lors de la modification du statut', 'error')
+      showToast(error.response?.data?.error || 'Erreur lors de l\'opération', 'error')
     }
     setConfirmAction(null)
   }
 
-  const deleteSite = async (site) => {
+  const confirmDeleteSite = async (siteId) => {
     try {
-      await siteService.supprimerSite(site.id)
-      showToast('Site supprimé avec succès', 'success')
+      await SiteService.supprimerSite(siteId)
       loadData()
+      showToast('Site supprimé avec succès', 'success')
     } catch (error) {
-      showToast('Erreur lors de la suppression', 'error')
+      showToast(error.response?.data?.error || 'Erreur lors de la suppression', 'error')
     }
     setConfirmAction(null)
   }
 
-  const handleSiteModalClose = () => {
-    setShowSiteModal(false)
-    setSelectedSite(null)
+  const handleGeocodeSite = async (site) => {
+    try {
+      const response = await SiteService.geocoderSite(site.id)
+      if (response.data.success) {
+        showToast('Géocodage effectué avec succès', 'success')
+        loadData()
+      } else {
+        showToast(response.data.message, 'error')
+      }
+    } catch (error) {
+      showToast('Erreur lors du géocodage', 'error')
+    }
   }
 
-  const handleSiteModalSave = () => {
-    setShowSiteModal(false)
-    setSelectedSite(null)
-    loadData()
-    showToast('Site sauvegardé avec succès', 'success')
-  }
+  
 
-  const handleBackToList = () => {
-    setShowSiteDetails(false)
-    setSelectedSite(null)
-  }
-
-  const filteredSites = sites.filter(site =>
-    site.nom_site?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    site.client_nom?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    site.adresse?.toLowerCase().includes(searchTerm.toLowerCase())
-  )
-
-  if (showSiteDetails && selectedSite) {
+  if (loading) {
     return (
       <Layout>
-        <SiteDetails
-          site={selectedSite}
-          onBack={handleBackToList}
-          onEdit={handleEditSite}
-          onToggleStatus={handleToggleStatus}
-          isSuperadmin={isSuperadmin()}
-          isAdmin={isAdmin()}
-        />
-        {showSiteModal && (
-          <SiteModal
-            site={selectedSite}
-            onClose={handleSiteModalClose}
-            onSave={handleSiteModalSave}
-          />
-        )}
-        {toast && (
-          <Toast
-            message={toast.message}
-            type={toast.type}
-            onClose={() => setToast(null)}
-          />
-        )}
+        <div className="loading-container">
+          <div className="loading-spinner"></div>
+          <p>Chargement des sites...</p>
+        </div>
       </Layout>
     )
   }
@@ -194,10 +204,53 @@ const SiteManagement = () => {
               type="text"
               placeholder="Rechercher un site..."
               value={searchTerm}
-              onChange={(e) => handleSearch(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value)
+                handleSearch(e.target.value)
+              }}
               className="search-input"
             />
-            <Button onClick={handleCreateSite}>+ Nouveau Site</Button>
+            
+            {isSuperadmin() && (
+              <select
+                value={selectedClient}
+                onChange={(e) => setSelectedClient(e.target.value)}
+                className="client-filter"
+              >
+                <option value="">Tous les clients</option>
+                {clients.map(client => (
+                  <option key={client.id} value={client.id}>
+                    {client.nom_entreprise}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            <div className="view-toggles">
+              <Button
+                variant={viewMode === 'cards' ? 'primary' : 'outline'}
+                size="small"
+                onClick={() => setViewMode('cards')}
+              >
+                🃏 Cartes
+              </Button>
+              <Button
+                variant={viewMode === 'map' ? 'primary' : 'outline'}
+                size="small"
+                onClick={() => setViewMode('map')}
+              >
+                🗺️ Carte
+              </Button>
+            </div>
+
+            {isSuperadmin() && (
+              <Button
+                variant="primary"
+                onClick={handleCreateSite}
+              >
+                + Nouveau site
+              </Button>
+            )}
           </div>
         </div>
 
@@ -207,96 +260,168 @@ const SiteManagement = () => {
             <div className="stat-icon">🏢</div>
             <div className="stat-content">
               <h3>Total Sites</h3>
-              <p className="stat-number">{stats.total_sites || 0}</p>
-            </div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-icon">📱</div>
-            <div className="stat-content">
-              <h3>Total Appareils</h3>
-              <p className="stat-number">{stats.total_appareils || 0}</p>
+              <div className="stat-number">{stats.total_sites || 0}</div>
             </div>
           </div>
           <div className="stat-card">
             <div className="stat-icon">✅</div>
             <div className="stat-content">
               <h3>Sites Actifs</h3>
-              <p className="stat-number">{stats.sites_actifs || 0}</p>
+              <div className="stat-number">{stats.sites_actifs || 0}</div>
             </div>
           </div>
           <div className="stat-card">
-            <div className="stat-icon">❌</div>
+            <div className="stat-icon">📍</div>
             <div className="stat-content">
-              <h3>Sites Inactifs</h3>
-              <p className="stat-number">{stats.sites_inactifs || 0}</p>
+              <h3>Géocodés</h3>
+              <div className="stat-number">{stats.sites_geocodes || 0}</div>
+              <small>{stats.taux_geocodage || 0}%</small>
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-icon">📱</div>
+            <div className="stat-content">
+              <h3>Appareils</h3>
+              <div className="stat-number">{stats.total_appareils || 0}</div>
             </div>
           </div>
         </div>
 
-        {/* Liste des sites */}
-        {loading ? (
-          <div className="loading-container">
-            <div className="loading-spinner"></div>
-            <p>Chargement des sites...</p>
-          </div>
+        {/* Contenu principal */}
+        {viewMode === 'cards' ? (
+          <SitesCardsView
+  sites={currentSites}
+  onEdit={handleEditSite}
+  onDetails={handleSiteDetails}
+  onToggleStatus={handleDeactivateSite}
+  onDelete={handleDeleteSite}
+  onGeocode={handleGeocodeSite}
+  isSuperadmin={isSuperadmin()}
+  currentPage={currentPage}
+  totalPages={totalPages}
+  setCurrentPage={setCurrentPage}
+/>
+
+          
         ) : (
-          <div className="sites-grid">
-            {filteredSites.length > 0 ? (
-              filteredSites.map(site => (
-                <SiteCard
-                  key={site.id}
-                  site={site}
-                  onEdit={handleEditSite}
-                  onDelete={handleDeleteSite}
-                  onToggleStatus={handleToggleStatus}
-                  onViewDetails={handleViewDetails}
-                  isSuperadmin={isSuperadmin()}
-                  isAdmin={isAdmin()}
-                />
-              ))
-            ) : (
-              <div className="no-sites">
-                <p>Aucun site trouvé</p>
-                {searchTerm && (
-                  <Button variant="outline" onClick={() => handleSearch('')}>
-                    Effacer la recherche
-                  </Button>
-                )}
-              </div>
-            )}
-          </div>
+          <SitesMapView
+            sites={sites}
+            onSiteClick={handleSiteDetails}
+          />
+        )}
+
+        {/* Modals */}
+        {showSiteModal && (
+          <SiteModal
+            site={selectedSite}
+            onClose={() => setShowSiteModal(false)}
+            onSave={handleSiteSaved}
+          />
+        )}
+
+        {showDetailsModal && (
+          <SiteDetailsModal
+            site={selectedSite}
+            onClose={() => setShowDetailsModal(false)}
+            onEdit={() => {
+              setShowDetailsModal(false)
+              handleEditSite(selectedSite)
+            }}
+          />
+        )}
+
+        {confirmAction && (
+          <ConfirmModal
+            title={confirmAction.title}
+            message={confirmAction.message}
+            confirmText={confirmAction.confirmText}
+            onConfirm={confirmAction.onConfirm}
+            onCancel={() => setConfirmAction(null)}
+            variant="danger"
+          />
+        )}
+
+        {toast && (
+          <Toast
+            message={toast.message}
+            type={toast.type}
+            onClose={() => setToast(null)}
+          />
         )}
       </div>
-
-      {/* Modals */}
-      {showSiteModal && (
-        <SiteModal
-          site={selectedSite}
-          onClose={handleSiteModalClose}
-          onSave={handleSiteModalSave}
-        />
-      )}
-
-      {confirmAction && (
-        <ConfirmModal
-          title={confirmAction.title}
-          message={confirmAction.message}
-          confirmText={confirmAction.confirmText}
-          onConfirm={confirmAction.onConfirm}
-          onCancel={() => setConfirmAction(null)}
-          variant={confirmAction.variant}
-        />
-      )}
-
-      {toast && (
-        <Toast
-          message={toast.message}
-          type={toast.type}
-          onClose={() => setToast(null)}
-        />
-      )}
     </Layout>
   )
 }
+
+// Composant vue en cartes
+const SitesCardsView = ({ 
+  sites, 
+  onEdit, 
+  onDetails, 
+  onToggleStatus, 
+  onDelete, 
+  onGeocode,
+  isSuperadmin,
+  currentPage,
+  totalPages,
+  setCurrentPage
+}) => (
+  <div className="sites-cards-container">
+    {sites.length > 0 ? (
+      <>
+        <div className="sites-grid">
+          {sites.map(site => (
+            <SiteCard
+              key={site.id}
+              site={site}
+              onEdit={onEdit}
+              onDetails={onDetails}
+              onToggleStatus={onToggleStatus}
+              onDelete={onDelete}
+              onGeocode={onGeocode}
+              isSuperadmin={isSuperadmin}
+            />
+          ))}
+        </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="pagination">
+            <button 
+              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+              disabled={currentPage === 1}
+            >
+              Précédent
+            </button>
+            <span>Page {currentPage} / {totalPages}</span>
+            <button 
+              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+              disabled={currentPage === totalPages}
+            >
+              Suivant
+            </button>
+          </div>
+        )}
+      </>
+    ) : (
+      <div className="empty-state">
+        <div className="empty-icon">🏢</div>
+        <h3>Aucun site trouvé</h3>
+        <p>Aucun site ne correspond à vos critères de recherche.</p>
+      </div>
+    )}
+  </div>
+)
+
+
+// Composant vue carte
+const SitesMapView = ({ sites, onSiteClick }) => (
+  <div className="sites-map-container">
+    <SiteMap 
+      sites={sites}
+      onSiteClick={onSiteClick}
+    />
+  </div>
+)
 
 export default SiteManagement

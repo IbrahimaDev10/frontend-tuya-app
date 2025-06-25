@@ -28,6 +28,7 @@ const DeviceManagement = () => {
   const [toast, setToast] = useState(null)
   const [syncing, setSyncing] = useState(false)
   const [importing, setImporting] = useState(false)
+  const [loadingDeviceIds, setLoadingDeviceIds] = useState([])
 
   const Layout = isSuperadmin() ? SuperAdminLayout : isAdmin() ? AdminLayout : ClientLayout
 
@@ -117,27 +118,44 @@ const DeviceManagement = () => {
   }
 
   const handleToggleDevice = async (device) => {
+    const deviceId = device.tuya_device_id
+    setLoadingDeviceIds((prev) => [...prev, deviceId])
+  
     try {
-      const response = await DeviceService.toggleAppareil(device.id || device.tuya_device_id)
-      if (response.data.success) {
-        showToast(response.data.message, 'success')
-        // Actualiser le statut local
-        setDevices(prev => prev.map(d => 
-          d.id === device.id ? { ...d, etat_switch: response.data.new_state } : d
-        ))
+      const result = await DeviceService.toggleAppareil(deviceId)
+  
+      if (result.success) {
+        showToast(result.message, 'success')
+  
+        setDevices(prev =>
+          prev.map(d =>
+            d.id === device.id
+              ? { ...d, etat_switch: result.newState }
+              : d
+          )
+        )
       } else {
-        showToast(response.data.message || 'Erreur de contrôle', 'error')
+        showToast(result.message, 'error')
       }
     } catch (error) {
-      showToast('Erreur lors du contrôle', 'error')
+      showToast('Erreur lors du contrôle de l’appareil', 'error')
+    } finally {
+      setLoadingDeviceIds((prev) => prev.filter(id => id !== deviceId))
     }
   }
+  
+  
 
-  const handleAssignDevice = (device) => {
-    setSelectedDevice(device)
-    setShowAssignModal(true)
-  }
+              const handleAssignDevice = (device) => {
+                setSelectedDevice(device)
+                setShowAssignModal(true)
+              }
 
+              const handleCreateDevice = (device) => {
+                setSelectedDevice(device)
+                setShowDeviceModal(true)
+              }
+  
   const handleUnassignDevice = (device) => {
     setConfirmAction({
       type: 'unassign',
@@ -300,6 +318,7 @@ const DeviceManagement = () => {
           onUnassign={handleUnassignDevice}
           onDetails={handleDeviceDetails}
           onCollectData={handleCollectData}
+          loadingDeviceIds={loadingDeviceIds}
           showAssignActions={selectedTab === 'unassigned' || isSuperadmin()}
           isSuperadmin={isSuperadmin()}
           isClient={isClient()}
@@ -353,6 +372,7 @@ const DevicesTable = ({
   onDetails, 
   onCollectData,
   showAssignActions,
+  loadingDeviceIds = [],
   isSuperadmin,
   isClient
 }) => (
@@ -390,7 +410,7 @@ const DevicesTable = ({
             </td>
             <td>
               <span className={`state-badge ${device.etat_switch ? 'on' : 'off'}`}>
-                {device.etat_switch ? 'ON' : 'OFF'}
+                {device.etat_switch ? '💡 OFF' : '💡 ON'}
               </span>
             </td>
             {isSuperadmin && (
@@ -414,13 +434,15 @@ const DevicesTable = ({
                 
                 {device.statut_assignation === 'assigne' && !isClient && (
                   <Button
-                    variant="outline"
-                    size="small"
-                    onClick={() => onToggle(device)}
-                    title="Toggle ON/OFF"
-                  >
-                    {device.etat_switch ? '⏸️' : '▶️'}
-                  </Button>
+                  variant="outline"
+                  size="small"
+                  onClick={() => onToggle(device)}
+                  title="Toggle ON/OFF"
+                  disabled={loadingDeviceIds.includes(device.id || device.tuya_device_id)}
+                >
+                  {device.etat_switch ? '⏸️' : '▶️'}
+                </Button>
+                
                 )}
                 
                 {device.statut_assignation === 'assigne' && (

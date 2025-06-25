@@ -52,9 +52,36 @@ class DeviceService {
   }
 
   async toggleAppareil(deviceId, etat = null) {
-    const data = etat !== null ? { etat } : {};
-    return apiClient.post(`/devices/${deviceId}/toggle`, data);
+    const data = etat !== null ? { etat } : {}
+  
+    try {
+      const res = await apiClient.post(`/devices/${deviceId}/toggle`, data)
+      const response = res.data
+  
+      if (response.success && response.response?.success) {
+        return {
+          success: true,
+          message: response.message || 'Action effectuée',
+          newState: response.response.new_state,
+          previousState: response.response.previous_state,
+          switchUsed: response.response.switch_code_used,
+          deviceId: response.response.device_id
+        }
+      } else {
+        return {
+          success: false,
+          message: response.message || 'Échec de l’action'
+        }
+      }
+    } catch (error) {
+      console.error('Erreur dans toggleAppareil:', error)
+      return {
+        success: false,
+        message: 'Erreur réseau ou serveur'
+      }
+    }
   }
+  
 
   // =================== COLLECTE DE DONNÉES ===================
   

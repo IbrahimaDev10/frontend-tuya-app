@@ -118,7 +118,7 @@ const DeviceModal = ({ device, onClose, onSuccess, mode = 'edit' }) => {
       }
 
       const response = await DeviceService.modifierAppareil(
-        device.id || device.tuya_device_id,
+      device.tuya_device_id,
         updateData
       )
 
@@ -140,7 +140,7 @@ const DeviceModal = ({ device, onClose, onSuccess, mode = 'edit' }) => {
 
   const handleToggleDevice = async () => {
     try {
-      const response = await DeviceService.toggleAppareil(device.id || device.tuya_device_id)
+      const response = await DeviceService.toggleAppareil(device.tuya_device_id)
       if (response.data.success) {
         await loadDeviceStatus()
       }

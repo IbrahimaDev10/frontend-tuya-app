@@ -284,8 +284,8 @@ const DeviceDetailsModal = ({ device, onClose }) => {
                           <td>{formatValue(data.courant)}</td>
                           <td>{formatValue(data.puissance)}</td>
                           <td>
-                            <span className={`state-badge ${data.etat_switch ? 'on' : 'off'}`}>
-                              {data.etat_switch ? 'ON' : 'OFF'}
+                            <span className={`state-badge ${device.etat_switch ? 'on' : 'off'}`}>
+                              {device.etat_switch ? 'ON' : 'OFF'}
                             </span>
                           </td>
                         </tr>

@@ -55,8 +55,6 @@ class Site(db.Model):
             parts.append(self.quartier)
         if self.ville:
             parts.append(self.ville)
-        if self.code_postal:
-            parts.append(self.code_postal)
         if self.pays:
             parts.append(self.pays)
         
@@ -259,7 +257,6 @@ class Site(db.Model):
                 'adresse_complete': self.get_adresse_complete(),
                 'ville': self.ville,
                 'quartier': self.quartier,
-                'code_postal': self.code_postal,
                 'pays': self.pays,
                 'latitude': float(self.latitude) if self.latitude else None,
                 'longitude': float(self.longitude) if self.longitude else None,

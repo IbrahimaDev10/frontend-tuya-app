@@ -1,93 +1,53 @@
 import React, { useState, useEffect } from 'react'
-import { useAuth } from '../../store/authContext'
-import siteService from '../../services/siteService'
-import clientService from '../../services/clientService'
+import SiteService from '../../services/siteService'
+import UserService from '../../services/userService'
 import Button from '../../components/Button'
 import Input from '../../components/Input'
-import Swal from 'sweetalert2'
 import './SiteModal.css'
 
 const SiteModal = ({ site, onClose, onSave }) => {
-  const { isSuperadmin } = useAuth()
-  const [clients, setClients] = useState([])
   const [formData, setFormData] = useState({
     nom_site: '',
     adresse: '',
     ville: '',
     quartier: '',
-    code_postal: '',
-    pays: 'Sénégal',
+    client_id: '', 
     contact_site: '',
     telephone_site: '',
-    client_id: '',
-    latitude: '',
-    longitude: ''
+    
+
   })
+  const [clients, setClients] = useState([])
   const [errors, setErrors] = useState({})
   const [loading, setLoading] = useState(false)
+  const [testingGeocode, setTestingGeocode] = useState(false)
+  const [geocodeResults, setGeocodeResults] = useState(null)
+
+  const isEdit = !!site
 
   useEffect(() => {
-    if (site) {
+    if (isEdit) {
       setFormData({
         nom_site: site.nom_site || '',
         adresse: site.adresse || '',
         ville: site.ville || '',
         quartier: site.quartier || '',
-        code_postal: site.code_postal || '',
-        pays: site.pays || 'Sénégal',
+        client_id: site.client_id || '',    
         contact_site: site.contact_site || '',
         telephone_site: site.telephone_site || '',
-        client_id: site.client_id || '',
-        latitude: site.latitude || '',
-        longitude: site.longitude || ''
+        
       })
     }
-
-    if (isSuperadmin()) {
-      loadClients()
-    }
+    loadClients()
   }, [site])
 
   const loadClients = async () => {
     try {
-      const response = await clientService.listerClients()
-      setClients(response.data.clients)
+      const response = await UserService.listerClients()
+      setClients(response.data.data || [])
     } catch (error) {
-      console.error('Erreur lors du chargement des clients:', error)
-      Swal.fire({
-        icon: 'error',
-        title: 'Erreur',
-        text: 'Impossible de charger la liste des clients'
-      })
+      console.error('Erreur chargement clients:', error)
     }
-  }
-
-  const validateForm = () => {
-    const newErrors = {}
-    if (!formData.nom_site) newErrors.nom_site = 'Le nom du site est requis'
-    if (!formData.adresse) newErrors.adresse = 'L\'adresse est requise'
-    if (isSuperadmin() && !formData.client_id) newErrors.client_id = 'Le client est requis'
-    
-    // Validation des coordonnées GPS si fournies
-    if (formData.latitude && !isValidLatitude(formData.latitude)) {
-      newErrors.latitude = 'Latitude invalide (-90 à 90)'
-    }
-    if (formData.longitude && !isValidLongitude(formData.longitude)) {
-      newErrors.longitude = 'Longitude invalide (-180 à 180)'
-    }
-
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
-  }
-
-  const isValidLatitude = (lat) => {
-    const num = parseFloat(lat)
-    return !isNaN(num) && num >= -90 && num <= 90
-  }
-
-  const isValidLongitude = (lon) => {
-    const num = parseFloat(lon)
-    return !isNaN(num) && num >= -180 && num <= 180
   }
 
   const handleChange = (e) => {
@@ -96,7 +56,8 @@ const SiteModal = ({ site, onClose, onSave }) => {
       ...prev,
       [name]: value
     }))
-    // Effacer l'erreur quand l'utilisateur commence à taper
+
+    // Effacer l'erreur du champ modifié
     if (errors[name]) {
       setErrors(prev => ({
         ...prev,
@@ -105,35 +66,72 @@ const SiteModal = ({ site, onClose, onSave }) => {
     }
   }
 
+  const validateForm = () => {
+    const newErrors = {}
+
+    if (!formData.nom_site.trim()) {
+      newErrors.nom_site = 'Nom du site requis'
+    }
+
+    if (!formData.adresse.trim()) {
+      newErrors.adresse = 'Adresse requise'
+    }
+
+    if (!formData.client_id) {
+      newErrors.client_id = 'Client requis'
+    }
+
+
+
+    return newErrors
+  }
+
+  const handleTestGeocode = async () => {
+    if (!formData.adresse.trim()) {
+      setErrors({ adresse: 'Veuillez saisir une adresse pour tester le géocodage' })
+      return
+    }
+
+    setTestingGeocode(true)
+    try {
+      const adresseComplete = `${formData.adresse}, ${formData.ville}, ${formData.quartier}`.replace(/,\s*,/g, ',').replace(/^,|,$/g, '')
+      const response = await SiteService.testerGeocodage(adresseComplete)
+      
+      if (response.data.success) {
+        setGeocodeResults(response.data.resultats_geocodage)
+      } else {
+        setErrors({ adresse: 'Impossible de géocoder cette adresse' })
+      }
+    } catch (error) {
+      setErrors({ adresse: 'Erreur lors du test de géocodage' })
+    } finally {
+      setTestingGeocode(false)
+    }
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!validateForm()) return
+
+    const newErrors = validateForm()
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors)
+      return
+    }
 
     setLoading(true)
+    setErrors({})
+
     try {
-      let response
-      if (site) {
-        response = await siteService.modifierSite(site.id, formData)
+      if (isEdit) {
+        await SiteService.modifierSite(site.id, formData)
       } else {
-        response = await siteService.creerSite(formData)
+        await SiteService.creerSite(formData)
       }
 
-      Swal.fire({
-        icon: 'success',
-        title: 'Succès',
-        text: site
-          ? 'Site modifié avec succès'
-          : 'Site créé avec succès'
-      })
-
-      if (onSave) onSave(response.data.site)
-      onClose()
+      onSave()
     } catch (error) {
-      console.error('Erreur lors de la sauvegarde:', error)
-      Swal.fire({
-        icon: 'error',
-        title: 'Erreur',
-        text: error.response?.data?.error || 'Une erreur est survenue'
+      setErrors({
+        general: error.response?.data?.error || 'Erreur lors de la sauvegarde'
       })
     } finally {
       setLoading(false)
@@ -142,133 +140,150 @@ const SiteModal = ({ site, onClose, onSave }) => {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content large" onClick={e => e.stopPropagation()}>
+      <div className="modal-content extra-large" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>{site ? 'Modifier le site' : 'Créer un nouveau site'}</h2>
-          <button className="close-button" onClick={onClose}>&times;</button>
+          <h3>{isEdit ? 'Modifier le site' : 'Nouveau site'}</h3>
+          <button className="modal-close" onClick={onClose}>×</button>
         </div>
 
-        <form onSubmit={handleSubmit} className="modal-body">
-          <div className="form-grid">
-            {/* Informations de base */}
-            <div className="form-section full-width">
-              <h3>Informations de base</h3>
-              {isSuperadmin() && (
+        <form onSubmit={handleSubmit}>
+          <div className="modal-body">
+            {errors.general && (
+              <div className="error-message">{errors.general}</div>
+            )}
+
+            {/* Informations générales */}
+            <div className="form-section">
+              <h4>🏢 Informations générales</h4>
+              
+              <div className="form-grid">
+                <Input
+                  type="text"
+                  name="nom_site"
+                  label="Nom du site"
+                  value={formData.nom_site}
+                  onChange={handleChange}
+                  error={errors.nom_site}
+                  required
+                />
+
                 <div className="form-group">
-                  <label>Client*</label>
+                  <label className="input-label">Client *</label>
                   <select
                     name="client_id"
                     value={formData.client_id}
                     onChange={handleChange}
-                    className={errors.client_id ? 'error' : ''}
+                    className={`input ${errors.client_id ? 'input-error' : ''}`}
+                    required
                   >
-                      <option value="">Sélectionner un client</option>
-                      {Array.isArray(clients) && clients.map(client => (
+                    <option value="">Sélectionner un client</option>
+                    {clients.map(client => (
                       <option key={client.id} value={client.id}>
                         {client.nom_entreprise}
                       </option>
                     ))}
-
                   </select>
-                  {errors.client_id && <span className="error-message">{errors.client_id}</span>}
+                  {errors.client_id && (
+                    <span className="input-error-message">{errors.client_id}</span>
+                  )}
                 </div>
-              )}
-              <Input
-                label="Nom du site*"
-                name="nom_site"
-                value={formData.nom_site}
-                onChange={handleChange}
-                error={errors.nom_site}
-              />
+              </div>
             </div>
 
             {/* Adresse */}
-            <div className="form-section full-width">
-              <h3>Adresse</h3>
-              <Input
-                label="Adresse*"
-                name="adresse"
-                value={formData.adresse}
-                onChange={handleChange}
-                error={errors.adresse}
-              />
-              <div className="form-row">
+            <div className="form-section">
+              <h4>📍 Adresse</h4>
+              
+              <div className="address-input-group">
                 <Input
-                  label="Ville"
+                  type="text"
+                  name="adresse"
+                  label="Adresse complète"
+                  value={formData.adresse}
+                  onChange={handleChange}
+                  error={errors.adresse}
+                  placeholder="Ex: 15 Avenue Pasteur"
+                  required
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleTestGeocode}
+                  loading={testingGeocode}
+                  className="geocode-test-btn"
+                >
+                  🌍 Tester géocodage
+                </Button>
+              </div>
+
+              <div className="form-grid">
+                <Input
+                  type="text"
                   name="ville"
+                  label="Ville"
                   value={formData.ville}
                   onChange={handleChange}
+                  error={errors.ville}
+                  placeholder="Ex: Toulouse"
+                  required
                 />
                 <Input
-                  label="Quartier"
+                  type="text"
                   name="quartier"
+                  label="Quartier"
                   value={formData.quartier}
                   onChange={handleChange}
+                  error={errors.quartier}
+                  placeholder="Ex: Quartier du soleil"
                 />
               </div>
-              <div className="form-row">
-                <Input
-                  label="Code postal"
-                  name="code_postal"
-                  value={formData.code_postal}
-                  onChange={handleChange}
-                />
-                <Input
-                  label="Pays"
-                  name="pays"
-                  value={formData.pays}
-                  onChange={handleChange}
-                />
-              </div>
+
+              {/* Résultats du géocodage */}
+              {geocodeResults && (
+                <div className="geocode-results">
+                  <h5>🌍 Résultats du géocodage :</h5>
+                  <div className="geocode-info">
+                    <p><strong>Adresse trouvée :</strong> {geocodeResults.adresse_formatee}</p>
+                    <p><strong>Coordonnées :</strong> {geocodeResults.latitude}, {geocodeResults.longitude}</p>
+                    <p><strong>Précision :</strong> {geocodeResults.precision}</p>
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* Contact */}
-            <div className="form-section full-width">
-              <h3>Contact</h3>
-              <div className="form-row">
+            {/* Informations de contact */}
+            <div className="form-section">
+              <h4>📞 Contact</h4>
+              
+              <div className="form-grid">
                 <Input
-                  label="Contact sur site"
+                  type="text"
                   name="contact_site"
+                  label="Nom du contact"
                   value={formData.contact_site}
                   onChange={handleChange}
+                  error={errors.contact_site}
+                  placeholder="Ex: Jean Dupont"
                 />
                 <Input
-                  label="Téléphone du site"
+                  type="tel"
                   name="telephone_site"
+                  label="Téléphone"
                   value={formData.telephone_site}
                   onChange={handleChange}
+                  error={errors.telephone_site}
+                  placeholder="Ex: 05 61 00 00 00"
                 />
               </div>
             </div>
 
-            {/* Coordonnées GPS */}
-            <div className="form-section full-width">
-              <h3>Coordonnées GPS (optionnel)</h3>
-              <div className="form-row">
-                <Input
-                  label="Latitude"
-                  name="latitude"
-                  value={formData.latitude}
-                  onChange={handleChange}
-                  error={errors.latitude}
-                  placeholder="Ex: 14.7167"
-                />
-                <Input
-                  label="Longitude"
-                  name="longitude"
-                  value={formData.longitude}
-                  onChange={handleChange}
-                  error={errors.longitude}
-                  placeholder="Ex: -17.4677"
-                />
-              </div>
-            </div>
+
           </div>
 
           <div className="modal-footer">
             <Button
               type="button"
-              variant="secondary"
+              variant="outline"
               onClick={onClose}
               disabled={loading}
             >
@@ -279,7 +294,7 @@ const SiteModal = ({ site, onClose, onSave }) => {
               variant="primary"
               loading={loading}
             >
-              {site ? 'Modifier' : 'Créer'}
+              {isEdit ? 'Modifier' : 'Créer'} le site
             </Button>
           </div>
         </form>
