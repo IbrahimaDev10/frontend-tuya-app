@@ -347,3 +347,105 @@ class MailService:
         except Exception as e:
             logging.error(f"Erreur envoi email confirmation activation: {e}")
             return {"success": False, "message": str(e)}
+        
+
+    @staticmethod
+    def send_user_activation_email(user_email, prenom, nom, client_name, activation_token, expires_hours=24):
+        """
+        Envoie un email d'activation spécifique pour les utilisateurs standards
+            
+        :param user_email: email de l'utilisateur
+        :param prenom: prénom de l'utilisateur
+        :param nom: nom de l'utilisateur
+        :param client_name: nom de l'entreprise/client
+        :param activation_token: token d'activation
+        :param expires_hours: durée de validité en heures (défaut: 24h)
+        """
+        if not MailService.is_enabled():
+            logging.warning("Service mail non configuré - email d'activation utilisateur non envoyé")
+            return {"success": False, "message": "Service mail non configuré"}
+            
+        try:
+            # URL d'activation pour utilisateur standard
+            frontend_url = current_app.config.get('FRONTEND_URL', 'http://localhost:5173')
+            activation_url = f"{frontend_url}/activer-utilisateur/{activation_token}"
+                
+            # Nom complet pour affichage
+            full_name = f"{prenom} {nom}"
+                
+            result = MailService.send_email(
+            to=user_email,
+            subject=f"🎉 Activation de votre compte utilisateur - {client_name}",
+            template="user_activation",  # Template spécifique pour utilisateurs
+            username=full_name,
+            prenom=prenom,
+            nom=nom,
+                client_name=client_name,
+                user_email=user_email,
+                activation_token=activation_token,
+                activation_url=activation_url,
+                expires_hours=expires_hours,
+                support_email=current_app.config.get('MAIL_DEFAULT_SENDER'),
+                platform_name="SERTEC IoT"
+            )
+                
+            if result['success']:
+                logging.info(f"Email d'activation utilisateur envoyé à {user_email} pour {client_name}")
+            else:
+                logging.error(f"Échec envoi email activation utilisateur à {user_email}: {result['message']}")
+                    
+            return result
+                
+        except Exception as e:
+            logging.error(f"Erreur envoi email d'activation utilisateur: {e}")
+            return {"success": False, "message": str(e)}
+
+    @staticmethod
+    def send_superadmin_activation_email(user_email, prenom, nom, activation_token, expires_hours=24):
+        """
+        Envoie un email d'activation spécifique pour les superadministrateurs
+        
+        :param user_email: email du superadmin
+        :param prenom: prénom du superadmin
+        :param nom: nom du superadmin
+        :param activation_token: token d'activation
+        :param expires_hours: durée de validité en heures (défaut: 24h)
+        """
+        if not MailService.is_enabled():
+            logging.warning("Service mail non configuré - email d'activation superadmin non envoyé")
+            return {"success": False, "message": "Service mail non configuré"}
+        
+        try:
+            # URL d'activation pour superadmin
+            frontend_url = current_app.config.get('FRONTEND_URL', 'http://localhost:5173')
+            activation_url = f"{frontend_url}/activer-superadmin/{activation_token}"
+            
+            # Nom complet pour affichage
+            full_name = f"{prenom} {nom}"
+            
+            result = MailService.send_email(
+                to=user_email,
+                subject="🎉 Activation de votre compte superadministrateur - SERTEC IoT",
+                template="superadmin_activation",  # Template spécifique pour superadmins
+                username=full_name,
+                prenom=prenom,
+                nom=nom,
+                client_name="SERTEC IoT",  # Les superadmins n'ont pas de client spécifique
+                user_email=user_email,
+                activation_token=activation_token,
+                activation_url=activation_url,
+                expires_hours=expires_hours,
+                support_email=current_app.config.get('MAIL_DEFAULT_SENDER'),
+                platform_name="SERTEC IoT"
+            )
+            
+            if result['success']:
+                logging.info(f"Email d'activation superadmin envoyé à {user_email}")
+            else:
+                logging.error(f"Échec envoi email activation superadmin à {user_email}: {result['message']}")
+                
+            return result
+            
+        except Exception as e:
+            logging.error(f"Erreur envoi email d'activation superadmin: {e}")
+            return {"success": False, "message": str(e)}

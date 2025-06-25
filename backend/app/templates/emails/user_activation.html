@@ -1,0 +1,65 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Activation compte utilisateur - {{ client_name }}{% endblock %}
+
+{% block content %}
+<h2><span class="emoji">🎉</span>Bienvenue {{ prenom }} {{ nom }} !</h2>
+
+<p>Votre compte utilisateur pour <strong>{{ client_name }}</strong> a été créé avec succès sur la plateforme SERTEC IoT.</p>
+
+<div class="alert alert-success">
+    <p style="margin: 0;">
+        <span class="emoji">👤</span><strong>Compte créé pour :</strong> {{ username }}<br>
+        <span class="emoji">📧</span><strong>Email :</strong> {{ user_email }}<br>
+        <span class="emoji">🏢</span><strong>Entreprise :</strong> {{ client_name }}<br>
+        <span class="emoji">👥</span><strong>Rôle :</strong> Utilisateur
+    </p>
+</div>
+
+<p>Pour activer votre compte et définir votre mot de passe, cliquez sur le bouton ci-dessous :</p>
+
+<div class="text-center">
+    <a href="{{ activation_url }}" class="btn btn-primary">
+        <span class="emoji">🚀</span>Activer mon compte et définir mon mot de passe
+    </a>
+</div>
+
+<div class="alert alert-warning">
+    <p style="margin: 0; font-weight: bold;">
+        <span class="emoji">⏰</span><strong>Important :</strong> Ce lien expire dans <strong>{{ expires_hours }} heures</strong>
+    </p>
+</div>
+
+<div class="alert alert-info">
+    <p style="margin: 0; font-size: 14px;">
+        <span class="emoji">🔗</span><strong>Lien d'activation :</strong><br>
+        Si le bouton ne fonctionne pas, copiez et collez ce lien dans votre navigateur :<br>
+        <a href="{{ activation_url }}" style="color: #1e88e5; word-break: break-all;">{{ activation_url }}</a>
+    </p>
+</div>
+
+<h3><span class="emoji">🎯</span>Prochaines étapes :</h3>
+<ol style="padding-left: 20px; color: #555;">
+    <li>Cliquez sur le lien d'activation ci-dessus</li>
+    <li>Créez un mot de passe sécurisé (minimum 8 caractères)</li>
+    <li>Connectez-vous à votre espace utilisateur</li>
+    <li>Découvrez vos équipements et tableaux de bord</li>
+</ol>
+
+<div class="alert alert-success">
+    <p style="margin: 0; font-size: 14px;">
+        <span class="emoji">🔐</span><strong>Sécurité :</strong><br>
+        Votre mot de passe doit contenir au moins 8 caractères pour garantir la sécurité de vos données.
+    </p>
+</div>
+
+<p style="margin-top: 30px;">
+    <span class="emoji">🏭</span>Bienvenue dans l'écosystème <strong>SERTEC IoT</strong> ! 
+    Vous avez maintenant accès aux données et fonctionnalités de monitoring de votre entreprise.
+</p>
+
+<p style="font-size: 14px; color: #6c757d;">
+    <span class="emoji">📧</span>Besoin d'aide ? Contactez notre équipe support : 
+    <a href="mailto:{{ support_email }}">{{ support_email }}</a>
+</p>
+{% endblock %}

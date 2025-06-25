@@ -21,6 +21,11 @@
     position: relative;
   }
   
+  .input::placeholder {
+  color: #999 !important; /
+}
+
+
   .input {
     width: 100%;
     padding: 0.75rem;
@@ -30,12 +35,14 @@
     transition: all 0.2s;
     background: white;
     font-family: inherit;
+    color: #333 !important;
   }
   
   .input:focus {
     outline: none;
     border-color: #007bff;
     box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+    color: #333 !important;
   }
   
   .input-error {
@@ -51,6 +58,7 @@
     background: #f8f9fa;
     cursor: not-allowed;
     opacity: 0.6;
+    color: #666 !important;
   }
   
   .password-toggle {
@@ -87,3 +95,4 @@
       font-size: 16px; /* Évite le zoom sur iOS */
     }
   }
+  

@@ -8,6 +8,7 @@ import Input from '../../components/Input'
 import UserModal from './UserModal'
 import ClientModal from './ClientModal'
 import PendingAdmins from './PendingAdmins'
+import PendingUsers from './PendingUsers'
 import ConfirmModal from '../../components/ConfirmModal'
 import Toast from '../../components/Toast'
 import './UserManagement.css'
@@ -16,6 +17,8 @@ const UserManagement = () => {
   const { isSuperadmin, isAdmin } = useAuth()
   const [users, setUsers] = useState([])
   const [clients, setClients] = useState([])
+  const [pendingUsers, setPendingUsers] = useState([])
+  const [pendingAdmins, setPendingAdmins] = useState([]) // ✅ AJOUTÉ pour superadmin
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedTab, setSelectedTab] = useState('users')
@@ -38,12 +41,12 @@ const UserManagement = () => {
 
   useEffect(() => {
     loadData()
-      // Réinitialise les filtres quand on change d'onglet
-  setSearchTerm('')
-  setRoleFilter('')
-  setClientFilter('')
-  setStatusFilter('')
-  setStatusClientFilter('') 
+    // Réinitialise les filtres quand on change d'onglet
+    setSearchTerm('')
+    setRoleFilter('')
+    setClientFilter('')
+    setStatusFilter('')
+    setStatusClientFilter('') 
   }, [selectedTab])
 
   const loadData = async () => {
@@ -64,14 +67,38 @@ const UserManagement = () => {
       } else if (selectedTab === 'clients' && isSuperadmin()) {
         const clientsResponse = await UserService.listerClients()
         setClients(clientsResponse.data.data)
+      } else if (selectedTab === 'pending-users') {
+        // ✅ MODIFIÉ : Charger utilisateurs ET admins en attente pour superadmin
+        const pendingResponse = await UserService.listerUtilisateursEnAttente()
+        
+        if (pendingResponse.data.data) {
+          setPendingUsers(pendingResponse.data.data.utilisateurs || pendingResponse.data.data)
+        } else {
+          setPendingUsers(pendingResponse.data || [])
+        }
+
+        // ✅ NOUVEAU : Charger aussi les admins en attente pour superadmin
+        if (isSuperadmin()) {
+          try {
+            const pendingAdminsResponse = await UserService.listerAdminsEnAttente()
+            if (pendingAdminsResponse.data.data) {
+              setPendingAdmins(pendingAdminsResponse.data.data)
+            } else {
+              setPendingAdmins(pendingAdminsResponse.data || [])
+            }
+          } catch (error) {
+            console.error('Erreur chargement admins en attente:', error)
+            setPendingAdmins([])
+          }
+        }
       }
     } catch (error) {
       showToast('Erreur lors du chargement des données', 'error')
+      console.error('Erreur loadData:', error)
     } finally {
       setLoading(false)
     }
   }
-  
 
   const showToast = (message, type = 'info') => {
     setToast({ message, type })
@@ -85,8 +112,10 @@ const UserManagement = () => {
     }
 
     try {
-      const response = await UserService.rechercherUtilisateurs(term)
-      setUsers(response.data.data)
+      if (selectedTab === 'users') {
+        const response = await UserService.rechercherUtilisateurs(term)
+        setUsers(response.data.data)
+      }
     } catch (error) {
       showToast('Erreur lors de la recherche', 'error')
     }
@@ -135,6 +164,27 @@ const UserManagement = () => {
     })
   }
 
+  const handleDeletePendingUser = (user) => {
+    setConfirmAction({
+      type: 'deletePendingUser',
+      user,
+      title: 'Supprimer l\'utilisateur en attente',
+      message: `Êtes-vous sûr de vouloir supprimer ${user.nom_complet} qui est en attente d'activation ?`,
+      confirmText: 'Supprimer',
+      onConfirm: () => confirmDeletePendingUser(user.id)
+    })
+  }
+
+  const handleResendActivation = async (userId, userName) => {
+    try {
+      await UserService.creerActivationUtilisateur(userId)
+      showToast(`Email d'activation renvoyé à ${userName}`, 'success')
+      loadData() // ✅ AJOUTÉ : Recharger après envoi
+    } catch (error) {
+      showToast(error.response?.data?.error || 'Erreur lors de l\'envoi', 'error')
+    }
+  }
+
   const handleDeactivateUser = (user) => {
     const action = user.actif ? 'désactiver' : 'réactiver'
     setConfirmAction({
@@ -160,26 +210,36 @@ const UserManagement = () => {
   }
 
   const toggleClientStatus = async (client) => {
-  try {
-    if (client.actif) {
-      await UserService.desactiverClient(client.id)
-    } else {
-      await UserService.reactiverClient(client.id)
+    try {
+      if (client.actif) {
+        await UserService.desactiverClient(client.id)
+      } else {
+        await UserService.reactiverClient(client.id)
+      }
+      loadData()
+      showToast(`Client ${client.actif ? 'désactivé' : 'réactivé'} avec succès`, 'success')
+    } catch (error) {
+      showToast(error.response?.data?.error || 'Erreur lors de l\'opération', 'error')
     }
-    loadData()
-    showToast(`Client ${client.actif ? 'désactivé' : 'réactivé'} avec succès`, 'success')
-  } catch (error) {
-    showToast(error.response?.data?.error || 'Erreur lors de l\'opération', 'error')
+    setConfirmAction(null)
   }
-  setConfirmAction(null)
-}
-
 
   const confirmDeleteUser = async (userId) => {
     try {
       await UserService.supprimerUtilisateur(userId)
       loadData()
       showToast('Utilisateur supprimé avec succès', 'success')
+    } catch (error) {
+      showToast(error.response?.data?.error || 'Erreur lors de la suppression', 'error')
+    }
+    setConfirmAction(null)
+  }
+
+  const confirmDeletePendingUser = async (userId) => {
+    try {
+      await UserService.supprimerUtilisateurEnAttente(userId)
+      loadData()
+      showToast('Utilisateur en attente supprimé avec succès', 'success')
     } catch (error) {
       showToast(error.response?.data?.error || 'Erreur lors de la suppression', 'error')
     }
@@ -206,9 +266,7 @@ const UserManagement = () => {
       const response = await UserService.genererMotDePasse(userId)
       const password = response.data.mot_de_passe_temporaire
       
-      // Copier dans le presse-papier
       await navigator.clipboard.writeText(password)
-      
       showToast(`Mot de passe généré pour ${userName}`, 'success')
     } catch (error) {
       showToast('Erreur lors de la génération du mot de passe', 'error')
@@ -230,17 +288,15 @@ const UserManagement = () => {
     return users.filter(user => {
       const matchRole = roleFilter ? user.role === roleFilter : true
       const matchClient = clientFilter
-  ? String(user.client_id) === String(clientFilter)
-  : true
-
-  const matchStatus = statusFilter
-  ? String(user.actif) === (statusFilter === 'actif' ? 'true' : 'false')
-  : true
-
-
+        ? String(user.client_id) === String(clientFilter)
+        : true
+      const matchStatus = statusFilter
+        ? String(user.actif) === (statusFilter === 'actif' ? 'true' : 'false')
+        : true
       return matchRole && matchClient && matchStatus
     })
   }
+
   const getFilteredClients = () => {
     return clients.filter(client => {
       const matchStatus =
@@ -249,12 +305,21 @@ const UserManagement = () => {
           : statusClientFilter === 'actif'
           ? client.actif === true
           : client.actif === false;
-  
       return matchStatus;
     });
   };
-  
-  
+
+  const getFilteredPendingUsers = () => {
+    return pendingUsers.filter(user => {
+      if (searchTerm) {
+        const term = searchTerm.toLowerCase()
+        const matchName = user.nom_complet?.toLowerCase().includes(term)
+        const matchEmail = user.email?.toLowerCase().includes(term)
+        return matchName || matchEmail
+      }
+      return true
+    })
+  }
 
   return (
     <Layout>
@@ -268,48 +333,50 @@ const UserManagement = () => {
               value={searchTerm}
               onChange={(e) => {
                 setSearchTerm(e.target.value)
-                handleSearch(e.target.value)
+                if (selectedTab === 'users') {
+                  handleSearch(e.target.value)
+                }
               }}
               className="search-input"
             />
 
-                {selectedTab === 'users' && (
-                <div className="filter-bar">
-                    <select onChange={(e) => setRoleFilter(e.target.value)} value={roleFilter}>
-                    <option value="">Tous les rôles</option>
-                    <option value="superadmin">Superadmin</option>
-                    <option value="admin">Admin</option>
-                    <option value="user">Utilisateur</option>
-                    </select>
+            {selectedTab === 'users' && (
+              <div className="filter-bar">
+                <select onChange={(e) => setRoleFilter(e.target.value)} value={roleFilter}>
+                  <option value="">Tous les rôles</option>
+                  <option value="superadmin">Superadmin</option>
+                  <option value="admin">Admin</option>
+                  <option value="user">Utilisateur</option>
+                </select>
 
-                    {isSuperadmin() && (
-                    <select onChange={(e) => setClientFilter(e.target.value)} value={clientFilter}>
-                        <option value="">Tous les clients</option>
-                        {clients.map(client => (
-                        <option key={client.id} value={client.id}>{client.nom_entreprise}</option>
-                        ))}
-                    </select>
-                    )}
-
-                    <select onChange={(e) => setStatusFilter(e.target.value)} value={statusFilter}>
-                    <option value="">Tous</option>
-                    <option value="actif">Actifs</option>
-                    <option value="inactif">Inactifs</option>
-                    </select>
-                </div>
+                {isSuperadmin() && (
+                  <select onChange={(e) => setClientFilter(e.target.value)} value={clientFilter}>
+                    <option value="">Tous les clients</option>
+                    {clients.map(client => (
+                      <option key={client.id} value={client.id}>{client.nom_entreprise}</option>
+                    ))}
+                  </select>
                 )}
 
-                {selectedTab === 'clients' && (
-                <div className="filter-bar">
-                    <select onChange={(e) => setStatusClientFilter(e.target.value)} value={statusClientFilter}>
-                    <option value="">Tous</option>
-                    <option value="actif">Actifs</option>
-                    <option value="inactif">Inactifs</option>
-                    </select>
-                </div>
-                )}
+                <select onChange={(e) => setStatusFilter(e.target.value)} value={statusFilter}>
+                  <option value="">Tous</option>
+                  <option value="actif">Actifs</option>
+                  <option value="inactif">Inactifs</option>
+                </select>
+              </div>
+            )}
 
-            {selectedTab !== 'pending' && (
+            {selectedTab === 'clients' && (
+              <div className="filter-bar">
+                <select onChange={(e) => setStatusClientFilter(e.target.value)} value={statusClientFilter}>
+                  <option value="">Tous</option>
+                  <option value="actif">Actifs</option>
+                  <option value="inactif">Inactifs</option>
+                </select>
+              </div>
+            )}
+
+            {(selectedTab === 'users' || selectedTab === 'clients') && (
               <Button
                 variant="primary"
                 onClick={selectedTab === 'users' ? handleCreateUser : handleCreateClient}
@@ -320,7 +387,7 @@ const UserManagement = () => {
           </div>
         </div>
 
-        {/* Statistiques */}
+        {/* ✅ CORRIGÉ : Statistiques avec logique unifiée */}
         <div className="stats-grid">
           {isSuperadmin() ? (
             <>
@@ -352,6 +419,19 @@ const UserManagement = () => {
                   <div className="stat-number">{stats.utilisateurs_inactifs || 0}</div>
                 </div>
               </div>
+
+              {/* ✅ CORRIGÉ : Stat pour en attente d'activation (superadmin) */}
+              {selectedTab === 'pending-users' && (
+                <div className="stat-card highlight">
+                  <div className="stat-icon">⏳</div>
+                  <div className="stat-content">
+                    <h3>En attente d'activation</h3>
+                    <div className="stat-number">
+                      {pendingUsers.length + pendingAdmins.length}
+                    </div>
+                  </div>
+                </div>
+              )}
             </>
           ) : (
             <>
@@ -376,67 +456,157 @@ const UserManagement = () => {
                   <div className="stat-number">{stats.utilisateurs_inactifs_client || 0}</div>
                 </div>
               </div>
+              {/* ✅ CORRIGÉ : Stat pour en attente d'activation (admin client) */}
+              {selectedTab === 'pending-users' && (
+                <div className="stat-card highlight">
+                  <div className="stat-icon">⏳</div>
+                  <div className="stat-content">
+                    <h3>En attente d'activation</h3>
+                    <div className="stat-number">{pendingUsers.length}</div>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
 
-        {/* Onglets */}
-        {isSuperadmin() && (
-          <div className="tabs">
-            <button
-              className={`tab ${selectedTab === 'users' ? 'active' : ''}`}
-              onClick={() => setSelectedTab('users')}
-            >
-              Utilisateurs
-            </button>
+        {/* ✅ CORRIGÉ : Onglets avec logique unifiée */}
+        <div className="tabs">
+          <button
+            className={`tab ${selectedTab === 'users' ? 'active' : ''}`}
+            onClick={() => setSelectedTab('users')}
+          >
+            Utilisateurs
+          </button>
+          
+          {/* ✅ CORRIGÉ : Onglet clients seulement pour superadmin */}
+          {isSuperadmin() && (
             <button
               className={`tab ${selectedTab === 'clients' ? 'active' : ''}`}
               onClick={() => setSelectedTab('clients')}
             >
               Clients
             </button>
-            <button
-              className={`tab ${selectedTab === 'pending' ? 'active' : ''}`}
-              onClick={() => setSelectedTab('pending')}
-            >
-              Admins en attente
-            </button>
-          </div>
-        )}
+          )}
 
-        {/* Contenu des onglets */}
-        {selectedTab === 'users' ? (
-          <UsersTable
-          users={getFilteredUsers()}
-          onEdit={handleEditUser}
-          onDelete={handleDeleteUser}
-          onToggleStatus={handleDeactivateUser}
-          onGeneratePassword={generatePassword}
-          isSuperadmin={isSuperadmin()}
-        />
-        
-        ) : selectedTab === 'clients' ? (
-            <ClientsTable
-                clients={getFilteredClients()}
-                onEdit={handleEditClient}
-                onDelete={() => {}}
-                isSuperadmin={isSuperadmin()}
-                onToggleStatus={handleDeactivateClient}
+          {/* ✅ CORRIGÉ : Onglet "En attente d'activation" unifié */}
+          <button
+            className={`tab ${selectedTab === 'pending-users' ? 'active' : ''}`}
+            onClick={() => setSelectedTab('pending-users')}
+          >
+            En attente d'activation
+            {(pendingUsers.length + (isSuperadmin() ? pendingAdmins.length : 0)) > 0 && (
+              <span className="tab-badge">
+                {pendingUsers.length + (isSuperadmin() ? pendingAdmins.length : 0)}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* ✅ CORRIGÉ : Contenu selon l'onglet sélectionné */}
+        <div className="content">
+          {selectedTab === 'users' && (
+            <UsersTable
+              users={getFilteredUsers()}
+              onEdit={handleEditUser}
+              onDelete={handleDeleteUser}
+              onToggleStatus={handleDeactivateUser}
+              onGeneratePassword={generatePassword}
+              isSuperadmin={isSuperadmin()}
+            />
+          )}
+          
+          {selectedTab === 'pending-users' && (
+            <div>
+              {/* Pour superadmin : afficher utilisateurs ET admins en attente */}
+              {isSuperadmin() ? (
+                <div>
+                  {/* Section Utilisateurs en attente */}
+                  {pendingUsers.length > 0 && (
+                    <div className="pending-section">
+                      <h3 style={{ 
+                        color: '#2c3e50', 
+                        marginBottom: '20px',
+                        borderBottom: '2px solid #007bff',
+                        paddingBottom: '10px'
+                      }}>
+                        👥 Utilisateurs en attente ({pendingUsers.length})
+                      </h3>
+                      <PendingUsers 
+                        users={getFilteredPendingUsers()}
+                        onDelete={handleDeletePendingUser}
+                        onResendActivation={handleResendActivation}
+                        isSuperadmin={true}
+                      />
+                    </div>
+                  )}
+                  
+                  {/* Section Administrateurs en attente */}
+                  {pendingAdmins.length > 0 && (
+                    <div className="pending-section" style={{ marginTop: pendingUsers.length > 0 ? '40px' : '0' }}>
+                      <h3 style={{ 
+                        color: '#2c3e50', 
+                        marginBottom: '20px',
+                        borderBottom: '2px solid #dc3545',
+                        paddingBottom: '10px'
+                      }}>
+                        👑 Administrateurs en attente ({pendingAdmins.length})
+                      </h3>
+                      <PendingAdmins />
+                    </div>
+                  )}
+                  
+                  {/* Empty state global */}
+                  {pendingUsers.length === 0 && pendingAdmins.length === 0 && (
+                    <div className="empty-state" style={{
+                      textAlign: 'center',
+                      padding: '60px 20px',
+                      background: '#fff',
+                      borderRadius: '12px',
+                      boxShadow: '0 2px 10px rgba(0, 0, 0, 0.1)'
+                    }}>
+                      <div style={{ fontSize: '4rem', marginBottom: '1rem', opacity: 0.7 }}>✅</div>
+                      <h3 style={{ color: '#27ae60', marginBottom: '16px', fontSize: '24px' }}>
+                        Aucun utilisateur en attente
+                      </h3>
+                      <p style={{ color: '#7f8c8d', fontSize: '16px' }}>
+                        Tous les utilisateurs et administrateurs ont activé leur compte.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                // Pour admin client : seulement ses utilisateurs
+                <PendingUsers 
+                  users={getFilteredPendingUsers()}
+                  onDelete={handleDeletePendingUser}
+                  onResendActivation={handleResendActivation}
+                  isSuperadmin={false}
                 />
-        ) : selectedTab === 'pending' ? (
-          <PendingAdmins />
-        ) : null}
+              )}
+            </div>
+          )}
+          
+          {selectedTab === 'clients' && isSuperadmin() && (
+            <ClientsTable
+              clients={getFilteredClients()}
+              onEdit={handleEditClient}
+              onDelete={() => {}}
+              isSuperadmin={isSuperadmin()}
+              onToggleStatus={handleDeactivateClient}
+            />
+          )}
+        </div>
 
         {/* Modals */}
         {showUserModal && (
-                <UserModal
-                    user={selectedUser}
-                    onClose={() => setShowUserModal(false)}
-                    onSave={handleUserSaved}
-                    clients={clients} // ✅ envoie les clients ici
-                />
-                )}
-
+          <UserModal
+            user={selectedUser}
+            onClose={() => setShowUserModal(false)}
+            onSave={handleUserSaved}
+            clients={clients}
+          />
+        )}
 
         {showClientModal && (
           <ClientModal
@@ -494,7 +664,6 @@ const UsersTable = ({ users, onEdit, onDelete, onToggleStatus, onGeneratePasswor
             </td>
             {isSuperadmin && (
               <td>{user.client_nom || 'N/A'}</td>
-
             )}
             <td>
               <span className={`status-badge ${user.actif ? 'active' : 'inactive'}`}>
@@ -543,7 +712,6 @@ const UsersTable = ({ users, onEdit, onDelete, onToggleStatus, onGeneratePasswor
 
 // Composant tableau des clients
 const ClientsTable = ({ clients, onEdit, onDelete, isSuperadmin, onToggleStatus }) => (
-
   <div className="table-container">
     <table className="data-table">
       <thead>
@@ -576,13 +744,12 @@ const ClientsTable = ({ clients, onEdit, onDelete, isSuperadmin, onToggleStatus 
                   ✏️
                 </Button>
                 <Button
-                    variant="secondary"
-                    size="small"
-                    onClick={() => onToggleStatus(client)}
-                    >
-                    {client.actif ? '❌' : '✅'}
-                    </Button>
-
+                  variant="secondary"
+                  size="small"
+                  onClick={() => onToggleStatus(client)}
+                >
+                  {client.actif ? '❌' : '✅'}
+                </Button>
               </div>
             </td>
           </tr>

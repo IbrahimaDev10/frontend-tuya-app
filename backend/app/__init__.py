@@ -3,18 +3,24 @@ from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
-from flask_mail import Mail  # ✅ NOUVEAU : Import Flask-Mail
-import logging
+from flask_mail import Mail  
 import os
+import logging
+
+# ✅ NOUVEAU : Import Redis
+import redis
 
 # Extensions Flask
 db = SQLAlchemy()
 migrate = Migrate()
 jwt = JWTManager()
-mail = Mail()  # ✅ NOUVEAU : Instance Flask-Mail
+mail = Mail()
+
+# ✅ NOUVEAU : Client Redis global (simple)
+redis_client = None
 
 def create_app():
-    """Factory pour créer l'application Flask - Version améliorée avec Devices et Mail"""
+    """Factory pour créer l'application Flask - Version améliorée avec Redis"""
     
     # Créer l'app Flask
     app = Flask(__name__)
@@ -40,8 +46,11 @@ def create_app():
     db.init_app(app)
     migrate.init_app(app, db)
     
-    # ✅ NOUVEAU : Initialize Flask-Mail
+    # Initialize Flask-Mail
     mail.init_app(app)
+    
+    # ✅ NOUVEAU : Initialize Redis (simple et robuste)
+    setup_redis(app)
     
     # Vérifier et afficher le statut de la configuration mail
     if config.is_mail_configured():
@@ -51,14 +60,14 @@ def create_app():
     else:
         app.logger.warning("⚠️ Service mail non configuré - fonctionnalités email désactivées")
     
-    # ✅ AJOUTÉ : Importer tous les modèles pour que Flask-Migrate les trouve
+    # Importer tous les modèles pour que Flask-Migrate les trouve
     try:
         from app import models
         app.logger.info("✅ Modèles importés avec succès")
     except ImportError as e:
         app.logger.warning(f"⚠️ Erreur import modèles: {e}")
     
-    # ✅ NOUVEAU : Importer les services pour s'assurer qu'ils sont disponibles
+    # Importer les services pour s'assurer qu'ils sont disponibles
     try:
         from app.services.tuya_service import TuyaClient
         from app.services.device_service import DeviceService
@@ -66,7 +75,7 @@ def create_app():
     except ImportError as e:
         app.logger.warning(f"⚠️ Erreur import services: {e}")
     
-    # ✅ NOUVEAU : Importer le service mail
+    # Importer le service mail
     try:
         from app.services.mail_service import MailService
         app.logger.info("✅ Service Mail importé avec succès")
@@ -93,6 +102,84 @@ def create_app():
     
     app.logger.info("🚀 Application SERTEC IoT initialisée avec succès")
     return app
+
+# ✅ NOUVEAU : Fonction simple pour configurer Redis
+def setup_redis(app):
+    """Configuration Redis simple et robuste"""
+    global redis_client
+    
+    try:
+        # ✅ UTILISATION : Configuration Redis depuis settings.py
+        from config.settings import get_config
+        config_class = get_config()
+        
+        if not config_class.is_redis_configured():
+            app.logger.info("ℹ️ Redis non configuré - application fonctionnera sans cache")
+            redis_client = None
+            return
+        
+        # Récupérer la configuration Redis complète
+        redis_config = config_class.get_redis_config()
+        redis_url = redis_config.pop('url')  # Extraire l'URL
+        
+        app.logger.info(f"🔄 Tentative de connexion Redis...")
+        
+        # Créer le client Redis avec la configuration complète
+        redis_client = redis.from_url(redis_url, **redis_config)
+        
+        # Test de connexion
+        redis_client.ping()
+        
+        # Informations Redis
+        info = redis_client.info('server')
+        redis_version = info.get('redis_version', 'inconnue')
+        
+        app.logger.info(f"✅ Redis connecté avec succès")
+        app.logger.info(f"   Version Redis: {redis_version}")
+        app.logger.info(f"   Mode: {info.get('redis_mode', 'standalone')}")
+        
+        # Test d'écriture/lecture simple
+        test_key = "sertec_init_test"
+        redis_client.set(test_key, "OK", ex=10)  # Expire dans 10 secondes
+        test_value = redis_client.get(test_key)
+        
+        if test_value == "OK":
+            app.logger.info("✅ Test écriture/lecture Redis réussi")
+            redis_client.delete(test_key)  # Nettoyage
+        else:
+            app.logger.warning("⚠️ Test écriture/lecture Redis échoué")
+        
+    except redis.ConnectionError as e:
+        app.logger.warning(f"⚠️ Redis non disponible: {e}")
+        app.logger.info("   L'application fonctionnera sans cache Redis")
+        redis_client = None
+        
+    except redis.AuthenticationError as e:
+        app.logger.error(f"❌ Erreur authentification Redis: {e}")
+        app.logger.error("   Vérifiez le mot de passe dans REDIS_URL")
+        redis_client = None
+        
+    except Exception as e:
+        app.logger.warning(f"⚠️ Erreur Redis inattendue: {e}")
+        app.logger.info("   L'application fonctionnera sans cache Redis")
+        redis_client = None
+
+# ✅ NOUVEAU : Fonction helper pour récupérer Redis (utilisée par vos services)
+def get_redis():
+    """Récupérer le client Redis - Peut retourner None si Redis indisponible"""
+    return redis_client
+
+# ✅ NOUVEAU : Fonction helper pour vérifier si Redis est disponible
+def is_redis_available():
+    """Vérifier si Redis est disponible et connecté"""
+    if redis_client is None:
+        return False
+    
+    try:
+        redis_client.ping()
+        return True
+    except:
+        return False
 
 def setup_logging(app):
     """Configuration des logs"""
@@ -122,14 +209,6 @@ def register_blueprints(app):
     current_file = os.path.abspath(__file__)
     app_dir = os.path.dirname(current_file)
     routes_dir = os.path.join(app_dir, 'routes')
-    
-    # ❌ DÉSACTIVÉ : Blueprint API existant (remplacé par device_routes)
-    # try:
-    #     from app.routes import api
-    #     app.register_blueprint(api)
-    #     app.logger.info("✅ Blueprint API existant enregistré")
-    # except ImportError as e:
-    #     app.logger.warning(f"⚠️ Erreur import blueprint API existant: {e}")
     
     # 🔐 BLUEPRINT AUTH
     try:
@@ -171,23 +250,11 @@ def register_blueprints(app):
             app.register_blueprint(user_bp)
             app.logger.info("✅ Blueprint users enregistré sur /api/users")
             
-            # Debug: Compter les routes users
-            route_count = 0
-            for rule in app.url_map.iter_rules():
-                if rule.rule.startswith('/api/users'):
-                    route_count += 1
-                    app.logger.debug(f"📍 Route users: {list(rule.methods)} {rule.rule}")
-            
-            app.logger.info(f"✅ Total routes users enregistrées: {route_count}")
-            
         else:
             app.logger.warning(f"⚠️ Fichier user_routes non trouvé: {user_routes_file_path}")
-            app.logger.info("💡 Créez le fichier app/routes/user_routes.py pour activer la gestion des utilisateurs")
             
     except Exception as e:
         app.logger.error(f"❌ Erreur import blueprint users: {e}")
-        import traceback
-        app.logger.error(f"📋 Traceback: {traceback.format_exc()}")
     
     # 📍 BLUEPRINT SITES
     try:
@@ -206,25 +273,13 @@ def register_blueprints(app):
             app.register_blueprint(site_bp)
             app.logger.info("✅ Blueprint sites enregistré sur /api/sites")
             
-            # Debug: Compter les routes sites
-            route_count = 0
-            for rule in app.url_map.iter_rules():
-                if rule.rule.startswith('/api/sites'):
-                    route_count += 1
-                    app.logger.debug(f"📍 Route sites: {list(rule.methods)} {rule.rule}")
-            
-            app.logger.info(f"✅ Total routes sites enregistrées: {route_count}")
-            
         else:
             app.logger.warning(f"⚠️ Fichier site_routes non trouvé: {site_routes_file_path}")
-            app.logger.info("💡 Créez le fichier app/routes/site_routes.py pour activer la gestion des sites")
             
     except Exception as e:
         app.logger.error(f"❌ Erreur import blueprint sites: {e}")
-        import traceback
-        app.logger.error(f"📋 Traceback: {traceback.format_exc()}")
     
-    # 🔥 NOUVEAU : BLUEPRINT DEVICES (PRIORITÉ)
+    # 🔥 BLUEPRINT DEVICES (PRIORITÉ)
     try:
         app.logger.info("🔍 Import du blueprint devices...")
         
@@ -241,73 +296,11 @@ def register_blueprints(app):
             app.register_blueprint(device_bp)
             app.logger.info("✅ Blueprint devices enregistré sur /api/devices")
             
-            # Debug: Compter les routes devices
-            route_count = 0
-            for rule in app.url_map.iter_rules():
-                if rule.rule.startswith('/api/devices'):
-                    route_count += 1
-                    app.logger.debug(f"📍 Route devices: {list(rule.methods)} {rule.rule}")
-            
-            app.logger.info(f"✅ Total routes devices enregistrées: {route_count}")
-            
         else:
             app.logger.error(f"❌ Fichier device_routes non trouvé: {device_routes_file_path}")
-            app.logger.error("💥 CRITIQUE: Le fichier device_routes.py est requis pour l'intégration Tuya!")
             
     except Exception as e:
         app.logger.error(f"❌ Erreur import blueprint devices: {e}")
-        import traceback
-        app.logger.error(f"📋 Traceback: {traceback.format_exc()}")
-    
-    # ✅ NOUVEAU : BLUEPRINT MAIL
-    try:
-        app.logger.info("🔍 Import du blueprint mail...")
-        
-        mail_routes_file_path = os.path.join(routes_dir, 'mail_routes.py')
-        
-        if os.path.exists(mail_routes_file_path):
-            # Charger le module mail_routes
-            spec = importlib.util.spec_from_file_location("app.routes.mail_routes", mail_routes_file_path)
-            mail_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mail_module)
-            
-            # Récupérer et enregistrer le blueprint
-            mail_bp = mail_module.mail_bp
-            app.register_blueprint(mail_bp)
-            app.logger.info("✅ Blueprint mail enregistré sur /api/mail")
-            
-            # Debug: Compter les routes mail
-            route_count = 0
-            for rule in app.url_map.iter_rules():
-                if rule.rule.startswith('/api/mail'):
-                    route_count += 1
-                    app.logger.debug(f"📍 Route mail: {list(rule.methods)} {rule.rule}")
-            
-            app.logger.info(f"✅ Total routes mail enregistrées: {route_count}")
-            
-        else:
-            app.logger.info("ℹ️ Blueprint mail pas encore créé - fonctionnalités email intégrées dans les autres blueprints")
-            
-    except Exception as e:
-        app.logger.debug(f"ℹ️ Blueprint mail non disponible: {e}")
-    
-    # 🔮 BLUEPRINTS FUTURS - Prêts pour l'expansion
-    
-    # Blueprint alerts (à créer)
-    try:
-        alert_routes_file_path = os.path.join(routes_dir, 'alert_routes.py')
-        if os.path.exists(alert_routes_file_path):
-            spec = importlib.util.spec_from_file_location("app.routes.alert_routes", alert_routes_file_path)
-            alert_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(alert_module)
-            
-            alert_bp = alert_module.alert_bp
-            app.register_blueprint(alert_bp)
-            app.logger.info("✅ Blueprint alerts enregistré sur /api/alerts")
-        else:
-            app.logger.debug("ℹ️ Blueprint alerts pas encore créé")
-    except Exception as e:
-        app.logger.debug(f"ℹ️ Blueprint alerts non disponible: {e}")
     
     # 🔧 ROUTES DE DEBUG ET SANTÉ
     
@@ -325,6 +318,46 @@ def register_blueprints(app):
             'total_routes': len(routes),
             'routes': sorted(routes, key=lambda x: x['path'])
         }
+    
+    # ✅ NOUVEAU : Route de debug Redis
+    @app.route('/debug/redis')
+    def debug_redis():
+        """Route pour vérifier l'état de Redis"""
+        try:
+            if redis_client is None:
+                return {
+                    'redis_service': 'not_configured',
+                    'message': 'Redis non configuré ou indisponible'
+                }
+            
+            # Test ping
+            redis_client.ping()
+            
+            # Informations Redis
+            info = redis_client.info('server')
+            memory_info = redis_client.info('memory')
+            
+            # Test d'écriture/lecture
+            test_key = "debug_test"
+            redis_client.set(test_key, "debug_value", ex=5)
+            test_result = redis_client.get(test_key)
+            redis_client.delete(test_key)
+            
+            return {
+                'redis_service': 'connected',
+                'version': info.get('redis_version'),
+                'mode': info.get('redis_mode'),
+                'uptime_seconds': info.get('uptime_in_seconds'),
+                'used_memory_human': memory_info.get('used_memory_human'),
+                'test_write_read': test_result == "debug_value",
+                'config_url': app.config.get('REDIS_URL', '').split('@')[1] if '@' in app.config.get('REDIS_URL', '') else 'localhost:6379'
+            }
+            
+        except Exception as e:
+            return {
+                'redis_service': 'error',
+                'error': str(e)
+            }, 500
     
     @app.route('/debug/tuya')
     def debug_tuya():
@@ -345,7 +378,6 @@ def register_blueprints(app):
                 'error': str(e)
             }, 500
     
-    # ✅ NOUVEAU : Route de debug pour le service mail
     @app.route('/debug/mail')
     def debug_mail():
         """Route pour vérifier l'état du service mail"""
@@ -374,8 +406,9 @@ def register_blueprints(app):
     @app.route('/certif')
     def health_check():
         """Route de santé pour vérifier que l'API fonctionne"""
-        # Vérifier le statut du service mail
+        # Vérifier le statut des services
         mail_status = 'configured' if app.config.get('MAIL_USERNAME') else 'not_configured'
+        redis_status = 'connected' if is_redis_available() else 'not_available'
         
         return {
             'status': 'certifier',
@@ -388,7 +421,8 @@ def register_blueprints(app):
                 'sites': 'active',
                 'devices': 'active',
                 'tuya': 'active',
-                'mail': mail_status  # ✅ NOUVEAU
+                'mail': mail_status,
+                'redis': redis_status  # ✅ NOUVEAU
             }
         }, 200
     
@@ -400,14 +434,16 @@ def register_blueprints(app):
             'version': '1.0.0',
             'documentation': '/debug/routes',
             'certifier': '/certif',
-            'tuya_debug': '/debug/tuya',
-            'mail_debug': '/debug/mail',  # ✅ NOUVEAU
-            'endpoints': {
+            'debug_endpoints': {
+                'tuya': '/debug/tuya',
+                'mail': '/debug/mail',
+                'redis': '/debug/redis'  # ✅ NOUVEAU
+            },
+            'api_endpoints': {
                 'auth': '/api/auth',
                 'users': '/api/users',
                 'sites': '/api/sites',
-                'devices': '/api/devices',
-                'mail': '/api/mail'  # ✅ NOUVEAU (optionnel)
+                'devices': '/api/devices'
             }
         }, 200
 

@@ -30,11 +30,11 @@ const Sidebar = ({ isOpen, onClose }) => {
           path: '/sites',
           active: window.location.pathname === '/sites'
         },
-        {
-          icon: '🏢',
-          label: 'Gestion des Structures',
-          path: '/structures'
-        },
+        // {
+        //   icon: '🏢',
+        //   label: 'Gestion des Structures',
+        //   path: '/structures'
+        // },
         {
           icon: '📱',
           label: 'Gestion des Appareils',

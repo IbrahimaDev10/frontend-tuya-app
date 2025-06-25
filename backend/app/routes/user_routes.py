@@ -85,7 +85,7 @@ def validate_json_data(required_fields=None):
         return decorated_function
     return decorator
 
-# =================== NOUVELLES ROUTES POUR L'ACTIVATION ADMIN ===================
+# =================== NOUVELLES ROUTES POUR L'ACTIVATION ===================
 
 @user_bp.route('/activer-admin/<token>', methods=['POST'])
 @validate_json_data(['mot_de_passe', 'confirmpasse'])
@@ -101,16 +101,46 @@ def activer_admin(data, token):
         if erreur:
             return jsonify({'error': erreur}), 400
         
-        # ✅ CORRECTION - resultat est un dict avec les clés: utilisateur, email_confirmation, message
+        # ✅ CORRECT - resultat est un dict avec: utilisateur, email_confirmation, message
         utilisateur_dict = resultat['utilisateur']  # Déjà un dictionnaire
         nom_complet = f"{utilisateur_dict['prenom']} {utilisateur_dict['nom']}"
         
         return jsonify({
             'success': True,
             'message': f'Compte administrateur {nom_complet} activé avec succès',
-            'utilisateur': utilisateur_dict,  # Déjà un dict
+            'utilisateur': utilisateur_dict,
             'email_confirmation': resultat['email_confirmation'],
-            'service_message': resultat['message'],  # Message du service
+            'service_message': resultat['message'],
+            'instructions': 'Vous pouvez maintenant vous connecter avec votre email et mot de passe'
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
+@user_bp.route('/activer-utilisateur/<token>', methods=['POST'])
+@validate_json_data(['mot_de_passe', 'confirmpasse'])
+def activer_utilisateur_quelconque(data, token):
+    """Activer n'importe quel type d'utilisateur (admin, user, superadmin) - ROUTE PUBLIQUE"""
+    try:
+        resultat, erreur = user_service.activer_utilisateur_quelconque(
+            token, 
+            data['mot_de_passe'],
+            data['confirmpasse']
+        )
+        
+        if erreur:
+            return jsonify({'error': erreur}), 400
+        
+        # Même structure que activer_admin
+        utilisateur_dict = resultat['utilisateur']
+        nom_complet = f"{utilisateur_dict['prenom']} {utilisateur_dict['nom']}"
+        
+        return jsonify({
+            'success': True,
+            'message': f'Compte {utilisateur_dict["role"]} {nom_complet} activé avec succès',
+            'utilisateur': utilisateur_dict,
+            'email_confirmation': resultat['email_confirmation'],
+            'service_message': resultat['message'],
             'instructions': 'Vous pouvez maintenant vous connecter avec votre email et mot de passe'
         }), 200
         
@@ -159,20 +189,101 @@ def regenerer_token_activation(current_user, admin_id):
         return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
 
 @user_bp.route('/admins-en-attente', methods=['GET'])
-@superadmin_required
+@admin_required  # ✅ CHANGÉ : admin_required au lieu de superadmin_required
 def lister_admins_en_attente(current_user):
-    """Lister les administrateurs en attente d'activation - SUPERADMIN SEULEMENT"""
+    """Lister les administrateurs en attente d'activation selon les permissions"""
     try:
-        admins, erreur = user_service.lister_admins_en_attente(current_user)
+        # ✅ CORRECT : le service gère les permissions en interne
+        admins_data, erreur = user_service.lister_admins_en_attente(current_user)
         
         if erreur:
             return jsonify({'error': erreur}), 403
         
+        # ✅ GESTION : Support des deux formats de retour
+        if isinstance(admins_data, dict) and 'admins' in admins_data:
+            # Nouveau format avec metadata
+            return jsonify({
+                'success': True,
+                'data': admins_data['admins'],
+                'metadata': admins_data['metadata'],
+                'total': len(admins_data['admins'])
+            }), 200
+        else:
+            # Format simple (liste directe)
+            return jsonify({
+                'success': True,
+                'data': admins_data,
+                'total': len(admins_data)
+            }), 200
+        
+    except Exception as e:
+        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
+@user_bp.route('/utilisateurs-en-attente', methods=['GET'])
+@admin_required
+def lister_utilisateurs_en_attente(current_user):
+    """Lister les utilisateurs en attente d'activation selon les permissions"""
+    try:
+        # Paramètre optionnel pour inclure tous les rôles (superadmin seulement)
+        inclure_tous_roles = request.args.get('inclure_tous_roles', 'false').lower() == 'true'
+        
+        utilisateurs_data, erreur = user_service.lister_utilisateurs_en_attente(current_user, inclure_tous_roles)
+        
+        if erreur:
+            return jsonify({'error': erreur}), 403
+        
+        # Support des deux formats de retour
+        if isinstance(utilisateurs_data, dict) and 'utilisateurs' in utilisateurs_data:
+            return jsonify({
+                'success': True,
+                'data': utilisateurs_data['utilisateurs'],
+                'metadata': utilisateurs_data['metadata'],
+                'total': len(utilisateurs_data['utilisateurs'])
+            }), 200
+        else:
+            return jsonify({
+                'success': True,
+                'data': utilisateurs_data,
+                'total': len(utilisateurs_data)
+            }), 200
+        
+    except Exception as e:
+        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
+@user_bp.route('/<utilisateur_id>/supprimer-en-attente', methods=['DELETE'])
+@admin_required
+def supprimer_utilisateur_en_attente(current_user, utilisateur_id):
+    """Supprimer un utilisateur en attente d'activation"""
+    try:
+        succes, message = user_service.supprimer_utilisateur_en_attente(utilisateur_id, current_user)
+        
         return jsonify({
-            'success': True,
-            'data': admins,
-            'total': len(admins)
-        }), 200
+            'success': succes,
+            'message': message
+        }), 200 if succes else 400
+        
+    except Exception as e:
+        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
+@user_bp.route('/supprimer-batch-en-attente', methods=['POST'])
+@admin_required
+@validate_json_data(['utilisateurs_ids'])
+def supprimer_batch_utilisateurs_en_attente(data, current_user):
+    """Supprimer plusieurs utilisateurs en attente en une fois"""
+    try:
+        resultats = user_service.supprimer_batch_utilisateurs_en_attente(data['utilisateurs_ids'], current_user)
+        
+        return jsonify({
+            'success': resultats['success'],
+            'message': resultats['message'],
+            'details': {
+                'total_demande': resultats['total_demande'],
+                'total_supprime': resultats['total_supprime'],
+                'total_erreurs': resultats['total_erreurs'],
+                'supprimes': resultats['supprimes'],
+                'erreurs': resultats['erreurs']
+            }
+        }), 200 if resultats['success'] else 400
         
     except Exception as e:
         return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
@@ -201,6 +312,25 @@ def envoyer_nouveau_mot_de_passe(current_user, utilisateur_id):
     except Exception as e:
         return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
 
+@user_bp.route('/<utilisateur_id>/creer-activation', methods=['POST'])
+@admin_required
+def creer_et_envoyer_activation(current_user, utilisateur_id):
+    """Créer et envoyer un token d'activation pour un utilisateur existant"""
+    try:
+        token, erreur = user_service.creer_et_envoyer_activation_utilisateur_simple(utilisateur_id, current_user)
+        
+        if erreur:
+            return jsonify({'error': erreur}), 400
+        
+        return jsonify({
+            'success': True,
+            'message': 'Token d\'activation créé et email envoyé',
+            'token': token  # Pour debug
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
 # =================== GESTION DES CLIENTS ===================
 
 @user_bp.route('/clients', methods=['POST'])
@@ -214,7 +344,7 @@ def creer_client(data, current_user):
         if erreur:
             return jsonify({'error': erreur}), 400
         
-        # Réponse adaptée au nouveau système
+        # ✅ CORRECT : Adaptation au format du service
         return jsonify({
             'success': True,
             'message': f"✅ Client '{resultat['client']['nom_entreprise']}' créé avec succès",
@@ -266,6 +396,7 @@ def modifier_client(current_user, client_id):
         if erreur:
             return jsonify({'error': erreur}), 400
         
+        # ✅ CORRECT : client est un objet Client, utiliser to_dict()
         return jsonify({
             'success': True,
             'message': f'Client {client.nom_entreprise} modifié avec succès',
@@ -310,7 +441,6 @@ def reactiver_client(current_user, client_id):
 def supprimer_client(current_user, client_id):
     """Supprimer définitivement un client - SUPERADMIN SEULEMENT"""
     try:
-        # Paramètre optionnel pour forcer la suppression
         forcer = request.args.get('forcer', 'false').lower() == 'true'
         
         succes, message = user_service.supprimer_client(client_id, current_user, forcer)
@@ -322,7 +452,6 @@ def supprimer_client(current_user, client_id):
         
     except Exception as e:
         return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
-    
 
 # =================== GESTION DES UTILISATEURS ===================
 
@@ -332,21 +461,30 @@ def supprimer_client(current_user, client_id):
 def creer_utilisateur(data, current_user):
     """Créer un nouvel utilisateur"""
     try:
-        utilisateur, mot_de_passe_temporaire = user_service.creer_utilisateur(data, current_user)
+        # ✅ CORRECT : creer_utilisateur retourne Tuple[Optional[Dict], Optional[str]]
+        resultat, erreur = user_service.creer_utilisateur(data, current_user)
         
-        if not utilisateur:
-            return jsonify({'error': mot_de_passe_temporaire}), 400
+        if erreur:
+            return jsonify({'error': erreur}), 400
+        
+        # ✅ CORRECT : resultat est un dict, pas un objet User
+        utilisateur_dict = resultat['utilisateur']
+        nom_complet = f"{utilisateur_dict['prenom']} {utilisateur_dict['nom']}"
         
         response_data = {
             'success': True,
-            'message': f'Utilisateur {utilisateur.nom_complet} créé avec succès',
-            'utilisateur': utilisateur.to_dict()
+            'message': f'Utilisateur {nom_complet} créé avec succès',
+            'utilisateur': utilisateur_dict,
+            'instructions': {
+                'action_suivante': resultat['message_instructions'],
+                'email_envoye': resultat['email_result']['success'],
+                'status': 'En attente d\'activation par email'
+            }
         }
         
-        # Inclure le mot de passe temporaire si généré automatiquement
-        if mot_de_passe_temporaire:
-            response_data['mot_de_passe_temporaire'] = mot_de_passe_temporaire
-            response_data['message'] += f' - Mot de passe temporaire: {mot_de_passe_temporaire}'
+        # Si token disponible pour debug
+        if 'token_activation' in resultat:
+            response_data['debug_token'] = resultat['token_activation']
         
         return jsonify(response_data), 201
         
@@ -358,7 +496,6 @@ def creer_utilisateur(data, current_user):
 def lister_utilisateurs(current_user):
     """Lister les utilisateurs selon les permissions"""
     try:
-        # Paramètre optionnel pour filtrer par client (superadmin seulement)
         client_id = request.args.get('client_id')
         
         utilisateurs, erreur = user_service.lister_utilisateurs(current_user, client_id)
@@ -402,11 +539,13 @@ def modifier_utilisateur(current_user, utilisateur_id):
         if not data:
             return jsonify({'error': 'Données JSON requises'}), 400
         
+        # ✅ CORRECT : modifier_utilisateur retourne Tuple[Optional[User], Optional[str]]
         utilisateur, erreur = user_service.modifier_utilisateur(utilisateur_id, data, current_user)
         
         if erreur:
             return jsonify({'error': erreur}), 400
         
+        # ✅ CORRECT : utilisateur est un objet User, utiliser to_dict()
         return jsonify({
             'success': True,
             'message': f'Utilisateur {utilisateur.nom_complet} modifié avec succès',
@@ -451,10 +590,26 @@ def reactiver_utilisateur(current_user, utilisateur_id):
 def supprimer_utilisateur(current_user, utilisateur_id):
     """Supprimer définitivement un utilisateur"""
     try:
-        # Paramètre optionnel pour forcer la suppression
         forcer = request.args.get('forcer', 'false').lower() == 'true'
         
         succes, message = user_service.supprimer_utilisateur(utilisateur_id, current_user, forcer)
+        
+        return jsonify({
+            'success': succes,
+            'message': message
+        }), 200 if succes else 400
+        
+    except Exception as e:
+        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
+@user_bp.route('/<superadmin_id>/supprimer-superadmin', methods=['DELETE'])
+@superadmin_required
+def supprimer_superadmin(current_user, superadmin_id):
+    """Supprimer un superadmin - SEULEMENT PAR UN AUTRE SUPERADMIN"""
+    try:
+        forcer = request.args.get('forcer', 'false').lower() == 'true'
+        
+        succes, message = user_service.supprimer_superadmin(superadmin_id, current_user, forcer)
         
         return jsonify({
             'success': succes,
@@ -544,11 +699,13 @@ def modifier_mon_profil():
         if not data:
             return jsonify({'error': 'Données JSON requises'}), 400
         
+        # ✅ CORRECT : modifier_utilisateur retourne Tuple[Optional[User], Optional[str]]
         utilisateur, erreur = user_service.modifier_utilisateur(user_id, data, current_user)
         
         if erreur:
             return jsonify({'error': erreur}), 400
         
+        # ✅ CORRECT : utilisateur est un objet User
         return jsonify({
             'success': True,
             'message': 'Profil modifié avec succès',
@@ -657,7 +814,7 @@ def lister_utilisateurs_inactifs(current_user):
     except Exception as e:
         return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
 
-# =================== ROUTES DE DEBUG ===================
+# =================== ROUTES DE DEBUG ET MAINTENANCE ===================
 
 @user_bp.route('/debug/tokens/stats', methods=['GET'])
 @superadmin_required
@@ -684,6 +841,112 @@ def nettoyer_tokens(current_user):
         return jsonify({
             'success': True,
             'data': resultat
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
+@user_bp.route('/debug/tokens/all', methods=['GET'])
+@superadmin_required
+def debug_tous_tokens(current_user):
+    """Voir tous les tokens d'activation - DEBUG SUPERADMIN SEULEMENT"""
+    try:
+        tokens_info = user_service.get_all_activation_tokens_debug()
+        
+        return jsonify({
+            'success': True,
+            'data': tokens_info
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
+@user_bp.route('/debug/tokens/force-cleanup', methods=['POST'])
+@superadmin_required
+def force_cleanup_tokens(current_user):
+    """FORCER le nettoyage de TOUS les tokens - URGENCE SEULEMENT"""
+    try:
+        # Sécurité supplémentaire
+        confirmation = request.get_json()
+        if not confirmation or confirmation.get('confirm') != 'FORCE_DELETE_ALL_TOKENS':
+            return jsonify({
+                'error': 'Confirmation requise: {"confirm": "FORCE_DELETE_ALL_TOKENS"}'
+            }), 400
+        
+        resultat = user_service.force_cleanup_all_tokens()
+        
+        return jsonify({
+            'success': True,
+            'data': resultat,
+            'warning': 'TOUS les tokens d\'activation ont été supprimés !'
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
+@user_bp.route('/debug/tokens/cleanup-orphelins', methods=['POST'])
+@superadmin_required
+def nettoyer_tokens_orphelins(current_user):
+    """Nettoyer les tokens des utilisateurs supprimés - MAINTENANCE"""
+    try:
+        resultat = user_service.nettoyer_tokens_utilisateurs_supprimes()
+        
+        return jsonify({
+            'success': True,
+            'data': resultat
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
+@user_bp.route('/debug/tokens/expirant-bientot', methods=['GET'])
+@superadmin_required
+def tokens_expirant_bientot(current_user):
+    """Lister les tokens qui vont expirer bientôt"""
+    try:
+        # Paramètre optionnel pour définir le délai (défaut: 2 heures)
+        heures = int(request.args.get('heures', 2))
+        
+        tokens_expirants = user_service.lister_tokens_expirant_bientot(heures)
+        
+        return jsonify({
+            'success': True,
+            'data': tokens_expirants,
+            'total': len(tokens_expirants),
+            'critere': f'Expirant dans les {heures} prochaines heures'
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
+@user_bp.route('/debug/tokens/<token>/prolonger', methods=['POST'])
+@superadmin_required
+def prolonger_token(current_user, token):
+    """Prolonger la durée d'un token d'activation"""
+    try:
+        data = request.get_json() or {}
+        nouvelles_heures = int(data.get('heures', 24))
+        
+        succes, message = user_service.prolonger_token_activation(token, nouvelles_heures)
+        
+        return jsonify({
+            'success': succes,
+            'message': message
+        }), 200 if succes else 400
+        
+    except Exception as e:
+        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
+@user_bp.route('/debug/redis/test', methods=['GET'])
+@superadmin_required
+def test_redis_connection(current_user):
+    """Tester la connexion Redis - DEBUG"""
+    try:
+        debug_info = user_service.debug_redis_connection()
+        
+        return jsonify({
+            'success': True,
+            'data': debug_info
         }), 200
         
     except Exception as e:
@@ -716,6 +979,102 @@ def test_superadmin():
     except Exception as e:
         return jsonify({'error': f'Erreur: {str(e)}'}), 500
 
+# =================== ROUTES ADDITIONNELLES POUR CORRESPONDRE AU SERVICE ===================
+
+@user_bp.route('/admin/test-permissions', methods=['GET'])
+@admin_required
+def test_permissions_admin(current_user):
+    """Tester les permissions de l'admin connecté"""
+    try:
+        permissions = {
+            'is_superadmin': current_user.is_superadmin(),
+            'is_admin': current_user.is_admin(),
+            'client_id': current_user.client_id,
+            'peut_voir_tous_clients': current_user.is_superadmin(),
+            'peut_creer_clients': current_user.is_superadmin(),
+            'peut_voir_admins_autres_clients': current_user.is_superadmin()
+        }
+        
+        return jsonify({
+            'success': True,
+            'utilisateur': current_user.to_dict(),
+            'permissions': permissions
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
+@user_bp.route('/batch/actions', methods=['POST'])
+@admin_required
+@validate_json_data(['action', 'utilisateurs_ids'])
+def actions_batch_utilisateurs(data, current_user):
+    """Effectuer des actions en lot sur plusieurs utilisateurs"""
+    try:
+        action = data['action']
+        utilisateurs_ids = data['utilisateurs_ids']
+        
+        if not isinstance(utilisateurs_ids, list) or not utilisateurs_ids:
+            return jsonify({'error': 'Liste d\'IDs utilisateurs requise'}), 400
+        
+        resultats = {
+            'action': action,
+            'total_demande': len(utilisateurs_ids),
+            'succes': [],
+            'erreurs': [],
+            'total_succes': 0,
+            'total_erreurs': 0
+        }
+        
+        # Actions supportées
+        if action == 'supprimer_en_attente':
+            # Utiliser la méthode batch du service
+            resultats_batch = user_service.supprimer_batch_utilisateurs_en_attente(utilisateurs_ids, current_user)
+            return jsonify(resultats_batch), 200 if resultats_batch['success'] else 400
+            
+        elif action == 'desactiver':
+            for user_id in utilisateurs_ids:
+                try:
+                    succes, message = user_service.desactiver_utilisateur(user_id, current_user)
+                    if succes:
+                        resultats['succes'].append({'user_id': user_id, 'message': message})
+                        resultats['total_succes'] += 1
+                    else:
+                        resultats['erreurs'].append({'user_id': user_id, 'erreur': message})
+                        resultats['total_erreurs'] += 1
+                except Exception as e:
+                    resultats['erreurs'].append({'user_id': user_id, 'erreur': str(e)})
+                    resultats['total_erreurs'] += 1
+                    
+        elif action == 'reactiver':
+            for user_id in utilisateurs_ids:
+                try:
+                    succes, message = user_service.reactiver_utilisateur(user_id, current_user)
+                    if succes:
+                        resultats['succes'].append({'user_id': user_id, 'message': message})
+                        resultats['total_succes'] += 1
+                    else:
+                        resultats['erreurs'].append({'user_id': user_id, 'erreur': message})
+                        resultats['total_erreurs'] += 1
+                except Exception as e:
+                    resultats['erreurs'].append({'user_id': user_id, 'erreur': str(e)})
+                    resultats['total_erreurs'] += 1
+        else:
+            return jsonify({'error': f'Action "{action}" non supportée'}), 400
+        
+        # Message de résumé
+        resultats['success'] = resultats['total_succes'] > 0
+        if resultats['total_succes'] > 0:
+            resultats['message'] = f"{resultats['total_succes']} actions réussies"
+            if resultats['total_erreurs'] > 0:
+                resultats['message'] += f", {resultats['total_erreurs']} erreurs"
+        else:
+            resultats['message'] = f"Aucune action réussie. {resultats['total_erreurs']} erreurs"
+        
+        return jsonify(resultats), 200 if resultats['success'] else 400
+        
+    except Exception as e:
+        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
 # =================== GESTION DES ERREURS ===================
 
 @user_bp.errorhandler(400)
@@ -736,4 +1095,4 @@ def not_found(error):
 
 @user_bp.errorhandler(500)
 def internal_error(error):
-    return jsonify({'error': 'Erreur serveur interne'}), 500    
+    return jsonify({'error': 'Erreur serveur interne'}), 500 

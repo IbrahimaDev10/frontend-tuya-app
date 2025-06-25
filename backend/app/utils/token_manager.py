@@ -5,20 +5,21 @@ import time
 from typing import Optional, Dict, Any
 
 class ActivationTokenManager:
-    """Gestionnaire de tokens d'activation temporaires pour les admins"""
+    """Gestionnaire de tokens d'activation temporaires pour tous les utilisateurs"""
     
     # En mémoire pour commencer - en production utilisez Redis
     _tokens = {}
     
     @classmethod
-    def generate_token(cls, admin_id: str, email: str = None, expires_in: int = 86400) -> str:
+    def generate_token(cls, user_id: str, email: str = None, expires_in: int = 86400, user_type: str = 'user') -> str:
         """
         Génère un token d'activation sécurisé
         
         Args:
-            admin_id: ID de l'administrateur (compatible avec user_id)
+            user_id: ID de l'utilisateur (admin, user, etc.)
             email: Email de l'utilisateur (optionnel pour vérification)
             expires_in: Durée de validité en secondes (défaut: 24h)
+            user_type: Type d'utilisateur ('admin', 'user', 'superadmin')
             
         Returns:
             str: Token généré
@@ -29,17 +30,21 @@ class ActivationTokenManager:
         # Calculer l'heure d'expiration
         expires_at = time.time() + expires_in
         
-        # Stocker les données du token avec admin_id (compatible UserService)
+        # Déterminer le type d'activation selon le type d'utilisateur
+        activation_type = f"{user_type}_activation"
+        
+        # Stocker les données du token
         cls._tokens[token] = {
-            'admin_id': admin_id,  # ✅ Nom cohérent avec UserService
-            'user_id': admin_id,   # ✅ Alias pour compatibilité
+            'user_id': user_id,
+            'admin_id': user_id,   # ✅ Alias pour rétrocompatibilité
             'email': email,
             'expires_at': expires_at,
-            'type': 'admin_activation',
+            'user_type': user_type,  # ✅ NOUVEAU: Type d'utilisateur
+            'type': activation_type,  # ✅ Type d'activation dynamique
             'created_at': time.time()
         }
         
-        print(f"🔑 Token généré pour admin {admin_id} ({email}): {token[:10]}...")
+        print(f"🔑 Token généré pour {user_type} {user_id} ({email}): {token[:10]}...")
         return token
     
     @classmethod
@@ -65,36 +70,66 @@ class ActivationTokenManager:
             del cls._tokens[token]
             return None
         
-        print(f"✅ Token valide: {token[:10]}...")
+        print(f"✅ Token valide pour {token_data.get('user_type', 'unknown')}: {token[:10]}...")
         return token_data.copy()  # Retourner une copie pour éviter les modifications
     
     @classmethod
-    def use_token(cls, token: str) -> Optional[Dict[str, Any]]:
+    def use_token(cls, token: str, expected_user_type: str = None) -> Optional[Dict[str, Any]]:
         """
-        ✅ MÉTHODE ATTENDUE PAR USERSERVICE
+        ✅ MÉTHODE MISE À JOUR
         Utilise (consomme) un token d'activation - le supprime après validation
         
         Args:
             token: Token à consommer
+            expected_user_type: Type d'utilisateur attendu (optionnel pour validation)
             
         Returns:
             Dict avec les données du token si valide, None sinon
         """
         token_data = cls.validate_token(token)
         
-        if token_data and token in cls._tokens:
+        if not token_data:
+            return None
+        
+        # Vérifier le type d'utilisateur si spécifié
+        if expected_user_type and token_data.get('user_type') != expected_user_type:
+            print(f"❌ Type d'utilisateur incorrect. Attendu: {expected_user_type}, Trouvé: {token_data.get('user_type')}")
+            return None
+        
+        if token in cls._tokens:
             del cls._tokens[token]
-            print(f"🔥 Token consommé: {token[:10]}...")
+            print(f"🔥 Token {token_data.get('user_type', 'unknown')} consommé: {token[:10]}...")
             return token_data
         
         return None
     
     @classmethod
-    def consume_token(cls, token: str) -> Optional[Dict[str, Any]]:
+    def consume_token(cls, token: str, expected_user_type: str = None) -> Optional[Dict[str, Any]]:
         """
         Alias pour use_token - pour rétrocompatibilité
         """
-        return cls.use_token(token)
+        return cls.use_token(token, expected_user_type)
+    
+    @classmethod
+    def generate_admin_token(cls, admin_id: str, email: str = None, expires_in: int = 86400) -> str:
+        """
+        ✅ MÉTHODE SPÉCIALISÉE pour les admins (rétrocompatibilité)
+        """
+        return cls.generate_token(admin_id, email, expires_in, 'admin')
+    
+    @classmethod
+    def generate_user_token(cls, user_id: str, email: str = None, expires_in: int = 86400) -> str:
+        """
+        ✅ NOUVELLE MÉTHODE pour les utilisateurs standards
+        """
+        return cls.generate_token(user_id, email, expires_in, 'user')
+    
+    @classmethod
+    def generate_superadmin_token(cls, superadmin_id: str, email: str = None, expires_in: int = 86400) -> str:
+        """
+        ✅ NOUVELLE MÉTHODE pour les superadmins
+        """
+        return cls.generate_token(superadmin_id, email, expires_in, 'superadmin')
     
     @classmethod
     def cleanup_expired(cls) -> int:
@@ -125,22 +160,25 @@ class ActivationTokenManager:
         Utile pour le debug
         """
         current_time = time.time()
-        active_tokens = 0
-        expired_tokens = 0
+        stats_by_type = {}
         
         for data in cls._tokens.values():
+            user_type = data.get('user_type', 'unknown')
+            if user_type not in stats_by_type:
+                stats_by_type[user_type] = {'active': 0, 'expired': 0}
+            
             if current_time > data['expires_at']:
-                expired_tokens += 1
+                stats_by_type[user_type]['expired'] += 1
             else:
-                active_tokens += 1
+                stats_by_type[user_type]['active'] += 1
         
         return {
             'total_tokens': len(cls._tokens),
-            'active_tokens': active_tokens,
-            'expired_tokens': expired_tokens,
+            'stats_by_type': stats_by_type,
             'tokens_details': [
                 {
-                    'admin_id': data['admin_id'],
+                    'user_id': data['user_id'],
+                    'user_type': data.get('user_type', 'unknown'),
                     'email': data.get('email', 'N/A'),
                     'expires_in_seconds': max(0, int(data['expires_at'] - current_time)),
                     'expired': current_time > data['expires_at']
@@ -150,35 +188,42 @@ class ActivationTokenManager:
         }
     
     @classmethod
-    def revoke_admin_tokens(cls, admin_id: str) -> int:
+    def revoke_user_tokens(cls, user_id: str, user_type: str = None) -> int:
         """
-        Révoque tous les tokens d'un administrateur
+        ✅ MÉTHODE MISE À JOUR
+        Révoque tous les tokens d'un utilisateur
         
         Args:
-            admin_id: ID de l'administrateur
+            user_id: ID de l'utilisateur
+            user_type: Type d'utilisateur spécifique (optionnel)
             
         Returns:
             int: Nombre de tokens révoqués
         """
-        tokens_to_revoke = [
-            token for token, data in cls._tokens.items()
-            if data.get('admin_id') == admin_id or data.get('user_id') == admin_id
-        ]
+        tokens_to_revoke = []
+        
+        for token, data in cls._tokens.items():
+            # Vérifier l'ID utilisateur
+            if data.get('user_id') == user_id or data.get('admin_id') == user_id:
+                # Si un type spécifique est demandé, le vérifier
+                if user_type is None or data.get('user_type') == user_type:
+                    tokens_to_revoke.append(token)
         
         for token in tokens_to_revoke:
             del cls._tokens[token]
         
         if tokens_to_revoke:
-            print(f"🚫 {len(tokens_to_revoke)} tokens révoqués pour admin {admin_id}")
+            type_info = f" de type {user_type}" if user_type else ""
+            print(f"🚫 {len(tokens_to_revoke)} tokens révoqués pour utilisateur {user_id}{type_info}")
         
         return len(tokens_to_revoke)
     
     @classmethod
-    def revoke_user_tokens(cls, user_id: str) -> int:
+    def revoke_admin_tokens(cls, admin_id: str) -> int:
         """
-        Alias pour revoke_admin_tokens - rétrocompatibilité
+        Alias spécialisé pour les admins (rétrocompatibilité)
         """
-        return cls.revoke_admin_tokens(user_id)
+        return cls.revoke_user_tokens(admin_id, 'admin')
     
     @classmethod
     def get_token_info(cls, token: str) -> Optional[Dict[str, Any]]:
@@ -193,7 +238,8 @@ class ActivationTokenManager:
         
         return {
             'token': token[:10] + "...",
-            'admin_id': data['admin_id'],
+            'user_id': data['user_id'],
+            'user_type': data.get('user_type', 'unknown'),
             'email': data.get('email', 'N/A'),
             'created_at': data['created_at'],
             'expires_at': data['expires_at'],
@@ -202,9 +248,6 @@ class ActivationTokenManager:
             'type': data.get('type', 'unknown')
         }
     
-
-    # Ajoutez cette méthode à votre classe ActivationTokenManager
-
     @classmethod
     def invalidate_token(cls, token: str) -> bool:
         """
@@ -217,17 +260,19 @@ class ActivationTokenManager:
             bool: True si le token a été supprimé, False s'il n'existait pas
         """
         if token in cls._tokens:
+            token_data = cls._tokens[token]
+            user_type = token_data.get('user_type', 'unknown')
             del cls._tokens[token]
-            print(f"🗑️ Token invalidé: {token[:10]}...")
+            print(f"🗑️ Token {user_type} invalidé: {token[:10]}...")
             return True
         else:
             print(f"❌ Token à invalider non trouvé: {token[:10] if token else 'None'}...")
             return False
 
     @classmethod
-    def force_add_token_for_debug(cls, admin_id: str, email: str, token: str = None) -> str:
+    def force_add_token_for_debug(cls, user_id: str, email: str, user_type: str = 'user', token: str = None) -> str:
         """
-        MÉTHODE DE DEBUG UNIQUEMENT
+        ✅ MÉTHODE DE DEBUG MISE À JOUR
         Force l'ajout d'un token pour les tests
         """
         if not token:
@@ -236,13 +281,14 @@ class ActivationTokenManager:
         expires_at = time.time() + 86400  # 24h
         
         cls._tokens[token] = {
-            'admin_id': admin_id,
-            'user_id': admin_id,
+            'user_id': user_id,
+            'admin_id': user_id,  # Alias
             'email': email,
             'expires_at': expires_at,
-            'type': 'admin_activation',
+            'user_type': user_type,
+            'type': f'{user_type}_activation',
             'created_at': time.time()
         }
         
-        print(f"🔧 Token DEBUG ajouté pour {admin_id}: {token[:10]}...")
+        print(f"🔧 Token DEBUG {user_type} ajouté pour {user_id}: {token[:10]}...")
         return token
