@@ -12,6 +12,7 @@ import DeviceDetailsModal from './DeviceDetailsModal'
 import ConfirmModal from '../../components/ConfirmModal'
 import Toast from '../../components/Toast'
 import './DeviceManagement.css'
+import MultiChartView from '../DeviceCharts/MultiChartView'
 
 const DeviceManagement = () => {
   const { isSuperadmin, isAdmin, isClient } = useAuth()
@@ -31,6 +32,10 @@ const DeviceManagement = () => {
   const [loadingDeviceIds, setLoadingDeviceIds] = useState([])
 
   const Layout = isSuperadmin() ? SuperAdminLayout : isAdmin() ? AdminLayout : ClientLayout
+
+  const [showChartsModal, setShowChartsModal] = useState(false)
+  const [selectedDeviceForCharts, setSelectedDeviceForCharts] = useState(null)
+
 
   useEffect(() => {
     loadData()
@@ -206,6 +211,12 @@ const DeviceManagement = () => {
     }
   }
 
+  //  fonction pour ouvrir les graphiques
+const handleShowCharts = (device) => {
+  setSelectedDeviceForCharts(device)
+  setShowChartsModal(true)
+}
+
   if (loading) {
     return (
       <Layout>
@@ -312,19 +323,18 @@ const DeviceManagement = () => {
 
         {/* Tableau des appareils */}
         <DevicesTable
-          devices={devices}
-          onToggle={handleToggleDevice}
-          onAssign={handleAssignDevice}
-          onUnassign={handleUnassignDevice}
-          onDetails={handleDeviceDetails}
-          onCollectData={handleCollectData}
-          loadingDeviceIds={loadingDeviceIds}
-          showAssignActions={selectedTab === 'unassigned' || isSuperadmin()}
-          isSuperadmin={isSuperadmin()}
-          isClient={isClient()}
-        />
-
-        {/* Modals */}
+                devices={devices}
+                onToggle={handleToggleDevice}
+                onAssign={handleAssignDevice}
+                onUnassign={handleUnassignDevice}
+                onDetails={handleDeviceDetails}
+                onCollectData={handleCollectData}
+                onShowCharts={handleShowCharts} // Nouvelle prop
+                showAssignActions={selectedTab === 'unassigned' || isSuperadmin()}
+                isSuperadmin={isSuperadmin()}
+                isClient={isClient()}
+              />
+                      {/* Modals */}
         {showAssignModal && (
           <AssignModal
             device={selectedDevice}
@@ -332,6 +342,18 @@ const DeviceManagement = () => {
             onSuccess={handleDeviceAssigned}
           />
         )}
+
+              {showChartsModal && selectedDeviceForCharts && (
+                <div className="charts-modal-overlay">
+                  <MultiChartView
+                    device={selectedDeviceForCharts}
+                    onClose={() => {
+                      setShowChartsModal(false)
+                      setSelectedDeviceForCharts(null)
+                    }}
+                  />
+                </div>
+              )}
 
         {showDetailsModal && (
           <DeviceDetailsModal
@@ -371,8 +393,8 @@ const DevicesTable = ({
   onUnassign, 
   onDetails, 
   onCollectData,
+  onShowCharts, // Nouvelle prop
   showAssignActions,
-  loadingDeviceIds = [],
   isSuperadmin,
   isClient
 }) => (
@@ -410,7 +432,7 @@ const DevicesTable = ({
             </td>
             <td>
               <span className={`state-badge ${device.etat_switch ? 'on' : 'off'}`}>
-                {device.etat_switch ? '💡 OFF' : '💡 ON'}
+                {device.etat_switch ? 'ON' : 'OFF'}
               </span>
             </td>
             {isSuperadmin && (
@@ -432,17 +454,26 @@ const DevicesTable = ({
                   👁️
                 </Button>
                 
+                {device.statut_assignation === 'assigne' && (
+                  <Button
+                    variant="outline"
+                    size="small"
+                    onClick={() => onShowCharts(device)}
+                    title="Voir les graphiques"
+                  >
+                    📈
+                  </Button>
+                )}
+                
                 {device.statut_assignation === 'assigne' && !isClient && (
                   <Button
-                  variant="outline"
-                  size="small"
-                  onClick={() => onToggle(device)}
-                  title="Toggle ON/OFF"
-                  disabled={loadingDeviceIds.includes(device.id || device.tuya_device_id)}
-                >
-                  {device.etat_switch ? '⏸️' : '▶️'}
-                </Button>
-                
+                    variant="outline"
+                    size="small"
+                    onClick={() => onToggle(device)}
+                    title="Toggle ON/OFF"
+                  >
+                    {device.etat_switch ? '⏸️' : '▶️'}
+                  </Button>
                 )}
                 
                 {device.statut_assignation === 'assigne' && (
@@ -491,5 +522,6 @@ const DevicesTable = ({
     )}
   </div>
 )
+
 
 export default DeviceManagement

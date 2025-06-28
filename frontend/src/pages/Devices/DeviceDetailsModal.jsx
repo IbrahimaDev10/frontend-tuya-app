@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react'
+import MultiChartView from '../../pages/DeviceCharts/MultiChartView'
+import QuickStatsPanel from '../../pages/DeviceCharts/QuickStatsPanel'
 import DeviceService from '../../services/deviceService'
 import Button from '../../components/Button'
 import './DeviceModal.css'
@@ -9,6 +11,8 @@ const DeviceDetailsModal = ({ device, onClose }) => {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('overview')
   const [refreshing, setRefreshing] = useState(false)
+
+  const [showCharts, setShowCharts] = useState(false)
 
   useEffect(() => {
     if (device) {
@@ -44,7 +48,7 @@ const DeviceDetailsModal = ({ device, onClose }) => {
   const handleRefresh = async () => {
     setRefreshing(true)
     try {
-      await DeviceService.collecterDonnees(device.id || device.tuya_device_id)
+      await DeviceService.collecterDonnees(device.tuya_device_id)
       await loadDeviceDetails()
       await loadDeviceData()
     } catch (error) {
@@ -143,6 +147,12 @@ const DeviceDetailsModal = ({ device, onClose }) => {
             onClick={() => setActiveTab('technical')}
           >
             🔧 Technique
+          </button>
+          <button
+            className={`modal-tab ${activeTab === 'charts' ? 'active' : ''}`}
+            onClick={() => setActiveTab('charts')}
+          >
+            📈 Graphiques
           </button>
         </div>
 
@@ -301,7 +311,8 @@ const DeviceDetailsModal = ({ device, onClose }) => {
             </div>
           )}
 
-          {/* Technique */}
+
+             {/* Technique */}
           {activeTab === 'technical' && (
             <div className="technical-content">
               <div className="info-section">
@@ -339,21 +350,21 @@ const DeviceDetailsModal = ({ device, onClose }) => {
                 <h4>Seuils configurés</h4>
                 <div className="info-grid">
                 <div className="info-item">
-  <label>Tension min:</label>
-  <span>{formatValue(device?.seuils?.tension_min, 'V')}</span>
-</div>
-<div className="info-item">
-  <label>Tension max:</label>
-  <span>{formatValue(device?.seuils?.tension_max, 'V')}</span>
-</div>
-<div className="info-item">
-  <label>Courant max:</label>
-  <span>{formatValue(device?.seuils?.courant_max, 'A')}</span>
-</div>
-<div className="info-item">
-  <label>Puissance max:</label>
-  <span>{formatValue(device?.seuils?.puissance_max, 'W')}</span>
-</div>
+                  <label>Tension min:</label>
+                  <span>{formatValue(device?.seuils?.tension_min, 'V')}</span>
+                </div>
+                <div className="info-item">
+                  <label>Tension max:</label>
+                  <span>{formatValue(device?.seuils?.tension_max, 'V')}</span>
+                </div>
+                <div className="info-item">
+                  <label>Courant max:</label>
+                  <span>{formatValue(device?.seuils?.courant_max, 'A')}</span>
+                </div>
+                <div className="info-item">
+                  <label>Puissance max:</label>
+                  <span>{formatValue(device?.seuils?.puissance_max, 'W')}</span>
+                </div>
 
                 </div>
               </div>
@@ -369,6 +380,55 @@ const DeviceDetailsModal = ({ device, onClose }) => {
               )}
             </div>
           )}
+
+
+          {/* Graphiques */}
+          {activeTab === 'charts' && (
+            <div className="charts-content">
+              {device?.statut_assignation === 'assigne' ? (
+                <>
+                  <QuickStatsPanel device={device} />
+                  <div className="charts-section">
+                    <div className="charts-header">
+                      <h4>📈 Graphiques détaillés</h4>
+                                 <Button
+                                    variant="primary"
+                                    onClick={() => setShowCharts(true)}
+                                  >
+                                    📊 Ouvrir les graphiques
+                                  </Button>
+                                </div>
+                                
+                                <div className="chart-previews">
+                                  <p>Cliquez sur "Ouvrir les graphiques" pour voir les graphiques détaillés avec:</p>
+                                  <ul>
+                                    <li>⚡ Graphique de tension en temps réel</li>
+                                    <li>🔌 Évolution du courant</li>
+                                    <li>💡 Courbe de puissance</li>
+                                    <li>📊 Statistiques avancées</li>
+                                    <li>📈 Comparaison BDD vs Tuya</li>
+                                    <li>💾 Export des données CSV</li>
+                                  </ul>
+                                </div>
+                              </div>
+                            </>
+                          ) : (
+                            <div className="charts-not-available">
+                              <div className="empty-icon">📈</div>
+                              <h4>Graphiques non disponibles</h4>
+                              <p>Les graphiques ne sont disponibles que pour les appareils assignés.</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {showCharts && (
+                        <div className="charts-modal-overlay">
+                          <MultiChartView
+                            device={device}
+                            onClose={() => setShowCharts(false)}
+                          />
+                        </div>
+                      )}
         </div>
 
         <div className="modal-footer">

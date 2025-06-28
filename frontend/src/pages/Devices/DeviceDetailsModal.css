@@ -1,0 +1,67 @@
+/* Ajouter à la fin du fichier existant */
+
+.charts-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.charts-section {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 1.5rem;
+}
+
+.charts-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.charts-header h4 {
+  margin: 0;
+  color: #333;
+}
+
+.chart-previews {
+  color: #666;
+  line-height: 1.6;
+}
+
+.chart-previews ul {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0;
+}
+
+.chart-previews li {
+  padding: 0.5rem 0;
+  padding-left: 1rem;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.chart-previews li:last-child {
+  border-bottom: none;
+}
+
+.charts-not-available {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem;
+  text-align: center;
+  color: #666;
+}
+
+.charts-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.9);
+  z-index: 2500;
+  overflow-y: auto;
+}
