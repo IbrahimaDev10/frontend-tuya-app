@@ -1,33 +1,50 @@
-# device_service.py - Service pour la gestion des appareils IoT avec Redis
-# Compatible avec vos modèles Device, DeviceData, Alert, DeviceAccess
-# ✅ NOUVEAU : Intégration Redis pour cache et performance
+# app/services/device_service.py - PARTIE 1/3
+# Service principal unifié pour la gestion des appareils IoT avec toutes les extensions
 
 from app.services.tuya_service import TuyaClient
 from app.models.device import Device
 from app.models.device_data import DeviceData
 from app.models.alert import Alert
-from app.models.device_access import DeviceAccess
-from app import db, get_redis  # ✅ NOUVEAU : Import get_redis
-from datetime import datetime, timedelta
+from app import db, get_redis
+from datetime import datetime, timedelta, time
 import json
 import logging
-
+import uuid
 class DeviceService:
-    """Service pour la gestion des appareils IoT avec cache Redis"""
+    """Service principal unifié pour la gestion complète des appareils IoT"""
     
     def __init__(self):
         self.tuya_client = TuyaClient()
-        # ✅ NOUVEAU : Redis d'abord, sinon fonctionnement normal
         self.redis = get_redis()
         
-        # ✅ NOUVEAU : Configuration TTL depuis settings
-        from config.settings import get_config
-        config = get_config()
-        self.ttl_config = config.REDIS_DEFAULT_TTL
+        # Configuration TTL depuis settings
+        try:
+            from config.settings import get_config
+            config = get_config()
+            self.ttl_config = config.REDIS_DEFAULT_TTL
+        except:
+            # Configuration par défaut si settings non disponible
+            self.ttl_config = {
+                'device_status': 30,
+                'device_data': 300,
+                'api_cache': 60
+            }
         
         logging.info(f"DeviceService initialisé - Redis: {'✅' if self.redis else '❌'}")
+        
+        # ✅ L'EXTENSION PROTECTION/PROGRAMMATION
+        try:
+            from app.services.device_service_protection_extension import DeviceServiceProtectionExtension
+            self._protection_extension = DeviceServiceProtectionExtension(self)
+            logging.info("✅ DeviceService Protection Extension initialisée")
+        except ImportError as e:
+            logging.warning(f"⚠️ Extension protection non disponible: {e}")
+            self._protection_extension = None
+        except Exception as e:
+            logging.error(f"❌ Erreur initialisation extension protection: {e}")
+            self._protection_extension = None
     
-    # =================== MÉTHODES REDIS POUR CACHE ===================
+    # =================== GESTION CACHE REDIS ===================
     
     def _cache_device_status(self, device_id, status_data, ttl=None):
         """Cache des statuts d'appareils dans Redis"""
@@ -109,49 +126,6 @@ class DeviceService:
             logging.error(f"Erreur récupération cache liste: {e}")
             return None
     
-    def _cache_device_data(self, device_id, data_values, ttl=None):
-        """Cache des données IoT d'un appareil"""
-        try:
-            if not self.redis:
-                return
-            
-            ttl = ttl or self.ttl_config.get('device_data', 300)
-            key = f"device_data:{device_id}:{int(datetime.utcnow().timestamp())}"
-            
-            cache_data = {
-                'device_id': device_id,
-                'values': data_values,
-                'timestamp': datetime.utcnow().isoformat()
-            }
-            
-            self.redis.setex(key, ttl, json.dumps(cache_data))
-            
-            # Maintenir une liste des dernières données (sliding window)
-            self._maintain_device_data_window(device_id, key)
-            
-        except Exception as e:
-            logging.error(f"Erreur cache données device {device_id}: {e}")
-    
-    def _maintain_device_data_window(self, device_id, new_key):
-        """Maintenir une fenêtre glissante des données en cache"""
-        try:
-            if not self.redis:
-                return
-            
-            window_key = f"device_data_window:{device_id}"
-            
-            # Ajouter la nouvelle clé
-            self.redis.lpush(window_key, new_key)
-            
-            # Garder seulement les 100 dernières entrées
-            self.redis.ltrim(window_key, 0, 99)
-            
-            # TTL de la fenêtre = 1 heure
-            self.redis.expire(window_key, 3600)
-            
-        except Exception as e:
-            logging.error(f"Erreur maintenance fenêtre device {device_id}: {e}")
-    
     def _cache_sync_result(self, sync_stats, ttl=None):
         """Cache du résultat de synchronisation"""
         try:
@@ -216,6 +190,49 @@ class DeviceService:
         except Exception as e:
             logging.error(f"Erreur invalidation cache device {device_id}: {e}")
     
+    def _cache_device_data(self, device_id, data_values, ttl=None):
+        """Cache des données IoT d'un appareil"""
+        try:
+            if not self.redis:
+                return
+            
+            ttl = ttl or self.ttl_config.get('device_data', 300)
+            key = f"device_data:{device_id}:{int(datetime.utcnow().timestamp())}"
+            
+            cache_data = {
+                'device_id': device_id,
+                'values': data_values,
+                'timestamp': datetime.utcnow().isoformat()
+            }
+            
+            self.redis.setex(key, ttl, json.dumps(cache_data))
+            
+            # Maintenir une liste des dernières données (sliding window)
+            self._maintain_device_data_window(device_id, key)
+            
+        except Exception as e:
+            logging.error(f"Erreur cache données device {device_id}: {e}")
+    
+    def _maintain_device_data_window(self, device_id, new_key):
+        """Maintenir une fenêtre glissante des données en cache"""
+        try:
+            if not self.redis:
+                return
+            
+            window_key = f"device_data_window:{device_id}"
+            
+            # Ajouter la nouvelle clé
+            self.redis.lpush(window_key, new_key)
+            
+            # Garder seulement les 100 dernières entrées
+            self.redis.ltrim(window_key, 0, 99)
+            
+            # TTL de la fenêtre = 1 heure
+            self.redis.expire(window_key, 3600)
+            
+        except Exception as e:
+            logging.error(f"Erreur maintenance fenêtre device {device_id}: {e}")
+    
     def _invalidate_all_cache(self):
         """Invalider tout le cache des appareils"""
         try:
@@ -244,14 +261,14 @@ class DeviceService:
             logging.error(f"Erreur invalidation cache complet: {e}")
             return 0
     
-    # =================== MÉTHODES PRINCIPALES AVEC REDIS ===================
+    # =================== GESTION BASIQUE DES APPAREILS ===================
     
     def import_tuya_devices(self, use_cache=True, force_refresh=False):
-        """Import avec cache Redis et PRIORITÉ à l'endpoint liste"""
+        """Import avec cache Redis et gestion complète"""
         try:
-            print("🔍 Début import appareils Tuya avec cache Redis...")
+            print("🔍 Début import appareils Tuya...")
             
-            # ✅ NOUVEAU : Vérifier cache d'abord (sauf si force_refresh)
+            # Vérifier cache d'abord (sauf si force_refresh)
             if use_cache and not force_refresh:
                 cached_devices = self._get_cached_devices_list()
                 if cached_devices:
@@ -261,15 +278,7 @@ class DeviceService:
                     if age_minutes < 2:  # Cache valide 2 minutes
                         print(f"📦 Utilisation cache Tuya (âge: {age_minutes:.1f}min)")
                         devices = cached_devices['devices']
-                        
-                        # Traiter avec les données cachées
-                        result = self._process_devices_data(devices, from_cache=True)
-                        
-                        # Mettre à jour cache sync
-                        if result.get("success"):
-                            self._cache_sync_result(result.get("statistiques", {}))
-                        
-                        return result
+                        return self._process_devices_data(devices, from_cache=True)
             
             if not self.tuya_client.auto_connect_from_env():
                 return {"success": False, "error": "Impossible de se connecter à Tuya Cloud"}
@@ -283,14 +292,14 @@ class DeviceService:
             devices = devices_response.get("result", [])
             print(f"📱 {len(devices)} appareils récupérés depuis Tuya")
             
-            # ✅ NOUVEAU : Mettre en cache la liste Tuya
+            # Mettre en cache la liste Tuya
             if use_cache:
                 self._cache_devices_list(devices)
             
             # Traiter les données
             result = self._process_devices_data(devices, from_cache=False)
             
-            # ✅ NOUVEAU : Cache du résultat de sync
+            # Cache du résultat de sync
             if result.get("success") and use_cache:
                 self._cache_sync_result(result.get("statistiques", {}))
             
@@ -302,17 +311,21 @@ class DeviceService:
             return {"success": False, "error": f"Erreur lors de l'import: {str(e)}"}
     
     def _process_devices_data(self, devices, from_cache=False):
-        """Traiter les données d'appareils (depuis API ou cache)"""
+        """Traiter les données d'appareils avec mise à jour intelligente"""
         try:
-            appareils_importes = 0
-            appareils_mis_a_jour = 0
-            online_count = 0
-            offline_count = 0
+            stats = {
+                'appareils_importes': 0,
+                'appareils_mis_a_jour': 0,
+                'online_count': 0,
+                'offline_count': 0,
+                'protection_updates': 0,
+                'programmation_updates': 0
+            }
             
             source_text = "cache Redis" if from_cache else "API Tuya"
             print(f"🔄 Traitement de {len(devices)} appareils depuis {source_text}")
             
-            # ✅ CRÉER UN MAPPING des statuts depuis l'endpoint liste
+            # Créer mapping des statuts
             device_status_map = {}
             for device_data in devices:
                 device_id = device_data.get("id")
@@ -320,38 +333,31 @@ class DeviceService:
                     is_online = device_data.get("isOnline", False)
                     device_status_map[device_id] = is_online
                     
-                    # ✅ NOUVEAU : Cache individuel du statut
+                    # Cache individuel du statut
                     self._cache_device_status(device_id, {
                         'is_online': is_online,
                         'values': {},
                         'source': source_text
                     })
             
-            print(f"📊 Mapping des statuts créé pour {len(device_status_map)} appareils")
-            
             for device_data in devices:
                 tuya_device_id = device_data.get("id") or device_data.get("device_id")
                 if not tuya_device_id:
                     continue
                 
-                # ✅ UTILISER LE STATUT de l'ENDPOINT LISTE
                 is_online = device_status_map.get(tuya_device_id, False)
                 device_name = device_data.get("name", f"Appareil {tuya_device_id}")
                 
-                status_emoji = "🟢" if is_online else "🔴"
-                status_text = "EN LIGNE" if is_online else "HORS LIGNE"
-                print(f"📡 {device_name}: {status_emoji} {status_text} (depuis {source_text})")
-                
                 if is_online:
-                    online_count += 1
+                    stats['online_count'] += 1
                 else:
-                    offline_count += 1
+                    stats['offline_count'] += 1
                 
                 # Rechercher appareil existant
                 existing_device = Device.get_by_tuya_id(tuya_device_id)
                 
                 if existing_device:
-                    # ✅ MISE À JOUR DIRECTE des attributs
+                    # Mise à jour
                     old_status = existing_device.en_ligne
                     
                     existing_device.en_ligne = is_online
@@ -362,14 +368,21 @@ class DeviceService:
                     if not existing_device.nom_appareil or existing_device.nom_appareil == existing_device.tuya_nom_original:
                         existing_device.nom_appareil = device_name
                     
-                    db.session.add(existing_device)
-                    appareils_mis_a_jour += 1
+                    # Vérifier si protection/programmation doivent être mises à jour
+                    if existing_device.protection_automatique_active:
+                        self._update_device_protection_status(existing_device, is_online)
+                        stats['protection_updates'] += 1
                     
-                    # ✅ NOUVEAU : Invalider cache si statut changé
+                    if existing_device.programmation_active:
+                        self._update_device_schedule_status(existing_device, is_online)
+                        stats['programmation_updates'] += 1
+                    
+                    db.session.add(existing_device)
+                    stats['appareils_mis_a_jour'] += 1
+                    
+                    # Invalider cache si statut changé
                     if old_status != is_online:
                         self._invalidate_device_cache(tuya_device_id)
-                        change_text = f"{'🟢' if old_status else '🔴'} → {'🟢' if is_online else '🔴'}"
-                        print(f"   🔄 Statut changé: {change_text}")
                 
                 else:
                     # Créer nouvel appareil
@@ -390,50 +403,39 @@ class DeviceService:
                     )
                     
                     db.session.add(new_device)
-                    appareils_importes += 1
+                    stats['appareils_importes'] += 1
             
-            # ✅ COMMIT avec gestion d'erreur
+            # Commit avec gestion d'erreur
             try:
                 db.session.flush()
-                print("💾 Flush réussi - Préparation du commit...")
-                
                 db.session.commit()
-                print("💾 Commit réussi - Changements sauvegardés")
+                print("💾 Changements sauvegardés avec succès")
                 
             except Exception as commit_error:
                 print(f"❌ Erreur lors du commit: {commit_error}")
                 db.session.rollback()
                 return {"success": False, "error": f"Erreur commit: {str(commit_error)}"}
             
-            print(f"✅ Traitement terminé:")
-            print(f"   📊 {appareils_importes} nouveaux, {appareils_mis_a_jour} mis à jour")
-            print(f"   🟢 {online_count} en ligne")
-            print(f"   🔴 {offline_count} hors ligne")
-            print(f"   📦 Source: {source_text}")
+            print(f"✅ Traitement terminé: {stats}")
             
             return {
                 "success": True,
                 "message": f"{len(devices)} appareils traités avec succès",
-                "statistiques": {
-                    "appareils_importes": appareils_importes,
-                    "appareils_mis_a_jour": appareils_mis_a_jour,
-                    "total": len(devices),
-                    "online": online_count,
-                    "offline": offline_count,
-                    "source": source_text,
-                    "cached": from_cache
-                }
+                "statistiques": stats
             }
             
         except Exception as e:
             print(f"❌ Erreur traitement données: {e}")
             db.session.rollback()
             return {"success": False, "error": f"Erreur traitement: {str(e)}"}
+
+
+    # =================== CONTRÔLE ET STATUT DES APPAREILS ===================
     
     def get_device_status(self, tuya_device_id, use_cache=True):
-        """Récupérer le statut d'un appareil avec cache Redis"""
+        """Récupérer le statut d'un appareil avec enrichissement complet"""
         try:
-            # ✅ NOUVEAU : Vérifier cache d'abord
+            # Vérifier cache d'abord
             if use_cache:
                 cached_status = self._get_cached_device_status(tuya_device_id)
                 if cached_status:
@@ -441,14 +443,17 @@ class DeviceService:
                     age_seconds = (datetime.utcnow() - cached_at).total_seconds()
                     
                     if age_seconds < 30:  # Cache valide 30 secondes
-                        print(f"📦 Statut depuis cache pour {tuya_device_id} (âge: {age_seconds:.1f}s)")
-                        return {
+                        print(f"📦 Statut depuis cache pour {tuya_device_id}")
+                        status_response = {
                             "success": True,
                             "values": cached_status['last_values'],
                             "is_online": cached_status['is_online'],
                             "from_cache": True,
                             "cached_at": cached_status['cached_at']
                         }
+                        
+                        # Enrichir avec analyse et protection
+                        return self._enhance_device_status(status_response, tuya_device_id)
             
             # Connexion si nécessaire
             if not self.tuya_client.reconnect_if_needed():
@@ -458,11 +463,11 @@ class DeviceService:
             status_response = self.tuya_client.get_device_current_values(tuya_device_id)
             
             if status_response.get("success"):
-                # ✅ NOUVEAU : Mettre en cache
+                # Mettre en cache
                 if use_cache:
                     self._cache_device_status(tuya_device_id, status_response)
                 
-                # ✅ NOUVEAU : Cache des données IoT
+                # Cache des données IoT
                 values = status_response.get("values", {})
                 if values and use_cache:
                     self._cache_device_data(tuya_device_id, values)
@@ -470,15 +475,15 @@ class DeviceService:
                 # Sauvegarder en DB si assigné
                 device = Device.get_by_tuya_id(tuya_device_id)
                 if device and device.is_assigne():
-                    self._save_device_data(device, status_response)
+                    self._save_device_data_with_processing(device, status_response)
                 
                 # Mettre à jour dernière donnée
                 if device:
                     device.update_last_data_time()
                 
-                # Ajouter info cache
+                # Enrichir avec analyse et protection
                 status_response['from_cache'] = False
-                status_response['cached_at'] = datetime.utcnow().isoformat()
+                return self._enhance_device_status(status_response, tuya_device_id)
             
             return status_response
             
@@ -486,362 +491,26 @@ class DeviceService:
             print(f"❌ Erreur statut appareil {tuya_device_id}: {e}")
             return {"success": False, "error": str(e)}
     
-    def get_all_devices(self, utilisateur=None, include_non_assignes=False, refresh_status=True, use_cache=True):
-        """Récupérer tous les appareils avec cache intelligent"""
-        try:
-            # ✅ NOUVEAU : Vérifier cache de synchronisation
-            if use_cache and not refresh_status:
-                last_sync = self._get_last_sync_info()
-                if last_sync:
-                    synced_at = datetime.fromisoformat(last_sync['synced_at'])
-                    age_minutes = (datetime.utcnow() - synced_at).total_seconds() / 60
-                    
-                    if age_minutes < 1:  # Cache sync valide 1 minute
-                        print(f"📦 Utilisation cache sync (âge: {age_minutes:.1f}min)")
-                        refresh_status = False
-            
-            # Synchronisation si nécessaire
-            if refresh_status:
-                print("🔄 Actualisation des statuts avant récupération...")
-                sync_result = self.import_tuya_devices(use_cache=use_cache)
-                if not sync_result.get("success"):
-                    print(f"⚠️ Échec synchronisation: {sync_result.get('error')}")
-                else:
-                    db.session.expire_all()
-            
-            # Récupération selon permissions
-            if utilisateur and utilisateur.is_superadmin():
-                if include_non_assignes:
-                    devices = Device.query.all()
-                else:
-                    devices = Device.query.filter_by(statut_assignation='assigne').all()
-            elif utilisateur:
-                devices = Device.get_assignes_client(utilisateur.client_id)
-            else:
-                devices = Device.get_non_assignes() if include_non_assignes else []
-            
-            # Préparer résultat
-            result = {
-                "success": True,
-                "devices": [device.to_dict(include_stats=True, include_tuya_info=True) for device in devices],
-                "count": len(devices),
-                "last_sync": datetime.utcnow().isoformat() if refresh_status else None,
-                "cache_used": use_cache
-            }
-            
-            # Statistiques
-            online_count = sum(1 for d in devices if d.en_ligne)
-            offline_count = len(devices) - online_count
-            
-            result["stats"] = {
-                "total": len(devices),
-                "online": online_count,
-                "offline": offline_count,
-                "sync_method": "with_cache" if use_cache else "direct_api"
-            }
-            
-            print(f"📊 Appareils récupérés: {len(devices)} ({online_count} 🟢, {offline_count} 🔴)")
-            
-            return result
-            
-        except Exception as e:
-            print(f"❌ Erreur récupération appareils: {e}")
-            return {"success": False, "error": str(e)}
-    
-    def get_non_assigned_devices(self, refresh_status=True, use_cache=True):
-        """Récupérer appareils non-assignés avec cache"""
-        try:
-            print("🔍 Récupération appareils non-assignés avec cache...")
-            
-            return self.get_all_devices(
-                utilisateur=None,
-                include_non_assignes=True,
-                refresh_status=refresh_status,
-                use_cache=use_cache
-            )
-            
-        except Exception as e:
-            print(f"❌ Erreur récupération non-assignés: {e}")
-            return {"success": False, "error": str(e)}
-    
-    def get_device_real_time_data(self, tuya_device_id, use_cache=True):
-        """Données temps réel avec cache intelligent"""
-        try:
-            print(f"📊 Données temps réel pour {tuya_device_id} (cache: {use_cache})")
-            
-            # 1. Vérifier statut (avec cache)
-            status_result = self.get_device_status(tuya_device_id, use_cache=use_cache)
-            
-            if not status_result.get("success"):
-                return status_result
-            
-            # 2. Enrichir avec données récentes depuis cache si disponibles
-            if use_cache and self.redis:
-                window_key = f"device_data_window:{tuya_device_id}"
-                recent_keys = self.redis.lrange(window_key, 0, 4)  # 5 dernières
-                
-                recent_data = []
-                for key in recent_keys:
-                    if isinstance(key, bytes):
-                        key = key.decode()
-                    
-                    data_str = self.redis.get(key)
-                    if data_str:
-                        try:
-                            data = json.loads(data_str)
-                            recent_data.append(data)
-                        except:
-                            continue
-                
-                if recent_data:
-                    status_result['recent_history'] = recent_data
-                    status_result['history_count'] = len(recent_data)
-            
-            return status_result
-            
-        except Exception as e:
-            print(f"❌ Erreur données temps réel: {e}")
-            return {"success": False, "error": str(e)}
-    
-    def batch_check_devices_status(self, device_ids_list, use_cache=True):
-        """Vérification batch avec cache optimisé"""
-        try:
-            print(f"🔍 Vérification batch de {len(device_ids_list)} appareils (cache: {use_cache})")
-            
-            results = []
-            api_needed_devices = []
-            
-            # ✅ NOUVEAU : Vérifier cache d'abord pour chaque appareil
-            if use_cache:
-                for device_id in device_ids_list:
-                    cached_status = self._get_cached_device_status(device_id)
-                    if cached_status:
-                        cached_at = datetime.fromisoformat(cached_status['cached_at'])
-                        age_seconds = (datetime.utcnow() - cached_at).total_seconds()
-                        
-                        if age_seconds < 60:  # Cache valide 1 minute pour batch
-                            device = Device.get_by_tuya_id(device_id)
-                            results.append({
-                                "device_id": device_id,
-                                "device_name": device.nom_appareil if device else "Inconnu",
-                                "is_online": cached_status['is_online'],
-                                "from_cache": True,
-                                "cache_age": age_seconds,
-                                "changed": False
-                            })
-                            continue
-                    
-                    api_needed_devices.append(device_id)
-                
-                print(f"📦 {len(results)} depuis cache, {len(api_needed_devices)} depuis API")
-            else:
-                api_needed_devices = device_ids_list
-            
-            # API pour les appareils non cachés
-            if api_needed_devices:
-                if not self.tuya_client.reconnect_if_needed():
-                    return {"success": False, "error": "Connexion Tuya impossible"}
-                
-                # Récupérer tous les statuts Tuya
-                devices_response = self.tuya_client.get_all_devices_with_details()
-                if not devices_response.get("success"):
-                    return {"success": False, "error": "Impossible de récupérer statuts Tuya"}
-                
-                tuya_devices = devices_response.get("result", [])
-                tuya_status_map = {}
-                for tuya_device in tuya_devices:
-                    device_id = tuya_device.get("id")
-                    if device_id:
-                        tuya_status_map[device_id] = tuya_device.get("isOnline", False)
-                
-                # Traiter appareils depuis API
-                updated_count = 0
-                for device_id in api_needed_devices:
-                    tuya_status = tuya_status_map.get(device_id)
-                    device = Device.get_by_tuya_id(device_id)
-                    
-                    if device and tuya_status is not None:
-                        old_status = device.en_ligne
-                        device.en_ligne = tuya_status
-                        
-                        changed = old_status != tuya_status
-                        if changed:
-                            updated_count += 1
-                            # Invalider cache
-                            self._invalidate_device_cache(device_id)
-                        
-                        # ✅ NOUVEAU : Mettre en cache le nouveau statut
-                        if use_cache:
-                            self._cache_device_status(device_id, {
-                                'is_online': tuya_status,
-                                'values': {},
-                                'source': 'batch_api'
-                            })
-                        
-                        results.append({
-                            "device_id": device_id,
-                            "device_name": device.nom_appareil,
-                            "is_online": tuya_status,
-                            "from_cache": False,
-                            "changed": changed,
-                            "old_status": old_status
-                        })
-                    else:
-                        results.append({
-                            "device_id": device_id,
-                            "device_name": "Inconnu",
-                            "is_online": tuya_status,
-                            "from_cache": False,
-                            "changed": False,
-                            "error": "Appareil non trouvé"
-                        })
-                
-                # Sauvegarder changements
-                if updated_count > 0:
-                    db.session.commit()
-                    print(f"✅ {updated_count} statuts mis à jour depuis API")
-            
-            return {
-                "success": True,
-                "checked_count": len(device_ids_list),
-                "updated_count": sum(1 for r in results if r.get('changed', False)),
-                "cached_count": sum(1 for r in results if r.get('from_cache', False)),
-                "api_count": sum(1 for r in results if not r.get('from_cache', True)),
-                "results": results,
-                "timestamp": datetime.utcnow().isoformat(),
-                "cache_efficiency": f"{(sum(1 for r in results if r.get('from_cache', False)) / len(results) * 100):.1f}%" if results else "0%"
-            }
-            
-        except Exception as e:
-            print(f"❌ Erreur vérification batch: {e}")
-            return {"success": False, "error": str(e)}
-    
-    # =================== MÉTHODES AVEC CACHE POUR DONNÉES HISTORIQUES ===================
-    
-    def get_device_history(self, tuya_device_id, limit=100, hours_back=24, use_cache=True):
-        """Historique avec cache des données récentes"""
-        try:
-            device = Device.get_by_tuya_id(tuya_device_id)
-            if not device:
-                return {"success": False, "error": "Appareil non trouvé"}
-            
-            # ✅ NOUVEAU : Enrichir avec données cache Redis si disponibles
-            cached_recent_data = []
-            if use_cache and self.redis:
-                window_key = f"device_data_window:{tuya_device_id}"
-                cached_keys = self.redis.lrange(window_key, 0, min(limit, 50))  # Max 50 depuis cache
-                
-                for key in cached_keys:
-                    if isinstance(key, bytes):
-                        key = key.decode()
-                    
-                    data_str = self.redis.get(key)
-                    if data_str:
-                        try:
-                            cached_data = json.loads(data_str)
-                            cached_recent_data.append({
-                                'horodatage': cached_data['timestamp'],
-                                'donnees_brutes': cached_data['values'],
-                                'source': 'redis_cache'
-                            })
-                        except:
-                            continue
-            
-            # Récupération depuis DB
-            start_time = datetime.utcnow() - timedelta(hours=hours_back)
-            db_limit = max(0, limit - len(cached_recent_data))
-            
-            db_data = []
-            if db_limit > 0:
-                db_query = DeviceData.query.filter_by(appareil_id=device.id)\
-                                          .filter(DeviceData.horodatage >= start_time)\
-                                          .order_by(DeviceData.horodatage.desc())\
-                                          .limit(db_limit).all()
-                
-                db_data = [d.to_dict() for d in db_query]
-                for item in db_data:
-                    item['source'] = 'database'
-            
-            # Combiner et trier par timestamp
-            all_data = cached_recent_data + db_data
-            all_data.sort(key=lambda x: x['horodatage'], reverse=True)
-            
-            # Limiter au nombre demandé
-            final_data = all_data[:limit]
-            
-            return {
-                "success": True,
-                "device_id": tuya_device_id,
-                "hours_back": hours_back,
-                "count": len(final_data),
-                "cache_entries": len(cached_recent_data),
-                "db_entries": len(db_data),
-                "data": final_data,
-                "cache_used": use_cache
-            }
-            
-        except Exception as e:
-            print(f"❌ Erreur historique appareil {tuya_device_id}: {e}")
-            return {"success": False, "error": str(e)}
-    
-    def get_device_statistics(self, use_cache=True):
-        """Statistiques avec cache"""
-        try:
-            # ✅ NOUVEAU : Cache des statistiques
-            if use_cache and self.redis:
-                cached_stats = self.redis.get("device_statistics")
-                if cached_stats:
-                    stats_data = json.loads(cached_stats)
-                    cached_at = datetime.fromisoformat(stats_data['cached_at'])
-                    age_minutes = (datetime.utcnow() - cached_at).total_seconds() / 60
-                    
-                    if age_minutes < 5:  # Cache valide 5 minutes
-                        print(f"📦 Statistiques depuis cache (âge: {age_minutes:.1f}min)")
-                        return {
-                            "success": True,
-                            "statistiques": stats_data['stats'],
-                            "cached_at": stats_data['cached_at'],
-                            "from_cache": True
-                        }
-            
-            # Calcul depuis DB
-            stats = Device.count_by_status()
-            
-            # Statistiques supplémentaires
-            stats.update({
-                'en_ligne': Device.query.filter_by(en_ligne=True).count(),
-                'hors_ligne': Device.query.filter_by(en_ligne=False).count(),
-                'actifs': Device.query.filter_by(actif=True).count(),
-                'inactifs': Device.query.filter_by(actif=False).count()
-            })
-            
-            # ✅ NOUVEAU : Mettre en cache
-            if use_cache and self.redis:
-                cache_data = {
-                    'stats': stats,
-                    'cached_at': datetime.utcnow().isoformat()
-                }
-                self.redis.setex("device_statistics", 300, json.dumps(cache_data))  # 5 minutes
-            
-            return {
-                "success": True,
-                "statistiques": stats,
-                "cached_at": datetime.utcnow().isoformat(),
-                "from_cache": False
-            }
-            
-        except Exception as e:
-            print(f"❌ Erreur statistiques appareils: {e}")
-            return {"success": False, "error": str(e)}
-    
-    # =================== MÉTHODES DE CONTRÔLE AVEC CACHE ===================
-    
     def control_device(self, tuya_device_id, command, value=None, invalidate_cache=True):
-        """Contrôler un appareil et gérer le cache"""
+        """Contrôler un appareil avec gestion protection/programmation"""
         try:
             device = Device.get_by_tuya_id(tuya_device_id)
             if not device:
                 return {"success": False, "error": "Appareil non trouvé"}
+            
+            # Vérifier protection avant contrôle
+            protection_check = self._check_protection_before_control(device, command, value)
+            if not protection_check.get('allowed', True):
+                return {
+                    "success": False, 
+                    "error": protection_check.get('reason', 'Contrôle bloqué par protection')
+                }
+            
+            # Gérer mode manuel si programmation active
+            if device.programmation_active and not device.mode_manuel_actif:
+                # Activer mode manuel temporaire
+                device.enable_mode_manuel(duree_heures=2)
+                print(f"🔧 Mode manuel activé pour {device.nom_appareil}")
             
             if not self.tuya_client.reconnect_if_needed():
                 return {"success": False, "error": "Connexion Tuya impossible"}
@@ -861,18 +530,21 @@ class DeviceService:
                 result = self.tuya_client.send_device_command(tuya_device_id, commands)
             
             if result.get("success"):
-                # Mettre à jour DB
-                device.update_last_data_time()
+                # Enregistrer l'action dans l'historique
+                self._log_device_action(device, 'manual_control', {
+                    'command': command,
+                    'value': value,
+                    'result': 'success'
+                })
                 
-                # ✅ NOUVEAU : Invalider cache après contrôle
+                # Invalider cache après contrôle
                 if invalidate_cache:
                     self._invalidate_device_cache(tuya_device_id)
-                    print(f"🗑️ Cache invalidé pour {tuya_device_id} après contrôle")
                 
-                # ✅ NOUVEAU : Récupérer nouveau statut après délai
+                # Récupérer nouveau statut après délai
                 try:
                     import time
-                    time.sleep(1)  # Attendre 1 seconde
+                    time.sleep(1)
                     new_status = self.get_device_status(tuya_device_id, use_cache=False)
                     if new_status.get("success"):
                         result['new_status'] = new_status
@@ -885,296 +557,463 @@ class DeviceService:
             print(f"❌ Erreur contrôle appareil {tuya_device_id}: {e}")
             return {"success": False, "error": str(e)}
     
-    def assign_device_to_client(self, tuya_device_id, client_id, site_id, utilisateur_assigneur_id=None):
-        """Assigner appareil avec invalidation cache"""
-        try:
-            device = Device.get_by_tuya_id(tuya_device_id)
-            if not device:
-                return {"success": False, "error": "Appareil non trouvé"}
-            
-            if device.is_assigne():
-                return {"success": False, "error": "Appareil déjà assigné"}
-            
-            success, message = device.assigner_a_client(client_id, site_id, utilisateur_assigneur_id)
-            
-            if success:
-                # ✅ NOUVEAU : Invalider caches après assignation
-                self._invalidate_device_cache(tuya_device_id)
-                
-                # Invalider cache stats et sync
-                if self.redis:
-                    self.redis.delete("device_statistics")
-                    self.redis.delete("last_device_sync")
-            
-            return {
-                "success": success,
-                "message": message,
-                "device": device.to_dict() if success else None
-            }
-            
-        except Exception as e:
-            print(f"❌ Erreur assignation appareil: {e}")
-            return {"success": False, "error": str(e)}
+    # =================== GESTION PROTECTION AUTOMATIQUE ===================
     
-    def unassign_device(self, tuya_device_id):
-        """Désassigner avec invalidation cache"""
-        try:
-            device = Device.get_by_tuya_id(tuya_device_id)
-            if not device:
-                return {"success": False, "error": "Appareil non trouvé"}
-            
-            if not device.is_assigne():
-                return {"success": False, "error": "Appareil déjà non-assigné"}
-            
-            success, message = device.desassigner()
-            
-            if success:
-                # ✅ NOUVEAU : Invalider caches après désassignation
-                self._invalidate_device_cache(tuya_device_id)
+    def _check_protection_before_control(self, device, command, value):
+        """Vérifier les protections avant d'autoriser un contrôle"""
+        if not device.protection_automatique_active:
+            return {'allowed': True}
+        
+        # Vérifier si l'appareil est en mode protection
+        if device.protection_status == 'protected':
+            # Vérifier le cooldown
+            if device.derniere_protection_declenchee:
+                # Récupérer config de protection pour cooldown
+                protection_configs = [
+                    device.protection_courant_config,
+                    device.protection_puissance_config,
+                    device.protection_temperature_config
+                ]
                 
-                # Invalider cache stats et sync
-                if self.redis:
-                    self.redis.delete("device_statistics")
-                    self.redis.delete("last_device_sync")
-            
-            return {
-                "success": success,
-                "message": message,
-                "device": device.to_dict() if success else None
-            }
-            
-        except Exception as e:
-            print(f"❌ Erreur désassignation appareil: {e}")
-            return {"success": False, "error": str(e)}
+                min_cooldown = 5  # Default 5 minutes
+                for config in protection_configs:
+                    if config and config.get('enabled'):
+                        cooldown = config.get('cooldown_minutes', 5)
+                        min_cooldown = min(min_cooldown, cooldown)
+                
+                time_since_protection = datetime.utcnow() - device.derniere_protection_declenchee
+                if time_since_protection.total_seconds() < (min_cooldown * 60):
+                    return {
+                        'allowed': False,
+                        'reason': f'Protection active - Cooldown de {min_cooldown}min'
+                    }
+        
+        return {'allowed': True}
     
-    # =================== MÉTHODES D'ADMINISTRATION DU CACHE ===================
+    def _update_device_protection_status(self, device, is_online):
+        """Mettre à jour le statut de protection selon l'état de l'appareil"""
+        if not device.protection_automatique_active:
+            return
+        
+        # Si l'appareil vient de se reconnecter, réinitialiser le statut de protection
+        if is_online and device.protection_status == 'protected':
+            # Vérifier si le cooldown est écoulé
+            if device.derniere_protection_declenchee:
+                time_since = datetime.utcnow() - device.derniere_protection_declenchee
+                if time_since.total_seconds() > 300:  # 5 minutes
+                    device.reset_protection_status()
+                    print(f"🔄 Protection status reset pour {device.nom_appareil}")
     
-    def get_cache_statistics(self):
-        """Statistiques du cache Redis"""
-        try:
-            if not self.redis:
-                return {
-                    "success": False,
-                    "error": "Redis non disponible",
-                    "cache_enabled": False
-                }
-            
-            # Compter les clés par type
-            patterns = {
-                "device_status": "device_status:*",
-                "device_data": "device_data:*",
-                "device_windows": "device_data_window:*",
-                "devices_list": "devices_list_tuya",
-                "sync_info": "last_device_sync",
-                "statistics": "device_statistics"
-            }
-            
-            cache_stats = {}
-            total_keys = 0
-            
-            for cache_type, pattern in patterns.items():
-                keys = self.redis.keys(pattern)
-                count = len(keys)
-                cache_stats[cache_type] = count
-                total_keys += count
-            
-            # Info Redis
-            redis_info = self.redis.info()
-            memory_info = self.redis.info('memory')
-            
-            return {
-                "success": True,
-                "cache_enabled": True,
-                "total_keys": total_keys,
-                "keys_by_type": cache_stats,
-                "redis_info": {
-                    "version": redis_info.get('redis_version'),
-                    "uptime_seconds": redis_info.get('uptime_in_seconds'),
-                    "connected_clients": redis_info.get('connected_clients'),
-                    "used_memory_human": memory_info.get('used_memory_human'),
-                    "keyspace": redis_info.get('keyspace', {})
-                },
-                "ttl_config": self.ttl_config,
-                "timestamp": datetime.utcnow().isoformat()
-            }
-            
-        except Exception as e:
-            print(f"❌ Erreur stats cache: {e}")
-            return {"success": False, "error": str(e)}
+    def _process_protection_monitoring(self, device, values):
+        """Analyser les valeurs et déclencher protections si nécessaire"""
+        if not device.protection_automatique_active:
+            return {'protection_triggered': False}
+        
+        triggered_protections = []
+        
+        # Vérifier protection courant
+        if device.protection_courant_config and device.protection_courant_config.get('enabled'):
+            courant = values.get('courant')
+            if courant:
+                threshold = device.protection_courant_config.get('threshold')
+                if threshold and courant > threshold:
+                    triggered_protections.append({
+                        'type': 'courant_depasse',
+                        'value': courant,
+                        'threshold': threshold,
+                        'unit': 'A',
+                        'config': device.protection_courant_config
+                    })
+        
+        # Vérifier protection puissance
+        if device.protection_puissance_config and device.protection_puissance_config.get('enabled'):
+            puissance = values.get('puissance')
+            if puissance:
+                threshold = device.protection_puissance_config.get('threshold')
+                if threshold and puissance > threshold:
+                    triggered_protections.append({
+                        'type': 'puissance_depassee',
+                        'value': puissance,
+                        'threshold': threshold,
+                        'unit': 'W',
+                        'config': device.protection_puissance_config
+                    })
+        
+        # Vérifier protection température
+        if device.protection_temperature_config and device.protection_temperature_config.get('enabled'):
+            temperature = values.get('temperature')
+            if temperature:
+                threshold = device.protection_temperature_config.get('threshold')
+                if threshold and temperature > threshold:
+                    triggered_protections.append({
+                        'type': 'temperature_haute',
+                        'value': temperature,
+                        'threshold': threshold,
+                        'unit': '°C',
+                        'config': device.protection_temperature_config
+                    })
+        
+        # Traiter les protections déclenchées
+        if triggered_protections:
+            return self._execute_protection_actions(device, triggered_protections)
+        
+        return {'protection_triggered': False}
     
-    def cleanup_cache(self, cache_type=None):
-        """Nettoyer le cache (tout ou par type)"""
-        try:
-            if not self.redis:
-                return {"success": False, "error": "Redis non disponible"}
-            
-            if cache_type:
-                # Nettoyage par type
-                patterns = {
-                    "device_status": ["device_status:*"],
-                    "device_data": ["device_data:*", "device_data_window:*"],
-                    "sync_info": ["last_device_sync", "devices_list_tuya"],
-                    "statistics": ["device_statistics"]
-                }
+    def _execute_protection_actions(self, device, triggered_protections):
+        """Exécuter les actions de protection"""
+        executed_actions = []
+        
+        for protection in triggered_protections:
+            try:
+                # Créer événement de protection si disponible
+                try:
+                    from app.models.protection_event import ProtectionEvent
+                    
+                    event = ProtectionEvent.creer_evenement_protection(
+                        client_id=device.client_id,
+                        appareil_id=device.id,
+                        type_protection=protection['type'],
+                        action_effectuee='arret_appareil',
+                        valeur_declenchement=protection['value'],
+                        valeur_seuil=protection['threshold'],
+                        unite_mesure=protection['unit'],
+                        type_systeme=device.type_systeme,
+                        etat_avant='on',
+                        config_protection=protection['config']
+                    )
+                except ImportError:
+                    event = None
                 
-                if cache_type not in patterns:
-                    return {"success": False, "error": f"Type de cache invalide: {cache_type}"}
+                # Exécuter l'action selon la config
+                action = protection['config'].get('action', 'turn_off')
                 
-                deleted_count = 0
-                for pattern in patterns[cache_type]:
-                    keys = self.redis.keys(pattern)
-                    if keys:
-                        deleted_count += self.redis.delete(*keys)
-                
-                return {
-                    "success": True,
-                    "message": f"Cache {cache_type} nettoyé",
-                    "deleted_keys": deleted_count
-                }
-            else:
-                # Nettoyage complet
-                deleted_count = self._invalidate_all_cache()
-                
-                return {
-                    "success": True,
-                    "message": "Cache complet nettoyé",
-                    "deleted_keys": deleted_count
-                }
-                
-        except Exception as e:
-            print(f"❌ Erreur nettoyage cache: {e}")
-            return {"success": False, "error": str(e)}
-    
-    def warm_up_cache(self, device_ids=None):
-        """Préchauffer le cache avec les données récentes"""
-        try:
-            if not self.redis:
-                return {"success": False, "error": "Redis non disponible"}
-            
-            print("🔥 Préchauffage du cache...")
-            
-            # Récupérer la liste des appareils à préchauffer
-            if device_ids:
-                devices = [Device.get_by_tuya_id(did) for did in device_ids]
-                devices = [d for d in devices if d]  # Filtrer les None
-            else:
-                # Tous les appareils actifs
-                devices = Device.query.filter_by(actif=True).limit(50).all()  # Limite pour éviter la surcharge
-            
-            if not devices:
-                return {"success": False, "error": "Aucun appareil à préchauffer"}
-            
-            # Préchauffer en batch
-            device_ids_list = [d.tuya_device_id for d in devices]
-            
-            # 1. Statuts en batch
-            print("🔥 Préchauffage des statuts...")
-            batch_result = self.batch_check_devices_status(device_ids_list, use_cache=False)
-            
-            # 2. Données récentes pour les appareils assignés
-            print("🔥 Préchauffage des données récentes...")
-            data_cached = 0
-            for device in devices:
-                if device.is_assigne():
-                    try:
-                        status_result = self.get_device_status(device.tuya_device_id, use_cache=False)
-                        if status_result.get("success") and status_result.get("values"):
-                            data_cached += 1
-                    except:
-                        continue
-            
-            # 3. Statistiques
-            print("🔥 Préchauffage des statistiques...")
-            self.get_device_statistics(use_cache=False)
-            
-            return {
-                "success": True,
-                "message": "Cache préchauffé avec succès",
-                "devices_processed": len(devices),
-                "statuses_cached": len(device_ids_list),
-                "data_cached": data_cached,
-                "batch_result": batch_result.get("success", False),
-                "timestamp": datetime.utcnow().isoformat()
-            }
-            
-        except Exception as e:
-            print(f"❌ Erreur préchauffage cache: {e}")
-            return {"success": False, "error": str(e)}
-    
-    def get_cached_device_timeline(self, tuya_device_id, hours_back=24):
-        """Timeline des données cachées pour un appareil"""
-        try:
-            if not self.redis:
-                return {"success": False, "error": "Redis non disponible"}
-            
-            window_key = f"device_data_window:{tuya_device_id}"
-            cached_keys = self.redis.lrange(window_key, 0, -1)
-            
-            timeline_data = []
-            now = datetime.utcnow()
-            cutoff_time = now - timedelta(hours=hours_back)
-            
-            for key in cached_keys:
-                if isinstance(key, bytes):
-                    key = key.decode()
-                
-                data_str = self.redis.get(key)
-                if data_str:
-                    try:
-                        cached_data = json.loads(data_str)
-                        timestamp = datetime.fromisoformat(cached_data['timestamp'])
+                if action == 'turn_off':
+                    # Éteindre l'appareil
+                    control_result = self.tuya_client.toggle_device(device.tuya_device_id, False)
+                    
+                    if control_result.get('success'):
+                        # Marquer la protection comme déclenchée
+                        device.log_protection_trigger(protection['type'], protection['value'])
                         
-                        if timestamp >= cutoff_time:
-                            timeline_data.append({
-                                'timestamp': cached_data['timestamp'],
-                                'values': cached_data['values'],
-                                'age_minutes': (now - timestamp).total_seconds() / 60,
-                                'cache_key': key
-                            })
-                    except:
-                        continue
+                        # Mettre à jour l'événement
+                        if event:
+                            event.etat_apres = 'off'
+                            db.session.commit()
+                        
+                        executed_actions.append({
+                            'type': protection['type'],
+                            'action': 'device_turned_off',
+                            'success': True
+                        })
+                        
+                        print(f"🚨 Protection {protection['type']} déclenchée - Appareil {device.nom_appareil} éteint")
+                    else:
+                        executed_actions.append({
+                            'type': protection['type'],
+                            'action': 'shutdown_failed',
+                            'success': False,
+                            'error': control_result.get('error')
+                        })
+                
+                # Programmer redémarrage automatique si configuré
+                if protection['config'].get('auto_restart') and executed_actions[-1].get('success'):
+                    restart_delay = protection['config'].get('restart_delay_minutes', 10)
+                    self._schedule_auto_restart(device, restart_delay)
+                
+            except Exception as e:
+                print(f"Erreur exécution protection {protection['type']}: {e}")
+                executed_actions.append({
+                    'type': protection['type'],
+                    'action': 'execution_failed',
+                    'success': False,
+                    'error': str(e)
+                })
+        
+        return {
+            'protection_triggered': True,
+            'executed_actions': executed_actions,
+            'shutdown_executed': any(a.get('success') and a.get('action') == 'device_turned_off' for a in executed_actions)
+        }
+    
             
-            # Trier par timestamp
-            timeline_data.sort(key=lambda x: x['timestamp'], reverse=True)
+    def _schedule_auto_restart(self, device, delay_minutes):
+        """Programmer un redémarrage automatique"""
+        try:
+            restart_time = datetime.utcnow() + timedelta(minutes=delay_minutes)
+            
+            # Créer une action programmée temporaire pour le redémarrage
+            try:
+                from app.models.scheduled_action import ScheduledAction
+                
+                action = ScheduledAction(
+                    client_id=device.client_id,
+                    appareil_id=device.id,
+                    action_type='turn_on',
+                    heure_execution=restart_time.time(),
+                    mode_execution='once',
+                    nom_action=f'Redémarrage automatique après protection',
+                    description=f'Redémarrage auto programmé après déclenchement protection',
+                    date_debut=restart_time.date(),
+                    date_fin=restart_time.date(),
+                    priorite=10  # Priorité maximale
+                )
+                
+                # Calculer la prochaine exécution
+                action.prochaine_execution = restart_time
+                action.set_jours_semaine([restart_time.weekday() + 1])
+                
+                db.session.add(action)
+                db.session.commit()
+                
+                print(f"⏰ Redémarrage auto programmé pour {device.nom_appareil} dans {delay_minutes}min")
+                
+            except ImportError:
+                print(f"⚠️ ScheduledAction non disponible - redémarrage auto ignoré")
+            
+        except Exception as e:
+            print(f"Erreur programmation auto-restart: {e}")
+    
+    # =================== GESTION PROGRAMMATION HORAIRE ===================
+    
+    def _update_device_schedule_status(self, device, is_online):
+        """Mettre à jour le statut de programmation selon l'état de l'appareil"""
+        if not device.programmation_active:
+            return
+        
+        # Vérifier si le mode manuel a expiré
+        if device.is_mode_manuel_expire():
+            print(f"🔧 Mode manuel expiré pour {device.nom_appareil}")
+        
+        # Recalculer la prochaine action si l'appareil vient de se reconnecter
+        if is_online:
+            try:
+                device._calculate_next_scheduled_action()
+            except Exception as e:
+                print(f"Erreur recalcul prochaine action pour {device.nom_appareil}: {e}")
+    
+    def execute_scheduled_actions(self):
+        """Exécuter les actions programmées dues"""
+        try:
+            # Récupérer toutes les actions dues
+            try:
+                from app.models.scheduled_action import ScheduledAction
+                actions_dues = ScheduledAction.get_actions_dues(tolerance_minutes=2)
+            except ImportError:
+                return {'executed': 0, 'actions': [], 'error': 'ScheduledAction non disponible'}
+            
+            if not actions_dues:
+                return {'executed': 0, 'actions': []}
+            
+            executed_actions = []
+            
+            for action in actions_dues:
+                try:
+                    device = Device.query.get(action.appareil_id)
+                    if not device:
+                        continue
+                    
+                    # Vérifier que l'appareil n'est pas en mode manuel
+                    if device.mode_manuel_actif:
+                        print(f"⏭️ Action programmée ignorée - Mode manuel actif pour {device.nom_appareil}")
+                        continue
+                    
+                    # Vérifier que l'appareil n'est pas en protection
+                    if device.protection_status == 'protected':
+                        print(f"⏭️ Action programmée ignorée - Protection active pour {device.nom_appareil}")
+                        continue
+                    
+                    # Exécuter l'action
+                    success = self._execute_single_scheduled_action(device, action)
+                    
+                    # Enregistrer le résultat
+                    action.marquer_execution(success=success)
+                    
+                    executed_actions.append({
+                        'action_id': action.id,
+                        'device_name': device.nom_appareil,
+                        'action_type': action.action_type,
+                        'success': success,
+                        'executed_at': datetime.utcnow().isoformat()
+                    })
+                    
+                except Exception as e:
+                    print(f"Erreur exécution action programmée {action.id}: {e}")
+                    action.marquer_execution(success=False, error_message=str(e))
+                    
+                    executed_actions.append({
+                        'action_id': action.id,
+                        'action_type': action.action_type,
+                        'success': False,
+                        'error': str(e)
+                    })
             
             return {
-                "success": True,
-                "device_id": tuya_device_id,
-                "hours_back": hours_back,
-                "cached_entries": len(timeline_data),
-                "timeline": timeline_data,
-                "window_key": window_key
+                'executed': len(executed_actions),
+                'actions': executed_actions
             }
             
         except Exception as e:
-            print(f"❌ Erreur timeline cache: {e}")
-            return {"success": False, "error": str(e)}
+            print(f"Erreur exécution actions programmées: {e}")
+            return {'executed': 0, 'actions': [], 'error': str(e)}
     
-    # =================== MÉTHODES EXISTANTES (sans modification) ===================
+    def _execute_single_scheduled_action(self, device, action):
+        """Exécuter une action programmée individuelle"""
+        try:
+            if not self.tuya_client.reconnect_if_needed():
+                return False
+            
+            if action.action_type == 'turn_on':
+                result = self.tuya_client.toggle_device(device.tuya_device_id, True)
+            elif action.action_type == 'turn_off':
+                result = self.tuya_client.toggle_device(device.tuya_device_id, False)
+            elif action.action_type == 'toggle':
+                result = self.tuya_client.toggle_device(device.tuya_device_id)
+            elif action.action_type == 'custom_command' and action.custom_command:
+                result = self.tuya_client.send_device_command(device.tuya_device_id, action.custom_command)
+            else:
+                print(f"Type d'action non supporté: {action.action_type}")
+                return False
+            
+            if result.get('success'):
+                # Enregistrer l'action dans l'historique
+                self._log_device_action(device, 'scheduled_action', {
+                    'action_type': action.action_type,
+                    'action_id': action.id,
+                    'result': 'success'
+                })
+                
+                # Invalider cache
+                self._invalidate_device_cache(device.tuya_device_id)
+                
+                print(f"✅ Action programmée exécutée: {action.action_type} sur {device.nom_appareil}")
+                return True
+            else:
+                print(f"❌ Échec action programmée: {result.get('error')}")
+                return False
+                
+        except Exception as e:
+            print(f"Erreur exécution action {action.action_type}: {e}")
+            return False
     
-    def _determine_device_type(self, category, device_data):
-        """Déterminer le type d'appareil basé sur les données Tuya"""
-        category_mapping = {
-            'cz': 'prise_connectee',
-            'kg': 'interrupteur',
-            'sp': 'camera',
-            'wk': 'thermostat',
-            'dlq': 'appareil_generique'
+    # =================== ENRICHISSEMENT ET ANALYSE ===================
+    
+    def _enhance_device_status(self, status_response, tuya_device_id):
+        """Enrichir les données de statut avec analyse et historique"""
+        try:
+            device = Device.get_by_tuya_id(tuya_device_id)
+            if not device:
+                return status_response
+            
+            # Ajouter informations device
+            status_response['device_info'] = {
+                'id': device.id,
+                'nom': device.nom_appareil,
+                'type': device.type_appareil,
+                'assigné': device.is_assigne()
+            }
+            
+            # Ajouter statut protection si activé
+            if device.protection_automatique_active:
+                status_response['protection_status'] = device.get_protection_config()
+            
+            # Ajouter statut programmation si activé
+            if device.programmation_active:
+                status_response['programmation_status'] = device.get_horaires_config()
+            
+            # Ajouter analyse des seuils
+            values = status_response.get('values', {})
+            if values:
+                status_response['threshold_analysis'] = self._analyze_thresholds(device, values)
+            
+            return status_response
+            
+        except Exception as e:
+            print(f"Erreur enrichissement statut: {e}")
+            return status_response
+    
+    def _analyze_thresholds(self, device, values):
+        """Analyser les valeurs par rapport aux seuils"""
+        analysis = {
+            'warnings': [],
+            'criticals': [],
+            'all_ok': True
         }
         
-        # Détection spéciale pour ATORCH (compteur d'énergie)
-        device_name = device_data.get("name", "").lower()
-        product_name = device_data.get("productName", "").lower()
+        try:
+            # Analyser tension
+            tension = values.get('tension')
+            if tension:
+                if device.seuil_tension_min and tension < device.seuil_tension_min:
+                    analysis['criticals'].append({
+                        'metric': 'tension',
+                        'value': tension,
+                        'threshold': device.seuil_tension_min,
+                        'type': 'below_minimum',
+                        'unit': 'V'
+                    })
+                    analysis['all_ok'] = False
+                elif device.seuil_tension_max and tension > device.seuil_tension_max:
+                    analysis['criticals'].append({
+                        'metric': 'tension',
+                        'value': tension,
+                        'threshold': device.seuil_tension_max,
+                        'type': 'above_maximum',
+                        'unit': 'V'
+                    })
+                    analysis['all_ok'] = False
+            
+            # Analyser courant
+            courant = values.get('courant')
+            if courant and device.seuil_courant_max:
+                if courant > device.seuil_courant_max * 0.8:  # Warning à 80%
+                    level = 'criticals' if courant > device.seuil_courant_max else 'warnings'
+                    analysis[level].append({
+                        'metric': 'courant',
+                        'value': courant,
+                        'threshold': device.seuil_courant_max,
+                        'type': 'approaching_limit' if level == 'warnings' else 'above_maximum',
+                        'unit': 'A'
+                    })
+                    if level == 'criticals':
+                        analysis['all_ok'] = False
+            
+            # Analyser puissance
+            puissance = values.get('puissance')
+            if puissance and device.seuil_puissance_max:
+                if puissance > device.seuil_puissance_max * 0.8:  # Warning à 80%
+                    level = 'criticals' if puissance > device.seuil_puissance_max else 'warnings'
+                    analysis[level].append({
+                        'metric': 'puissance',
+                        'value': puissance,
+                        'threshold': device.seuil_puissance_max,
+                        'type': 'approaching_limit' if level == 'warnings' else 'above_maximum',
+                        'unit': 'W'
+                    })
+                    if level == 'criticals':
+                        analysis['all_ok'] = False
+            
+            # Analyser température
+            temperature = values.get('temperature')
+            if temperature and device.seuil_temperature_max:
+                if temperature > device.seuil_temperature_max * 0.8:  # Warning à 80%
+                    level = 'criticals' if temperature > device.seuil_temperature_max else 'warnings'
+                    analysis[level].append({
+                        'metric': 'temperature',
+                        'value': temperature,
+                        'threshold': device.seuil_temperature_max,
+                        'type': 'approaching_limit' if level == 'warnings' else 'above_maximum',
+                        'unit': '°C'
+                    })
+                    if level == 'criticals':
+                        analysis['all_ok'] = False
+            
+        except Exception as e:
+            print(f"Erreur analyse seuils: {e}")
         
-        if "atorch" in device_name or "energy meter" in device_name:
-            return 'atorch_compteur_energie'
-        elif "gr2pws" in device_data.get("model", ""):
-            return 'atorch_argp2ws'
-        
-        return category_mapping.get(category, 'appareil_generique')
+        return analysis
     
-    def _save_device_data(self, device, status_data):
-        """Sauvegarder les données d'un appareil dans DeviceData"""
+    def _save_device_data_with_processing(self, device, status_data):
+        """Sauvegarder les données avec traitement protection/analyse"""
         try:
             if not status_data.get("success") or not device.is_assigne():
                 return
@@ -1182,7 +1021,7 @@ class DeviceService:
             values = status_data.get("values", {})
             timestamp = datetime.utcnow()
             
-            # Créer un enregistrement DeviceData avec toutes les valeurs
+            # Créer enregistrement DeviceData
             device_data = DeviceData(
                 appareil_id=device.id,
                 client_id=device.client_id,
@@ -1194,21 +1033,31 @@ class DeviceService:
                 temperature=values.get("temperature"),
                 humidite=values.get("humidite"),
                 etat_switch=values.get("etat_switch"),
-                donnees_brutes=values  # Sauvegarder toutes les données brutes
+                donnees_brutes=values
             )
             
             db.session.add(device_data)
-            db.session.commit()
             
-            # Vérifier les seuils et créer des alertes si nécessaire
-            self._check_thresholds(device, values)
+            # Traitement protection automatique
+            if device.protection_automatique_active:
+                protection_result = self._process_protection_monitoring(device, values)
+                if protection_result.get('protection_triggered'):
+                    print(f"🚨 Protection déclenchée pour {device.nom_appareil}")
+            
+            # Vérifier seuils classiques et créer alertes
+            self._check_thresholds_and_create_alerts(device, values)
+            
+            # Mettre à jour dernière donnée
+            device.derniere_donnee = timestamp
+            
+            db.session.commit()
             
         except Exception as e:
             print(f"❌ Erreur sauvegarde données {device.tuya_device_id}: {e}")
             db.session.rollback()
     
-    def _check_thresholds(self, device, values):
-        """Vérifier les seuils et créer des alertes"""
+    def _check_thresholds_and_create_alerts(self, device, values):
+        """Vérifier les seuils et créer des alertes classiques"""
         try:
             alerts_to_create = []
             
@@ -1287,165 +1136,737 @@ class DeviceService:
                     )
                     db.session.add(alert)
             
-            db.session.commit()
-            
         except Exception as e:
             print(f"❌ Erreur vérification seuils: {e}")
-            db.session.rollback()
     
-    # =================== MÉTHODES DE SYNCHRONISATION AMÉLIORÉES ===================
-    
-    def sync_all_devices(self, use_cache=True, force_refresh=False):
-        """Synchronisation avec cache intelligent"""
+    def _log_device_action(self, device, action_type, details):
+        """Enregistrer une action dans l'historique"""
         try:
-            print("🔄 Synchronisation avec cache intelligent...")
+            from app.models.device import DeviceActionLog
             
-            # 1. Import avec cache
-            import_result = self.import_tuya_devices(use_cache=use_cache, force_refresh=force_refresh)
+            log_entry = DeviceActionLog.log_action(
+                device_id=device.id,
+                client_id=device.client_id,
+                action_type=action_type,
+                action_subtype=details.get('command') or details.get('action_type'),
+                result='success' if details.get('result') == 'success' else 'failed',
+                details=details
+            )
+            
+            if log_entry:
+                print(f"📝 Action loggée: {action_type} pour {device.nom_appareil}")
+            
+        except Exception as e:
+            print(f"Erreur log action: {e}")
+
+
+    # =================== MÉTHODES DE RÉCUPÉRATION AVANCÉES ===================
+    
+    def get_all_devices(self, utilisateur=None, include_non_assignes=False, refresh_status=True, use_cache=True):
+        """Récupérer tous les appareils avec cache et permissions"""
+        try:
+            # Cache key basé sur les paramètres
+            cache_suffix = f"{utilisateur.id if utilisateur else 'none'}_{include_non_assignes}_{refresh_status}"
+            cache_key = f"devices_query:{cache_suffix}"
+            
+            # Vérifier cache
+            if use_cache and not refresh_status:
+                cached_result = self._get_generic_cache(cache_key)
+                if cached_result:
+                    print(f"📦 Liste appareils depuis cache")
+                    return cached_result
+            
+            # Synchronisation si demandée
+            if refresh_status:
+                print("🔄 Actualisation des statuts avant récupération...")
+                sync_result = self.import_tuya_devices(use_cache=use_cache)
+                if not sync_result.get("success"):
+                    print(f"⚠️ Échec synchronisation: {sync_result.get('error')}")
+                else:
+                    db.session.expire_all()
+            
+            # Récupération selon permissions
+            if utilisateur and utilisateur.is_superadmin():
+                if include_non_assignes:
+                    devices = Device.query.all()
+                else:
+                    devices = Device.query.filter_by(statut_assignation='assigne').all()
+            elif utilisateur:
+                devices = Device.get_assignes_client(utilisateur.client_id)
+            else:
+                devices = Device.get_non_assignes() if include_non_assignes else []
+            
+            # Statistiques enrichies
+            online_count = sum(1 for d in devices if d.en_ligne)
+            offline_count = len(devices) - online_count
+            
+            # Compter appareils avec protection/programmation
+            protection_active = sum(1 for d in devices if d.protection_automatique_active)
+            programmation_active = sum(1 for d in devices if d.programmation_active)
+            
+            result = {
+                "success": True,
+                "devices": [self._device_to_dict_enhanced(device) for device in devices],
+                "count": len(devices),
+                "last_sync": datetime.utcnow().isoformat() if refresh_status else None,
+                "stats": {
+                    "total": len(devices),
+                    "online": online_count,
+                    "offline": offline_count,
+                    "protection_active": protection_active,
+                    "programmation_active": programmation_active,
+                    "sync_method": "full_import" if refresh_status else "cache"
+                }
+            }
+            
+            # Mettre en cache
+            if use_cache:
+                self._set_generic_cache(cache_key, result, ttl=120)  # 2 minutes
+            
+            print(f"📊 Appareils récupérés: {len(devices)} ({online_count} 🟢, {offline_count} 🔴)")
+            return result
+            
+        except Exception as e:
+            print(f"❌ Erreur récupération appareils: {e}")
+            return {"success": False, "error": str(e)}
+    
+    def get_non_assigned_devices(self, refresh_status=True, use_cache=True):
+        """Récupérer appareils non-assignés avec cache"""
+        try:
+            cache_key = f"non_assigned_devices_{refresh_status}"
+            
+            # Cache check
+            if use_cache and not refresh_status:
+                cached_result = self._get_generic_cache(cache_key)
+                if cached_result:
+                    print("📦 Appareils non-assignés depuis cache")
+                    return cached_result
+            
+            # Synchronisation si demandée
+            if refresh_status:
+                sync_result = self.import_tuya_devices(use_cache=use_cache)
+                if not sync_result.get("success"):
+                    print(f"⚠️ Échec synchronisation: {sync_result.get('error')}")
+                else:
+                    db.session.expire_all()
+            
+            # Récupération
+            devices = Device.get_non_assignes()
+            
+            # Statistiques
+            online_count = sum(1 for d in devices if d.en_ligne)
+            offline_count = len(devices) - online_count
+            
+            result = {
+                "success": True,
+                "count": len(devices),
+                "devices": [self._device_to_dict_enhanced(device) for device in devices],
+                "stats": {
+                    "total": len(devices),
+                    "online": online_count,
+                    "offline": offline_count
+                },
+                "last_refresh": datetime.utcnow().isoformat() if refresh_status else None
+            }
+            
+            # Cache
+            if use_cache:
+                self._set_generic_cache(cache_key, result, ttl=90)  # 1.5 minutes
+            
+            return result
+            
+        except Exception as e:
+            print(f"❌ Erreur appareils non-assignés: {e}")
+            return {"success": False, "error": str(e)}
+    
+    def get_assigned_devices(self, utilisateur, refresh_status=False, use_cache=True):
+        """Récupérer appareils assignés à un utilisateur"""
+        try:
+            return self.get_all_devices(
+                utilisateur=utilisateur,
+                include_non_assignes=False,
+                refresh_status=refresh_status,
+                use_cache=use_cache
+            )
+        except Exception as e:
+            print(f"❌ Erreur appareils assignés: {e}")
+            return {"success": False, "error": str(e)}
+    
+    # =================== ASSIGNATION ET GESTION ===================
+    
+    def assign_device_to_client(self, tuya_device_id, client_id, site_id, utilisateur_assigneur_id=None):
+        """Assigner un appareil à un client avec cache invalidation"""
+        try:
+            device = Device.get_by_tuya_id(tuya_device_id)
+            if not device:
+                return {"success": False, "error": "Appareil non trouvé"}
+            
+            if device.is_assigne():
+                return {"success": False, "error": "Appareil déjà assigné"}
+            
+            success, message = device.assigner_a_client(client_id, site_id, utilisateur_assigneur_id)
+            
+            # Invalider caches liés
+            if success:
+                self._invalidate_device_cache(tuya_device_id)
+                self._invalidate_assignment_caches()
+            
+            return {
+                "success": success,
+                "message": message,
+                "device": self._device_to_dict_enhanced(device) if success else None
+            }
+            
+        except Exception as e:
+            print(f"❌ Erreur assignation: {e}")
+            return {"success": False, "error": str(e)}
+    
+    def unassign_device(self, tuya_device_id):
+        """Désassigner un appareil avec nettoyage"""
+        try:
+            device = Device.get_by_tuya_id(tuya_device_id)
+            if not device:
+                return {"success": False, "error": "Appareil non trouvé"}
+            
+            if not device.is_assigne():
+                return {"success": False, "error": "Appareil déjà non-assigné"}
+            
+            # Désactiver protection et programmation avant désassignation
+            if device.protection_automatique_active:
+                device.disable_protection()
+            
+            if device.programmation_active:
+                device.disable_programmation()
+            
+            success, message = device.desassigner()
+            
+            # Invalider caches
+            if success:
+                self._invalidate_device_cache(tuya_device_id)
+                self._invalidate_assignment_caches()
+            
+            return {
+                "success": success,
+                "message": message,
+                "device": self._device_to_dict_enhanced(device) if success else None
+            }
+            
+        except Exception as e:
+            print(f"❌ Erreur désassignation: {e}")
+            return {"success": False, "error": str(e)}
+    
+    # =================== HISTORIQUE ET DONNÉES ===================
+    
+    def get_device_history(self, tuya_device_id, limit=100, hours_back=24, use_cache=True):
+        """Récupérer historique avec cache"""
+        try:
+            device = Device.get_by_tuya_id(tuya_device_id)
+            if not device:
+                return {"success": False, "error": "Appareil non trouvé"}
+            
+            cache_key = f"device_history:{device.id}:{hours_back}h:{limit}"
+            
+            # Cache check
+            if use_cache:
+                cached_result = self._get_generic_cache(cache_key)
+                if cached_result:
+                    return cached_result
+            
+            # Récupération depuis DB
+            start_time = datetime.utcnow() - timedelta(hours=hours_back)
+            data = DeviceData.query.filter_by(appareil_id=device.id)\
+                                  .filter(DeviceData.horodatage >= start_time)\
+                                  .order_by(DeviceData.horodatage.desc())\
+                                  .limit(limit).all()
+            
+            # Analyse des données
+            analysis = self._analyze_device_data_trends(data) if data else {}
+            
+            result = {
+                "success": True,
+                "device_id": tuya_device_id,
+                "device_name": device.nom_appareil,
+                "hours_back": hours_back,
+                "count": len(data),
+                "data": [d.to_dict() for d in data],
+                "analysis": analysis,
+                "period": {
+                    "start": start_time.isoformat(),
+                    "end": datetime.utcnow().isoformat()
+                }
+            }
+            
+            # Cache
+            if use_cache:
+                self._set_generic_cache(cache_key, result, ttl=300)  # 5 minutes
+            
+            return result
+            
+        except Exception as e:
+            print(f"❌ Erreur historique: {e}")
+            return {"success": False, "error": str(e)}
+    
+    # =================== ANALYSE ET DIAGNOSTICS ===================
+    
+    def get_device_real_time_data(self, tuya_device_id, use_cache=True):
+        """Données temps réel enrichies"""
+        try:
+            # Statut complet
+            status_result = self.get_device_status(tuya_device_id, use_cache=use_cache)
+            
+            if not status_result.get("success"):
+                return status_result
+            
+            device = Device.get_by_tuya_id(tuya_device_id)
+            is_online = status_result.get("is_online", False)
+            
+            result = {
+                "success": True,
+                "device_id": tuya_device_id,
+                "device_name": device.nom_appareil if device else "Inconnu",
+                "is_online": is_online,
+                "data": status_result.get("values", {}),
+                "timestamp": datetime.utcnow().isoformat(),
+                "enhanced_status": status_result
+            }
+            
+            # Ajouter recommandations si en ligne
+            if is_online and device:
+                result["recommendations"] = self._generate_device_recommendations(device, status_result.get("values", {}))
+            
+            return result
+            
+        except Exception as e:
+            print(f"❌ Erreur données temps réel: {e}")
+            return {"success": False, "error": str(e)}
+    
+    def batch_check_devices_status(self, device_ids_list, use_cache=True):
+        """Vérification batch optimisée"""
+        try:
+            if not device_ids_list:
+                return {"success": False, "error": "Liste d'IDs requise"}
+            
+            cache_key = f"batch_status:{':'.join(sorted(device_ids_list))}"
+            
+            # Cache check
+            if use_cache:
+                cached_result = self._get_generic_cache(cache_key)
+                if cached_result:
+                    return cached_result
+            
+            if not self.tuya_client.reconnect_if_needed():
+                return {"success": False, "error": "Connexion Tuya impossible"}
+            
+            # Récupération batch depuis Tuya
+            devices_response = self.tuya_client.get_all_devices_with_details()
+            if not devices_response.get("success"):
+                return {"success": False, "error": "Erreur récupération Tuya"}
+            
+            tuya_devices = devices_response.get("result", [])
+            tuya_status_map = {d.get("id"): d.get("isOnline", False) for d in tuya_devices if d.get("id")}
+            
+            # Traitement des appareils demandés
+            results = []
+            updated_count = 0
+            
+            for device_id in device_ids_list:
+                tuya_status = tuya_status_map.get(device_id)
+                device = Device.get_by_tuya_id(device_id)
+                
+                if device and tuya_status is not None:
+                    old_status = device.en_ligne
+                    device.en_ligne = tuya_status
+                    
+                    if old_status != tuya_status:
+                        updated_count += 1
+                        self._invalidate_device_cache(device_id)
+                    
+                    results.append({
+                        "device_id": device_id,
+                        "device_name": device.nom_appareil,
+                        "is_online": tuya_status,
+                        "changed": old_status != tuya_status,
+                        "old_status": old_status,
+                        "protection_active": device.protection_automatique_active,
+                        "programmation_active": device.programmation_active
+                    })
+                else:
+                    results.append({
+                        "device_id": device_id,
+                        "device_name": "Inconnu",
+                        "is_online": tuya_status,
+                        "changed": False,
+                        "error": "Appareil non trouvé" if not device else "Statut Tuya manquant"
+                    })
+            
+            # Commit si changements
+            if updated_count > 0:
+                db.session.commit()
+            
+            result = {
+                "success": True,
+                "checked_count": len(device_ids_list),
+                "updated_count": updated_count,
+                "results": results,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+            # Cache
+            if use_cache:
+                self._set_generic_cache(cache_key, result, ttl=30)  # 30 secondes
+            
+            return result
+            
+        except Exception as e:
+            print(f"❌ Erreur batch check: {e}")
+            return {"success": False, "error": str(e)}
+    
+    # =================== SYNCHRONISATION ET MAINTENANCE ===================
+    
+    def sync_all_devices(self, force_refresh=True):
+        """Synchronisation complète optimisée"""
+        try:
+            print("🔄 Synchronisation complète des appareils...")
+            
+            # Import depuis Tuya
+            import_result = self.import_tuya_devices(use_cache=not force_refresh, force_refresh=force_refresh)
             
             if not import_result.get("success"):
                 return import_result
             
-            # 2. Statistiques finales
-            stats_result = self.get_device_statistics(use_cache=False)  # Recalculer stats
+            # Exécuter actions programmées en attente
+            scheduled_result = self.execute_scheduled_actions()
             
+            # Statistiques finales
             all_devices = Device.query.all()
             online_final = Device.query.filter_by(en_ligne=True).count()
             offline_final = Device.query.filter_by(en_ligne=False).count()
             
-            sync_result = {
+            return {
                 "success": True,
                 "message": f"Synchronisation terminée: {len(all_devices)} appareils",
                 "import_stats": import_result.get("statistiques", {}),
-                "sync_stats": {
+                "scheduled_actions": scheduled_result,
+                "final_stats": {
                     "total": len(all_devices),
-                    "final_online": online_final,
-                    "final_offline": offline_final,
-                    "source": "endpoint_liste_avec_cache" if use_cache else "endpoint_liste_direct",
-                    "cache_used": use_cache,
-                    "forced_refresh": force_refresh
-                }
-            }
-            
-            if stats_result.get("success"):
-                sync_result["device_statistics"] = stats_result.get("statistiques")
-            
-            print(f"✅ Synchronisation terminée:")
-            print(f"   📊 {len(all_devices)} appareils")
-            print(f"   🟢 {online_final} en ligne")
-            print(f"   🔴 {offline_final} hors ligne")
-            print(f"   📦 Cache: {'✅' if use_cache else '❌'}")
-            
-            return sync_result
-            
-        except Exception as e:
-            print(f"❌ Erreur synchronisation: {e}")
-            db.session.rollback()
-            return {"success": False, "error": str(e)}
-    
-    # =================== MÉTHODES DEBUG ET MONITORING ===================
-    
-    def debug_device_cache(self, tuya_device_id):
-        """Debug complet du cache d'un appareil"""
-        try:
-            if not self.redis:
-                return {"success": False, "error": "Redis non disponible"}
-            
-            debug_info = {
-                "device_id": tuya_device_id,
-                "cache_keys": {},
-                "cache_data": {},
-                "ttl_info": {},
+                    "online": online_final,
+                    "offline": offline_final,
+                    "protection_active": Device.query.filter_by(protection_automatique_active=True).count(),
+                    "programmation_active": Device.query.filter_by(programmation_active=True).count()
+                },
                 "timestamp": datetime.utcnow().isoformat()
             }
             
-            # Vérifier toutes les clés liées à cet appareil
+        except Exception as e:
+            print(f"❌ Erreur synchronisation: {e}")
+            return {"success": False, "error": str(e)}
+    
+    def get_device_statistics(self, include_advanced=True):
+        """Statistiques avancées des appareils"""
+        try:
+            base_stats = Device.count_by_status()
+            
+            # Statistiques de base
+            advanced_stats = {
+                'en_ligne': Device.query.filter_by(en_ligne=True).count(),
+                'hors_ligne': Device.query.filter_by(en_ligne=False).count(),
+                'actifs': Device.query.filter_by(actif=True).count(),
+                'inactifs': Device.query.filter_by(actif=False).count()
+            }
+            
+            if include_advanced:
+                # Statistiques avancées
+                advanced_stats.update({
+                    'protection_active': Device.query.filter_by(protection_automatique_active=True).count(),
+                    'programmation_active': Device.query.filter_by(programmation_active=True).count(),
+                    'mode_manuel': Device.query.filter_by(mode_manuel_actif=True).count(),
+                    'protection_declenchee': Device.query.filter_by(protection_status='protected').count(),
+                    'par_type_systeme': {
+                        'monophase': Device.query.filter_by(type_systeme='monophase').count(),
+                        'triphase': Device.query.filter_by(type_systeme='triphase').count()
+                    }
+                })
+                
+                # Dernière synchronisation
+                last_sync = self._get_last_sync_info()
+                if last_sync:
+                    advanced_stats['last_sync'] = last_sync
+            
+            return {
+                "success": True, 
+                "statistiques": {**base_stats, **advanced_stats},
+                "generated_at": datetime.utcnow().isoformat()
+            }
+            
+        except Exception as e:
+            print(f"❌ Erreur statistiques: {e}")
+            return {"success": False, "error": str(e)}
+    
+    # =================== MÉTHODES UTILITAIRES INTERNES ===================
+    
+    def _device_to_dict_enhanced(self, device):
+        """Conversion enrichie d'un appareil en dictionnaire"""
+        try:
+            base_dict = device.to_dict(include_stats=True, include_tuya_info=True)
+            
+            # Ajouter informations enrichies
+            if device.protection_automatique_active:
+                base_dict['protection_config'] = device.get_protection_config()
+            
+            if device.programmation_active:
+                base_dict['horaires_config'] = device.get_horaires_config()
+            
+            # Statut de santé rapide
+            base_dict['health_status'] = self._get_device_health_status(device)
+            
+            # Cache status
+            cached_status = self._get_cached_device_status(device.tuya_device_id)
+            if cached_status:
+                base_dict['cache_info'] = {
+                    'has_cached_status': True,
+                    'cached_at': cached_status.get('cached_at')
+                }
+            
+            return base_dict
+            
+        except Exception as e:
+            print(f"Erreur conversion device dict: {e}")
+            return device.to_dict() if hasattr(device, 'to_dict') else {}
+    
+    def _get_device_health_status(self, device):
+        """Évaluation rapide de la santé d'un appareil"""
+        if not device.en_ligne:
+            return 'offline'
+        
+        if device.protection_status == 'protected':
+            return 'protected'
+        
+        if device.mode_manuel_actif:
+            return 'manual_mode'
+        
+        # Vérifier dernière donnée
+        if device.derniere_donnee:
+            silence_hours = (datetime.utcnow() - device.derniere_donnee).total_seconds() / 3600
+            if silence_hours > 2:
+                return 'silent'
+        
+        return 'healthy'
+    
+    def _analyze_device_data_trends(self, data_points):
+        """Analyse des tendances dans les données"""
+        if len(data_points) < 5:
+            return {"insufficient_data": True}
+        
+        analysis = {
+            "data_count": len(data_points),
+            "time_span_hours": None,
+            "trends": {},
+            "alerts_detected": 0
+        }
+        
+        try:
+            # Calculer span temporel
+            if data_points:
+                latest = data_points[0].horodatage
+                oldest = data_points[-1].horodatage
+                analysis["time_span_hours"] = (latest - oldest).total_seconds() / 3600
+            
+            # Analyser chaque métrique
+            metrics = ['tension', 'courant', 'puissance', 'temperature']
+            
+            for metric in metrics:
+                values = [getattr(dp, metric) for dp in data_points if getattr(dp, metric) is not None]
+                
+                if len(values) >= 3:
+                    analysis["trends"][metric] = {
+                        "min": min(values),
+                        "max": max(values),
+                        "avg": sum(values) / len(values),
+                        "variation": max(values) - min(values),
+                        "trend": self._calculate_simple_trend(values)
+                    }
+            
+            return analysis
+            
+        except Exception as e:
+            print(f"Erreur analyse tendances: {e}")
+            return {"error": str(e)}
+    
+    def _calculate_simple_trend(self, values):
+        """Calcul de tendance simple"""
+        if len(values) < 3:
+            return "stable"
+        
+        mid = len(values) // 2
+        first_half = sum(values[:mid]) / mid
+        second_half = sum(values[mid:]) / (len(values) - mid)
+        
+        change_pct = ((second_half - first_half) / first_half) * 100 if first_half > 0 else 0
+        
+        if change_pct > 5:
+            return "increasing"
+        elif change_pct < -5:
+            return "decreasing"
+        else:
+            return "stable"
+    
+    def _generate_device_recommendations(self, device, current_values):
+        """Générer recommandations pour un appareil"""
+        recommendations = []
+        
+        try:
+            # Recommandations basées sur les seuils
+            threshold_analysis = self._analyze_thresholds(device, current_values)
+            
+            if not threshold_analysis.get('all_ok'):
+                if threshold_analysis.get('criticals'):
+                    recommendations.append({
+                        "type": "urgent",
+                        "message": "Intervention urgente requise - Seuils critiques dépassés",
+                        "action": "Vérifier immédiatement l'installation"
+                    })
+                
+                if threshold_analysis.get('warnings'):
+                    recommendations.append({
+                        "type": "maintenance",
+                        "message": "Maintenance préventive recommandée",
+                        "action": "Planifier une inspection"
+                    })
+            
+            # Recommandations protection
+            if not device.protection_automatique_active and device.is_assigne():
+                recommendations.append({
+                    "type": "security",
+                    "message": "Protection automatique non activée",
+                    "action": "Configurer la protection automatique"
+                })
+            
+            # Recommandations programmation
+            if not device.programmation_active and device.is_assigne():
+                recommendations.append({
+                    "type": "optimization",
+                    "message": "Programmation horaire non configurée",
+                    "action": "Configurer les horaires d'allumage/extinction"
+                })
+            
+            return recommendations
+            
+        except Exception as e:
+            print(f"Erreur génération recommandations: {e}")
+            return []
+    
+    def _invalidate_assignment_caches(self):
+        """Invalider les caches liés aux assignations"""
+        try:
+            if not self.redis:
+                return
+            
             patterns = [
-                f"device_status:{tuya_device_id}",
-                f"device_data_window:{tuya_device_id}",
-                f"device_data:{tuya_device_id}:*"
+                "devices_query:*",
+                "non_assigned_devices_*"
             ]
             
             for pattern in patterns:
-                if "*" in pattern:
-                    keys = self.redis.keys(pattern)
-                else:
-                    keys = [pattern] if self.redis.exists(pattern) else []
-                
-                debug_info["cache_keys"][pattern] = len(keys)
-                
-                for key in keys[:5]:  # Limiter à 5 clés par pattern
-                    if isinstance(key, bytes):
-                        key = key.decode()
-                    
-                    try:
-                        data = self.redis.get(key)
-                        ttl = self.redis.ttl(key)
-                        
-                        if data:
-                            debug_info["cache_data"][key] = {
-                                "data": json.loads(data) if data else None,
-                                "ttl_seconds": ttl,
-                                "expires_in": f"{ttl // 60}m {ttl % 60}s" if ttl > 0 else "No TTL"
-                            }
-                    except Exception as e:
-                        debug_info["cache_data"][key] = {"error": str(e)}
-            
-            # Info depuis DB
-            device = Device.get_by_tuya_id(tuya_device_id)
-            if device:
-                debug_info["database_info"] = {
-                    "nom_appareil": device.nom_appareil,
-                    "en_ligne": device.en_ligne,
-                    "statut_assignation": device.statut_assignation,
-                    "derniere_donnee": device.derniere_donnee.isoformat() if device.derniere_donnee else None
-                }
-            
-            return {"success": True, "debug_info": debug_info}
+                keys = self.redis.keys(pattern)
+                if keys:
+                    self.redis.delete(*keys)
             
         except Exception as e:
-            print(f"❌ Erreur debug cache: {e}")
-            return {"success": False, "error": str(e)}
+            print(f"Erreur invalidation cache assignation: {e}")
     
-    def health_check(self):
-        """Vérification de santé du service"""
+    def _set_generic_cache(self, key, data, ttl=300):
+        """Helper pour cache générique"""
         try:
-            health_status = {
+            if not self.redis:
+                return
+            
+            cache_data = {
+                'data': data,
+                'cached_at': datetime.utcnow().isoformat()
+            }
+            
+            self.redis.setex(key, ttl, json.dumps(cache_data))
+            
+        except Exception as e:
+            print(f"Erreur set cache {key}: {e}")
+    
+    def _get_generic_cache(self, key):
+        """Helper pour récupération cache générique"""
+        try:
+            if not self.redis:
+                return None
+            
+            cached_data = self.redis.get(key)
+            if cached_data:
+                data = json.loads(cached_data)
+                return data.get('data')
+            
+            return None
+            
+        except Exception as e:
+            print(f"Erreur get cache {key}: {e}")
+            return None
+    
+    def _determine_device_type(self, category, device_data):
+        """Déterminer le type d'appareil (méthode existante maintenue)"""
+        category_mapping = {
+            'cz': 'prise_connectee',
+            'kg': 'interrupteur',
+            'sp': 'camera',
+            'wk': 'thermostat',
+            'dlq': 'appareil_generique'
+        }
+        
+        # Détection spéciale pour ATORCH
+        device_name = device_data.get("name", "").lower()
+        
+        if "atorch" in device_name or "energy meter" in device_name:
+            return 'atorch_compteur_energie'
+        elif "gr2pws" in device_data.get("model", ""):
+            return 'atorch_argp2ws'
+        
+        return category_mapping.get(category, 'appareil_generique')
+    
+    # =================== MÉTHODES DE DIAGNOSTIC ===================
+    
+    def get_service_health(self):
+        """Diagnostic complet du service"""
+        try:
+            health = {
                 "service": "DeviceService",
                 "timestamp": datetime.utcnow().isoformat(),
+                "overall_status": "unknown",
                 "components": {}
             }
             
-            # Test Tuya connexion
-            try:
-                tuya_status = self.tuya_client.auto_connect_from_env()
-                health_status["components"]["tuya"] = {
-                    "status": "healthy" if tuya_status else "unhealthy",
-                    "connected": tuya_status
-                }
-            except Exception as e:
-                health_status["components"]["tuya"] = {
-                    "status": "error",
-                    "error": str(e)
+            # Test Redis
+            if self.redis:
+                try:
+                    self.redis.ping()
+                    health["components"]["redis"] = {
+                        "status": "healthy",
+                        "cache_enabled": True
+                    }
+                except Exception as e:
+                    health["components"]["redis"] = {
+                        "status": "error",
+                        "error": str(e)
+                    }
+            else:
+                health["components"]["redis"] = {
+                    "status": "disabled",
+                    "cache_enabled": False
                 }
             
-            # Test Redis
+            # Test Tuya
             try:
-                if self.redis:
-                    self.redis.ping()
-                    cache_stats = self.get_cache_statistics()
-                    health_status["components"]["redis"] = {
-                        "status": "healthy",
-                        "cache_enabled": True,
-                        "total_keys": cache_stats.get("total_keys", 0)
-                    }
-                else:
-                    health_status["components"]["redis"] = {
-                        "status": "disabled",
-                        "cache_enabled": False
-                    }
+                tuya_connected = self.tuya_client.reconnect_if_needed()
+                health["components"]["tuya"] = {
+                    "status": "healthy" if tuya_connected else "error",
+                    "connected": tuya_connected
+                }
             except Exception as e:
-                health_status["components"]["redis"] = {
+                health["components"]["tuya"] = {
                     "status": "error",
                     "error": str(e)
                 }
@@ -1453,25 +1874,25 @@ class DeviceService:
             # Test Database
             try:
                 device_count = Device.query.count()
-                health_status["components"]["database"] = {
+                health["components"]["database"] = {
                     "status": "healthy",
                     "device_count": device_count
                 }
             except Exception as e:
-                health_status["components"]["database"] = {
+                health["components"]["database"] = {
                     "status": "error",
                     "error": str(e)
                 }
             
-            # Statut global
-            all_healthy = all(
-                comp.get("status") in ["healthy", "disabled"] 
-                for comp in health_status["components"].values()
-            )
+            # Déterminer statut global
+            error_components = [c for c in health["components"].values() if c.get("status") == "error"]
             
-            health_status["overall_status"] = "healthy" if all_healthy else "degraded"
+            if error_components:
+                health["overall_status"] = "degraded"
+            else:
+                health["overall_status"] = "healthy"
             
-            return {"success": True, "health": health_status}
+            return {"success": True, "health": health}
             
         except Exception as e:
             return {
@@ -1484,172 +1905,167 @@ class DeviceService:
                 }
             }
     
-    # =================== MÉTHODES UTILITAIRES FINALES ===================
-    
-    def refresh_all_device_statuses(self, use_cache=True):
-        """Forcer la synchronisation de tous les statuts avec cache"""
+    def cleanup_cache(self, cache_type=None):
+        """Nettoyage du cache"""
         try:
-            print("🔄 Synchronisation forcée de tous les statuts...")
+            if not self.redis:
+                return {"success": False, "error": "Redis non disponible"}
             
-            # Invalider cache d'abord si demandé
-            if not use_cache:
-                self._invalidate_all_cache()
-                print("🗑️ Cache invalidé avant synchronisation")
+            if cache_type:
+                # Nettoyage sélectif
+                patterns = {
+                    'device_status': 'device_status:*',
+                    'device_data': 'device_data:*',
+                    'devices_list': 'devices_list_*',
+                    'queries': 'devices_query:*'
+                }
+                
+                pattern = patterns.get(cache_type)
+                if not pattern:
+                    return {"success": False, "error": f"Type de cache inconnu: {cache_type}"}
+                
+                keys = self.redis.keys(pattern)
+                deleted_count = self.redis.delete(*keys) if keys else 0
+                
+                message = f"Cache {cache_type} nettoyé: {deleted_count} clés supprimées"
+            else:
+                # Nettoyage complet
+                deleted_count = self._invalidate_all_cache()
+                message = f"Cache complet nettoyé: {deleted_count} clés supprimées"
             
-            # Utiliser sync_all_devices avec force_refresh
-            result = self.sync_all_devices(use_cache=use_cache, force_refresh=True)
+            return {
+                "success": True,
+                "message": message,
+                "deleted_keys": deleted_count,
+                "timestamp": datetime.utcnow().isoformat()
+            }
             
-            if result.get("success"):
-                stats = result.get("sync_stats", {})
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    def get_cache_statistics(self):
+        """Statistiques détaillées du cache"""
+        try:
+            if not self.redis:
+                return {
+                    "success": False,
+                    "error": "Redis non disponible",
+                    "cache_enabled": False
+                }
+            
+            cache_types = {
+                'device_status': 'device_status:*',
+                'device_data': 'device_data:*',
+                'device_data_windows': 'device_data_window:*',
+                'devices_lists': 'devices_list_*',
+                'query_cache': 'devices_query:*',
+                'generic_cache': 'non_assigned_devices_*',
+                'sync_info': 'last_device_sync'
+            }
+            
+            cache_stats = {}
+            total_keys = 0
+            
+            for cache_type, pattern in cache_types.items():
+                if pattern.endswith('*'):
+                    keys = self.redis.keys(pattern)
+                    count = len(keys)
+                else:
+                    count = 1 if self.redis.exists(pattern) else 0
+                
+                cache_stats[cache_type] = count
+                total_keys += count
+            
+            # Informations détaillées Redis
+            redis_info = self.redis.info('memory')
+            
+            return {
+                "success": True,
+                "cache_enabled": True,
+                "total_keys": total_keys,
+                "keys_by_type": cache_stats,
+                "redis_info": {
+                    "used_memory_human": redis_info.get('used_memory_human'),
+                    "keyspace_hits": redis_info.get('keyspace_hits', 0),
+                    "keyspace_misses": redis_info.get('keyspace_misses', 0)
+                },
+                "ttl_config": self.ttl_config,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    # =================== MÉTHODES LEGACY (COMPATIBILITÉ) ===================
+    
+    def check_device_online_status(self, tuya_device_id):
+        """Méthode legacy - Utilise maintenant get_device_status"""
+        try:
+            status_result = self.get_device_status(tuya_device_id, use_cache=False)
+            
+            if not status_result.get("success"):
+                return status_result
+            
+            device = Device.get_by_tuya_id(tuya_device_id)
+            is_online = status_result.get("is_online", False)
+            
+            return {
+                "success": True,
+                "device_id": tuya_device_id,
+                "is_online": is_online,
+                "changed": True,  # Assume changed for legacy compatibility
+                "checked_at": datetime.utcnow().isoformat(),
+                "enhanced": True  # Flag pour indiquer utilisation nouvelle méthode
+            }
+            
+        except Exception as e:
+            print(f"❌ Erreur vérification legacy: {e}")
+            return {"success": False, "error": str(e)}
+    
+    def force_status_from_list_endpoint(self, tuya_device_id):
+        """Méthode legacy - Force refresh depuis endpoint liste"""
+        try:
+            # Invalider cache d'abord
+            self._invalidate_device_cache(tuya_device_id)
+            
+            # Force refresh depuis Tuya
+            status_result = self.get_device_status(tuya_device_id, use_cache=False)
+            
+            if status_result.get("success"):
+                device = Device.get_by_tuya_id(tuya_device_id)
+                is_online = status_result.get("is_online", False)
                 
                 return {
                     "success": True,
-                    "message": "Statuts synchronisés avec succès",
-                    "stats": stats,
-                    "cache_used": use_cache,
+                    "device_id": tuya_device_id,
+                    "new_status": is_online,
+                    "source": "forced_refresh",
+                    "changed": True,
                     "timestamp": datetime.utcnow().isoformat()
                 }
             else:
-                return result
+                return status_result
                 
         except Exception as e:
-            print(f"❌ Erreur synchronisation statuts: {e}")
+            print(f"❌ Erreur force status: {e}")
             return {"success": False, "error": str(e)}
     
-    def get_assigned_devices(self, utilisateur, refresh_status=False, use_cache=True):
-        """Récupérer les appareils assignés avec cache optimisé"""
+    def refresh_all_device_statuses(self):
+        """Méthode legacy - Utilise sync_all_devices"""
         try:
-            print(f"🔍 Récupération appareils assignés pour utilisateur {utilisateur.id} (cache: {use_cache})")
-            
-            # Utiliser get_all_devices avec paramètres optimisés
-            result = self.get_all_devices(
-                utilisateur=utilisateur,
-                include_non_assignes=False,
-                refresh_status=refresh_status,
-                use_cache=use_cache
-            )
-            
-            if result.get("success"):
-                devices = result.get("devices", [])
-                
-                return {
-                    "success": True,
-                    "count": len(devices),
-                    "devices": devices,
-                    "last_refresh": result.get("last_sync"),
-                    "stats": result.get("stats"),
-                    "client_id": utilisateur.client_id if hasattr(utilisateur, 'client_id') else None,
-                    "cache_used": use_cache,
-                    "cache_efficiency": result.get("cache_efficiency", "N/A")
-                }
-            else:
-                return result
-                
+            return self.sync_all_devices(force_refresh=True)
         except Exception as e:
-            print(f"❌ Erreur récupération appareils assignés: {e}")
-            return {"success": False, "error": str(e)}
-    
-    def check_device_online_status(self, tuya_device_id, use_cache=True):
-        """Vérifier rapidement si un appareil est en ligne avec cache"""
-        try:
-            # ✅ NOUVEAU : Vérifier cache d'abord
-            if use_cache:
-                cached_status = self._get_cached_device_status(tuya_device_id)
-                if cached_status:
-                    cached_at = datetime.fromisoformat(cached_status['cached_at'])
-                    age_seconds = (datetime.utcnow() - cached_at).total_seconds()
-                    
-                    if age_seconds < 45:  # Cache valide 45 secondes
-                        return {
-                            "success": True,
-                            "device_id": tuya_device_id,
-                            "is_online": cached_status['is_online'],
-                            "from_cache": True,
-                            "cache_age": age_seconds,
-                            "checked_at": cached_status['cached_at']
-                        }
-            
-            if not self.tuya_client.reconnect_if_needed():
-                return {"success": False, "error": "Connexion Tuya impossible"}
-            
-            # Récupérer depuis la liste Tuya (source fiable)
-            devices_response = self.tuya_client.get_all_devices_with_details()
-            if not devices_response.get("success"):
-                return {"success": False, "error": "Impossible de récupérer la liste Tuya"}
-            
-            devices = devices_response.get("result", [])
-            device_found = None
-            
-            for device_data in devices:
-                if device_data.get("id") == tuya_device_id:
-                    device_found = device_data
-                    break
-            
-            if not device_found:
-                return {"success": False, "error": "Appareil non trouvé dans Tuya"}
-            
-            is_online = device_found.get("isOnline", False)
-            
-            # ✅ NOUVEAU : Mettre en cache
-            if use_cache:
-                self._cache_device_status(tuya_device_id, {
-                    'is_online': is_online,
-                    'values': {},
-                    'source': 'individual_check'
-                })
-            
-            # Mettre à jour en DB
-            device = Device.get_by_tuya_id(tuya_device_id)
-            if device:
-                old_status = device.en_ligne
-                device.en_ligne = is_online
-                db.session.commit()
-                print(f"📡 {tuya_device_id}: {'🟢 EN LIGNE' if is_online else '🔴 HORS LIGNE'}")
-                
-                return {
-                    "success": True,
-                    "device_id": tuya_device_id,
-                    "is_online": is_online,
-                    "changed": old_status != is_online,
-                    "from_cache": False,
-                    "checked_at": datetime.utcnow().isoformat()
-                }
-            else:
-                return {
-                    "success": True,
-                    "device_id": tuya_device_id,
-                    "is_online": is_online,
-                    "device_in_db": False,
-                    "from_cache": False,
-                    "checked_at": datetime.utcnow().isoformat()
-                }
-            
-        except Exception as e:
-            print(f"❌ Erreur vérification {tuya_device_id}: {e}")
             return {"success": False, "error": str(e)}
     
     def diagnose_tuya_inconsistency(self, tuya_device_id):
-        """Diagnostiquer les incohérences avec cache"""
+        """Diagnostic des incohérences Tuya (maintenu pour compatibilité)"""
         try:
             print(f"🔬 DIAGNOSTIC incohérences Tuya pour {tuya_device_id}")
-            
-            # ✅ NOUVEAU : Inclure info cache
-            cache_info = {}
-            if self.redis:
-                cached_status = self._get_cached_device_status(tuya_device_id)
-                if cached_status:
-                    cache_info = {
-                        "cached_status": cached_status['is_online'],
-                        "cached_at": cached_status['cached_at'],
-                        "cache_source": cached_status.get('source', 'unknown')
-                    }
-                else:
-                    cache_info = {"cached_status": None, "message": "Pas de cache"}
             
             if not self.tuya_client.reconnect_if_needed():
                 return {"success": False, "error": "Connexion impossible"}
             
-            # 1. ENDPOINT LISTE
+            # Test endpoint liste
             devices_response = self.tuya_client.get_all_devices_with_details()
             list_status = None
             if devices_response.get("success"):
@@ -1659,20 +2075,12 @@ class DeviceService:
                         list_status = device_data.get("isOnline")
                         break
             
-            # 2. ENDPOINT INDIVIDUEL
+            # Test endpoint individuel
             individual_response = self.tuya_client.get_device_status(tuya_device_id)
             individual_status = individual_response.get("success", False)
             
-            # 3. DATABASE
-            device = Device.get_by_tuya_id(tuya_device_id)
-            db_status = device.en_ligne if device else None
-            
-            # 4. COMPARAISON
-            statuses = [list_status, individual_status, db_status]
-            if cache_info.get("cached_status") is not None:
-                statuses.append(cache_info["cached_status"])
-            
-            all_consistent = len(set(s for s in statuses if s is not None)) <= 1
+            # Test notre cache
+            cached_status = self._get_cached_device_status(tuya_device_id)
             
             result = {
                 "success": True,
@@ -1683,228 +2091,149 @@ class DeviceService:
                 },
                 "endpoint_individuel": {
                     "status": individual_status,
-                    "source": "/v1.0/iot-03/devices/{id}/status",
-                    "response": individual_response
+                    "source": "/v1.0/iot-03/devices/{id}/status"
                 },
-                "database": {
-                    "status": db_status,
-                    "device_exists": device is not None
+                "cache_status": {
+                    "has_cache": cached_status is not None,
+                    "cached_status": cached_status.get('is_online') if cached_status else None
                 },
-                "cache": cache_info,
-                "consistent": all_consistent,
-                "recommended_source": "endpoint_liste",
-                "all_statuses": {
-                    "list": list_status,
-                    "individual": individual_status,
-                    "database": db_status,
-                    "cache": cache_info.get("cached_status")
-                }
+                "consistent": list_status == individual_status,
+                "recommended_source": "endpoint_liste"
             }
-            
-            print(f"📊 RÉSULTATS:")
-            print(f"   Endpoint liste: {'🟢' if list_status else '🔴'}")
-            print(f"   Endpoint individuel: {'🟢' if individual_status else '🔴'}")
-            print(f"   Database: {'🟢' if db_status else '🔴'}")
-            print(f"   Cache: {'🟢' if cache_info.get('cached_status') else '🔴'}")
-            print(f"   Cohérent: {'✅' if all_consistent else '❌'}")
             
             return result
             
         except Exception as e:
             print(f"❌ Erreur diagnostic: {e}")
             return {"success": False, "error": str(e)}
+
+    # =================== MÉTHODES D'INTÉGRATION FUTURES ===================
     
-    def force_status_from_list_endpoint(self, tuya_device_id):
-        """Forcer le statut depuis l'endpoint liste avec invalidation cache"""
+    def initialize_extensions(self):
+        """Initialiser les extensions d'analyse si disponibles"""
         try:
-            print(f"🔧 Force statut depuis endpoint liste pour {tuya_device_id}")
-            
-            if not self.tuya_client.reconnect_if_needed():
-                return {"success": False, "error": "Connexion impossible"}
-            
-            # Récupérer depuis la liste
-            devices_response = self.tuya_client.get_all_devices_with_details()
-            if not devices_response.get("success"):
-                return {"success": False, "error": "Impossible de récupérer la liste"}
-            
-            devices = devices_response.get("result", [])
-            target_device = None
-            
-            for device_data in devices:
-                if device_data.get("id") == tuya_device_id:
-                    target_device = device_data
-                    break
-            
-            if not target_device:
-                return {"success": False, "error": "Appareil non trouvé dans la liste"}
-            
-            # Mettre à jour en DB avec le statut de la liste
-            db_device = Device.get_by_tuya_id(tuya_device_id)
-            if not db_device:
-                return {"success": False, "error": "Appareil non trouvé en DB"}
-            
-            list_status = target_device.get("isOnline", False)
-            old_status = db_device.en_ligne
-            cache_status = None
-            
-            # ✅ NOUVEAU : Vérifier cache avant modification
-            if self.redis:
-                cached_status = self._get_cached_device_status(tuya_device_id)
-                if cached_status:
-                    cache_status = cached_status['is_online']
-            
-            db_device.en_ligne = list_status
-            db.session.commit()
-            
-            # ✅ NOUVEAU : Invalider cache et mettre à jour
-            if self.redis:
-                self._invalidate_device_cache(tuya_device_id)
-                self._cache_device_status(tuya_device_id, {
-                    'is_online': list_status,
-                    'values': {},
-                    'source': 'forced_from_list'
-                })
-            
-            print(f"✅ Statut forcé depuis endpoint liste:")
-            print(f"   Ancien DB: {'🟢' if old_status else '🔴'}")
-            print(f"   Cache: {'🟢' if cache_status else '🔴'}")
-            print(f"   Nouveau: {'🟢' if list_status else '🔴'}")
-            
-            return {
-                "success": True,
-                "device_id": tuya_device_id,
-                "old_db_status": old_status,
-                "old_cache_status": cache_status,
-                "new_status": list_status,
-                "source": "endpoint_liste",
-                "db_changed": old_status != list_status,
-                "cache_invalidated": True
+            extensions_loaded = {
+                'alert_service': False,
+                'analyseur_triphase': False,
+                'protection_extension': False,
+                'analysis_extension': False
             }
             
-        except Exception as e:
-            print(f"❌ Erreur force statut: {e}")
-            return {"success": False, "error": str(e)}
-    
-    # =================== MÉTHODES DE CONFIGURATION ===================
-    
-    def configure_cache_ttl(self, cache_type, ttl_seconds):
-        """Configurer dynamiquement les TTL du cache"""
-        try:
-            if cache_type not in self.ttl_config:
-                return {"success": False, "error": f"Type de cache invalide: {cache_type}"}
-            
-            old_ttl = self.ttl_config[cache_type]
-            self.ttl_config[cache_type] = ttl_seconds
-            
-            return {
-                "success": True,
-                "message": f"TTL {cache_type} modifié",
-                "old_ttl": old_ttl,
-                "new_ttl": ttl_seconds,
-                "cache_type": cache_type
-            }
-            
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-    
-    def get_performance_metrics(self):
-        """Métriques de performance du service"""
-        try:
-            metrics = {
-                "timestamp": datetime.utcnow().isoformat(),
-                "cache_enabled": self.redis is not None,
-                "ttl_config": self.ttl_config.copy()
-            }
-            
-            if self.redis:
-                # Stats cache
-                cache_stats = self.get_cache_statistics()
-                if cache_stats.get("success"):
-                    metrics["cache_stats"] = cache_stats
-                
-                # Performance Redis
-                redis_info = self.redis.info()
-                metrics["redis_performance"] = {
-                    "total_commands_processed": redis_info.get("total_commands_processed", 0),
-                    "instantaneous_ops_per_sec": redis_info.get("instantaneous_ops_per_sec", 0),
-                    "used_memory_human": redis_info.get("used_memory_human", "unknown"),
-                    "connected_clients": redis_info.get("connected_clients", 0)
-                }
-            
-            # Stats base de données
+            # Tentative de chargement AlertService
             try:
-                db_metrics = {
-                    "total_devices": Device.query.count(),
-                    "online_devices": Device.query.filter_by(en_ligne=True).count(),
-                    "assigned_devices": Device.query.filter_by(statut_assignation='assigne').count(),
-                    "recent_data_count": DeviceData.query.filter(
-                        DeviceData.horodatage >= datetime.utcnow() - timedelta(hours=1)
-                    ).count()
-                }
-                metrics["database_stats"] = db_metrics
-            except Exception as e:
-                metrics["database_error"] = str(e)
+                from app.services.alert_service import AlertService
+                self._alert_service = AlertService(redis_client=self.redis)
+                extensions_loaded['alert_service'] = True
+                print("✅ AlertService initialisé")
+            except ImportError:
+                print("⚠️ AlertService non disponible")
             
-            return {"success": True, "metrics": metrics}
+            # Tentative de chargement AnalyseurTriphase
+            try:
+                from app.services.analyseur_triphase_service import AnalyseurTriphaseService
+                self._analyseur_triphase = AnalyseurTriphaseService(redis_client=self.redis)
+                extensions_loaded['analyseur_triphase'] = True
+                print("✅ AnalyseurTriphaseService initialisé")
+            except ImportError:
+                print("⚠️ AnalyseurTriphaseService non disponible")
+            
+            # Tentative de chargement extensions Protection et Analysis
+            try:
+                from app.services.device_service_protection_extension import DeviceServiceProtectionExtension
+                self._protection_extension = DeviceServiceProtectionExtension(self)
+                extensions_loaded['protection_extension'] = True
+                print("✅ Protection Extension initialisée")
+            except ImportError:
+                print("⚠️ Protection Extension non disponible")
+            
+            try:
+                from app.services.device_service_analysis_extension import DeviceServiceAnalysisExtension
+                self._analysis_extension = DeviceServiceAnalysisExtension(self)
+                extensions_loaded['analysis_extension'] = True
+                print("✅ Analysis Extension initialisée")
+            except ImportError:
+                print("⚠️ Analysis Extension non disponible")
+            
+            return {
+                "success": True,
+                "extensions_loaded": extensions_loaded,
+                "total_loaded": sum(extensions_loaded.values())
+            }
+            
+        except Exception as e:
+            print(f"❌ Erreur initialisation extensions: {e}")
+            return {"success": False, "error": str(e)}
+    
+    def get_extension_status(self):
+        """Statut des extensions chargées"""
+        try:
+            status = {
+                'alert_service': hasattr(self, '_alert_service') and self._alert_service is not None,
+                'analyseur_triphase': hasattr(self, '_analyseur_triphase') and self._analyseur_triphase is not None,
+                'protection_extension': hasattr(self, '_protection_extension') and self._protection_extension is not None,
+                'analysis_extension': hasattr(self, '_analysis_extension') and self._analysis_extension is not None
+            }
+            
+            return {
+                "success": True,
+                "extensions": status,
+                "total_active": sum(status.values()),
+                "enhancement_available": any(status.values())
+            }
             
         except Exception as e:
             return {"success": False, "error": str(e)}
     
-    def export_cache_data(self, device_id=None):
-        """Exporter les données du cache pour analyse"""
+    def enhance_with_analysis(self, device_data, device):
+        """Point d'intégration pour analyse avancée (si extensions disponibles)"""
         try:
-            if not self.redis:
-                return {"success": False, "error": "Redis non disponible"}
-            
-            export_data = {
-                "exported_at": datetime.utcnow().isoformat(),
-                "device_id": device_id,
-                "cache_data": {}
+            results = {
+                'base_analysis': True,
+                'alert_analysis': False,
+                'triphase_analysis': False,
+                'protection_analysis': False,
+                'enhanced_analysis': False
             }
             
-            if device_id:
-                # Export pour un appareil spécifique
-                patterns = [
-                    f"device_status:{device_id}",
-                    f"device_data_window:{device_id}",
-                    f"device_data:{device_id}:*"
-                ]
-            else:
-                # Export global (limité)
-                patterns = [
-                    "device_status:*",
-                    "devices_list_tuya",
-                    "last_device_sync",
-                    "device_statistics"
-                ]
+            # AlertService si disponible
+            if hasattr(self, '_alert_service') and self._alert_service:
+                try:
+                    alert_result = self._alert_service.analyser_et_creer_alertes(device_data, device)
+                    results['alert_analysis'] = alert_result.get('success', False)
+                    results['alertes_creees'] = alert_result.get('nb_alertes', 0)
+                except Exception as e:
+                    print(f"Erreur AlertService: {e}")
             
-            for pattern in patterns:
-                if "*" in pattern:
-                    keys = self.redis.keys(pattern)
-                    # Limiter à 100 clés pour éviter la surcharge
-                    keys = keys[:100] if len(keys) > 100 else keys
-                else:
-                    keys = [pattern] if self.redis.exists(pattern) else []
-                
-                pattern_data = {}
-                for key in keys:
-                    if isinstance(key, bytes):
-                        key = key.decode()
-                    
-                    try:
-                        data = self.redis.get(key)
-                        ttl = self.redis.ttl(key)
-                        
-                        pattern_data[key] = {
-                            "data": json.loads(data) if data else None,
-                            "ttl": ttl
-                        }
-                    except Exception as e:
-                        pattern_data[key] = {"error": str(e)}
-                
-                export_data["cache_data"][pattern] = pattern_data
+            # AnalyseurTriphase si disponible et appareil triphasé
+            if (hasattr(self, '_analyseur_triphase') and self._analyseur_triphase and 
+                device.is_triphase() and device_data.is_triphase()):
+                try:
+                    triphase_result = self._analyseur_triphase.analyser_donnees_sans_creation_alertes(device_data)
+                    results['triphase_analysis'] = triphase_result.get('success', False)
+                    results['anomalies_detectees'] = triphase_result.get('nb_anomalies', 0)
+                except Exception as e:
+                    print(f"Erreur AnalyseurTriphase: {e}")
             
-            return {"success": True, "export": export_data}
+            # Protection Extension si disponible
+            if hasattr(self, '_protection_extension') and self._protection_extension:
+                try:
+                    protection_result = self._protection_extension.enhance_save_device_data_protection(device, device_data)
+                    results['protection_analysis'] = protection_result.get('success', False)
+                except Exception as e:
+                    print(f"Erreur Protection Extension: {e}")
+            
+            # Analysis Extension si disponible
+            if hasattr(self, '_analysis_extension') and self._analysis_extension:
+                try:
+                    analysis_result = self._analysis_extension.enhance_save_device_data(device, {'success': True, 'values': device_data.donnees_brutes or {}})
+                    results['enhanced_analysis'] = analysis_result is not None
+                except Exception as e:
+                    print(f"Erreur Analysis Extension: {e}")
+            
+            return results
             
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            print(f"Erreur enhance_with_analysis: {e}")
+            return {'base_analysis': True, 'error': str(e)}
+
+# =================== FIN DE LA CLASSE DeviceService ===================
