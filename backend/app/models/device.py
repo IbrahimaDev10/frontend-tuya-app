@@ -767,3 +767,129 @@ class Device(db.Model):
         except Exception as e:
             db.session.rollback()
             return False, f"Erreur désassignation: {str(e)}"
+
+
+
+    def peut_etre_vu_par_utilisateur(self, user):
+        """Vérifier si un utilisateur peut voir cet appareil - VERSION AVEC SITE"""
+        if user.is_superadmin():
+            return True
+        
+        # Vérifier que l'appareil appartient au même client
+        if self.client_id != user.client_id:
+            return False
+        
+        # Admin peut voir tous les appareils de son client
+        if user.is_admin():
+            return True
+        
+        # ✅ NOUVEAU : User simple - vérifier accès au site spécifique
+        if user.role == 'user':
+            # User simple doit avoir un site assigné ET l'appareil doit être sur ce site
+            if not user.site_id:
+                return False  # User sans site ne peut rien voir
+            
+            return self.site_id == user.site_id
+        
+        return False
+    
+    def peut_etre_controle_par_utilisateur(self, user):
+        """Vérifier si un utilisateur peut contrôler cet appareil - VERSION AVEC SITE"""
+        if not self.peut_etre_vu_par_utilisateur(user):
+            return False
+        
+        if user.is_superadmin() or user.is_admin():
+            return True
+        
+        # ✅ User simple : peut contrôler si c'est son site
+        if user.role == 'user':
+            return self.site_id == user.site_id and user.site_id is not None
+        
+        return False
+    
+    def peut_etre_configure_par_utilisateur(self, user):
+        """Vérifier si un utilisateur peut configurer cet appareil - VERSION AVEC SITE"""
+        if not self.peut_etre_vu_par_utilisateur(user):
+            return False
+        
+        if user.is_superadmin() or user.is_admin():
+            return True
+        
+        # ✅ User simple : peut configurer si c'est son site (selon vos règles business)
+        if user.role == 'user':
+            # Option A : User peut configurer son site
+            return self.site_id == user.site_id and user.site_id is not None
+            
+            # Option B : User ne peut que voir/contrôler mais pas configurer
+            # return False
+        
+        return False
+    
+    # ✅ NOUVELLE MÉTHODE : Récupérer appareils par site utilisateur
+    @staticmethod
+    def get_appareils_site_utilisateur(user):
+        """Récupérer les appareils accessibles à un utilisateur selon son site"""
+        if user.is_superadmin():
+            # Superadmin voit tout
+            return Device.query.filter_by(statut_assignation='assigne').all()
+        
+        elif user.is_admin():
+            # Admin voit tous les appareils de son client
+            return Device.query.filter_by(
+                client_id=user.client_id,
+                statut_assignation='assigne'
+            ).all()
+        
+        elif user.role == 'user':
+            # ✅ User simple : uniquement son site
+            if not user.site_id:
+                return []  # Pas de site = pas d'appareils
+            
+            return Device.query.filter_by(
+                client_id=user.client_id,
+                site_id=user.site_id,
+                statut_assignation='assigne'
+            ).all()
+        
+        return []
+    
+    # ✅ NOUVELLE MÉTHODE : Compter appareils par site utilisateur
+    @staticmethod
+    def count_appareils_site_utilisateur(user):
+        """Compter les appareils accessibles à un utilisateur"""
+        if user.is_superadmin():
+            return {
+                'total': Device.query.filter_by(statut_assignation='assigne').count(),
+                'en_ligne': Device.query.filter_by(statut_assignation='assigne', en_ligne=True).count(),
+                'hors_ligne': Device.query.filter_by(statut_assignation='assigne', en_ligne=False).count()
+            }
+        
+        elif user.is_admin():
+            total = Device.query.filter_by(client_id=user.client_id, statut_assignation='assigne').count()
+            en_ligne = Device.query.filter_by(client_id=user.client_id, statut_assignation='assigne', en_ligne=True).count()
+            return {
+                'total': total,
+                'en_ligne': en_ligne,
+                'hors_ligne': total - en_ligne
+            }
+        
+        elif user.role == 'user' and user.site_id:
+            total = Device.query.filter_by(
+                client_id=user.client_id,
+                site_id=user.site_id,
+                statut_assignation='assigne'
+            ).count()
+            en_ligne = Device.query.filter_by(
+                client_id=user.client_id,
+                site_id=user.site_id,
+                statut_assignation='assigne',
+                en_ligne=True
+            ).count()
+            return {
+                'total': total,
+                'en_ligne': en_ligne,
+                'hors_ligne': total - en_ligne,
+                'site_id': user.site_id
+            }
+        
+        return {'total': 0, 'en_ligne': 0, 'hors_ligne': 0}

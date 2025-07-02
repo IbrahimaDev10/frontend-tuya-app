@@ -784,6 +784,761 @@ class AlertService:
             self.logger.error(f"Erreur détection anomalie données: {e}")
             return False
     
+
+
+# =================== ANALYSE COMPLÈTE CLIENT ===================
+    # Ajoutez cette méthode à votre classe AlertService
+
+    def analyser_client_complet(self, client_id: str, config: Optional[Dict] = None) -> Dict[str, Any]:
+        """
+        Analyser tous les appareils d'un client en une seule opération
+        
+        Args:
+            client_id: ID du client
+            config: Configuration d'analyse (use_cache, etc.)
+            
+        Returns:
+            Dict avec analyse complète du client
+        """
+        try:
+            config = {**self.default_config, **(config or {})}
+            
+            # Récupérer tous les appareils du client
+            from app.models.device import Device
+            devices = Device.query.filter_by(
+                client_id=client_id,
+                statut_assignation='assigne',
+                actif=True
+            ).all()
+            
+            if not devices:
+                return {
+                    'success': False,
+                    'error': 'Aucun appareil trouvé pour ce client',
+                    'client_id': client_id
+                }
+            
+            # Résultat global
+            analyse_globale = {
+                'success': True,
+                'client_id': client_id,
+                'timestamp': datetime.utcnow().isoformat(),
+                'total_appareils': len(devices),
+                'appareils_analyses': 0,
+                'appareils_en_ligne': 0,
+                'appareils_hors_ligne': 0,
+                'total_alertes_creees': 0,
+                'alertes_critiques': 0,
+                'appareils_avec_problemes': 0,
+                'recommendations_globales': [],
+                'analyses_par_appareil': {},
+                'resume_par_type_systeme': {
+                    'monophase': {'count': 0, 'alertes': 0},
+                    'triphase': {'count': 0, 'alertes': 0}
+                },
+                'top_problemes': {},
+                'cache_used': config['use_cache']
+            }
+            
+            self.logger.info(f"🔍 Analyse complète client {client_id}: {len(devices)} appareils")
+            
+            # Analyser chaque appareil
+            for device in devices:
+                try:
+                    # Compter par type de système
+                    type_systeme = device.type_systeme or 'monophase'
+                    analyse_globale['resume_par_type_systeme'][type_systeme]['count'] += 1
+                    
+                    # Vérifier statut en ligne
+                    if device.en_ligne:
+                        analyse_globale['appareils_en_ligne'] += 1
+                    else:
+                        analyse_globale['appareils_hors_ligne'] += 1
+                        # Ajouter recommandation pour appareil hors ligne
+                        analyse_globale['recommendations_globales'].append({
+                            'type': 'connectivity',
+                            'appareil': device.nom_appareil,
+                            'message': f'Appareil {device.nom_appareil} hors ligne',
+                            'priority': 'medium'
+                        })
+                        continue
+                    
+                    # Récupérer dernière donnée
+                    from app.models.device_data import DeviceData
+                    derniere_donnee = DeviceData.query.filter_by(
+                        appareil_id=device.id
+                    ).order_by(DeviceData.horodatage.desc()).first()
+                    
+                    if not derniere_donnee:
+                        self.logger.warning(f"Aucune donnée pour appareil {device.id}")
+                        continue
+                    
+                    # Analyser avec AlertService
+                    analyse_appareil = self.analyser_et_creer_alertes(
+                        derniere_donnee, device, config
+                    )
+                    
+                    if analyse_appareil.get('success', True):
+                        analyse_globale['appareils_analyses'] += 1
+                        
+                        # Comptabiliser alertes
+                        nb_alertes = analyse_appareil.get('nb_alertes', 0)
+                        nb_critiques = analyse_appareil.get('nb_alertes_critiques', 0)
+                        
+                        analyse_globale['total_alertes_creees'] += nb_alertes
+                        analyse_globale['alertes_critiques'] += nb_critiques
+                        analyse_globale['resume_par_type_systeme'][type_systeme]['alertes'] += nb_alertes
+                        
+                        if nb_alertes > 0:
+                            analyse_globale['appareils_avec_problemes'] += 1
+                        
+                        # Stocker analyse individuelle
+                        analyse_globale['analyses_par_appareil'][device.id] = {
+                            'nom_appareil': device.nom_appareil,
+                            'type_systeme': type_systeme,
+                            'nb_alertes': nb_alertes,
+                            'nb_critiques': nb_critiques,
+                            'analyse_complete': analyse_appareil,
+                            'recommendations': self._generer_recommendations_appareil(device, analyse_appareil)
+                        }
+                        
+                        # Collecter types de problèmes pour statistiques
+                        for alerte_data in analyse_appareil.get('alertes_creees', []):
+                            type_alerte = alerte_data.get('type_alerte', 'unknown')
+                            if type_alerte not in analyse_globale['top_problemes']:
+                                analyse_globale['top_problemes'][type_alerte] = 0
+                            analyse_globale['top_problemes'][type_alerte] += 1
+                    
+                except Exception as e:
+                    self.logger.error(f"Erreur analyse appareil {device.id}: {e}")
+                    continue
+            
+            # Générer recommandations globales
+            analyse_globale['recommendations_globales'].extend(
+                self._generer_recommendations_globales_client(analyse_globale)
+            )
+            
+            # Trier top problèmes
+            analyse_globale['top_problemes'] = dict(
+                sorted(analyse_globale['top_problemes'].items(), 
+                      key=lambda x: x[1], reverse=True)
+            )
+            
+            # Calculs de santé globale
+            analyse_globale['sante_globale'] = self._calculer_sante_globale_client(analyse_globale)
+            
+            self.logger.info(f"✅ Analyse client terminée: {analyse_globale['appareils_analyses']} appareils analysés, {analyse_globale['total_alertes_creees']} alertes créées")
+            
+            return analyse_globale
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erreur analyse complète client {client_id}: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'client_id': client_id,
+                'timestamp': datetime.utcnow().isoformat()
+            }
+    
+    def _generer_recommendations_appareil(self, device, analyse_result: Dict) -> List[Dict]:
+        """Générer des recommandations spécifiques à un appareil"""
+        recommendations = []
+        
+        try:
+            nb_alertes = analyse_result.get('nb_alertes', 0)
+            nb_critiques = analyse_result.get('nb_alertes_critiques', 0)
+            
+            # Recommandations basées sur le nombre d'alertes
+            if nb_critiques > 0:
+                recommendations.append({
+                    'type': 'urgent',
+                    'message': f'Intervention urgente requise - {nb_critiques} alerte(s) critique(s)',
+                    'priority': 'high',
+                    'action': 'Vérifier immédiatement l\'installation'
+                })
+            
+            elif nb_alertes > 3:
+                recommendations.append({
+                    'type': 'maintenance',
+                    'message': f'Maintenance préventive recommandée - {nb_alertes} alerte(s) détectée(s)',
+                    'priority': 'medium',
+                    'action': 'Planifier une inspection'
+                })
+            
+            # Recommandations spécifiques au type de système
+            if device.is_triphase():
+                recommendations.append({
+                    'type': 'monitoring',
+                    'message': 'Surveillance continue recommandée pour système triphasé',
+                    'priority': 'low',
+                    'action': 'Configurer alertes déséquilibre'
+                })
+            
+            # Recommandations protection
+            if not device.protection_automatique_active:
+                recommendations.append({
+                    'type': 'security',
+                    'message': 'Protection automatique non activée',
+                    'priority': 'medium',
+                    'action': 'Configurer la protection automatique'
+                })
+            
+            return recommendations
+            
+        except Exception as e:
+            self.logger.error(f"Erreur génération recommandations appareil: {e}")
+            return []
+    
+    def _generer_recommendations_globales_client(self, analyse_globale: Dict) -> List[Dict]:
+        """Générer des recommandations globales pour le client"""
+        recommendations = []
+        
+        try:
+            total_appareils = analyse_globale['total_appareils']
+            appareils_problemes = analyse_globale['appareils_avec_problemes']
+            hors_ligne = analyse_globale['appareils_hors_ligne']
+            
+            # Pourcentage d'appareils avec problèmes
+            if total_appareils > 0:
+                pct_problemes = (appareils_problemes / total_appareils) * 100
+                pct_hors_ligne = (hors_ligne / total_appareils) * 100
+                
+                if pct_problemes > 30:
+                    recommendations.append({
+                        'type': 'infrastructure',
+                        'message': f'{pct_problemes:.1f}% des appareils ont des problèmes',
+                        'priority': 'high',
+                        'action': 'Audit complet de l\'installation électrique recommandé'
+                    })
+                
+                if pct_hors_ligne > 20:
+                    recommendations.append({
+                        'type': 'connectivity',
+                        'message': f'{pct_hors_ligne:.1f}% des appareils sont hors ligne',
+                        'priority': 'medium',
+                        'action': 'Vérifier la connectivité réseau et WiFi'
+                    })
+                
+                # Recommandations sur les types de problèmes
+                top_problemes = analyse_globale.get('top_problemes', {})
+                if 'desequilibre_tension' in top_problemes and top_problemes['desequilibre_tension'] > 1:
+                    recommendations.append({
+                        'type': 'electrical',
+                        'message': 'Déséquilibres de tension détectés sur plusieurs appareils',
+                        'priority': 'high',
+                        'action': 'Faire appel à un électricien pour vérifier la répartition des phases'
+                    })
+            
+            return recommendations
+            
+        except Exception as e:
+            self.logger.error(f"Erreur génération recommandations globales: {e}")
+            return []
+    
+    def _calculer_sante_globale_client(self, analyse_globale: Dict) -> Dict[str, Any]:
+        """Calculer un score de santé globale pour le client"""
+        try:
+            total = analyse_globale['total_appareils']
+            if total == 0:
+                return {'score': 0, 'status': 'unknown'}
+            
+            # Facteurs de calcul
+            en_ligne = analyse_globale['appareils_en_ligne']
+            avec_problemes = analyse_globale['appareils_avec_problemes']
+            critiques = analyse_globale['alertes_critiques']
+            
+            # Score base sur disponibilité (0-40 points)
+            score_disponibilite = (en_ligne / total) * 40
+            
+            # Score basé sur absence de problèmes (0-40 points)
+            appareils_sains = total - avec_problemes
+            score_sante = (appareils_sains / total) * 40
+            
+            # Pénalité pour alertes critiques (0-20 points perdus)
+            penalite_critique = min(critiques * 5, 20)
+            
+            # Score final
+            score_final = max(0, score_disponibilite + score_sante - penalite_critique)
+            
+            # Déterminer statut
+            if score_final >= 80:
+                status = 'excellent'
+            elif score_final >= 60:
+                status = 'good'
+            elif score_final >= 40:
+                status = 'warning'
+            else:
+                status = 'critical'
+            
+            return {
+                'score': round(score_final, 1),
+                'status': status,
+                'details': {
+                    'disponibilite': round(score_disponibilite, 1),
+                    'sante': round(score_sante, 1),
+                    'penalite_critique': round(penalite_critique, 1)
+                }
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Erreur calcul santé globale: {e}")
+            return {'score': 0, 'status': 'error'}
+
+
+
+    # =================== MÉTHODES MANQUANTES POUR ALERT SERVICE ===================
+    # Ajoutez ces méthodes à la fin de votre classe AlertService
+
+    def get_alertes_recentes(self, device_id: str, hours_back: int = 24, limit: int = 50, heures: int = None) -> Dict[str, Any]:
+        """
+        Récupérer les alertes récentes pour un appareil
+        
+        Args:
+            device_id: ID de l'appareil
+            hours_back: Nombre d'heures à regarder en arrière (défaut: 24h) - nom pour compatibilité
+            heures: Alias pour hours_back (pour rétrocompatibilité)
+            limit: Nombre maximum d'alertes à retourner (défaut: 50)
+            
+        Returns:
+            Dict avec les alertes récentes
+        """
+        try:
+            # Gérer les deux noms de paramètres pour compatibilité
+            heures_actual = heures if heures is not None else hours_back
+            
+            # Vérifier cache d'abord
+            cache_key = f"{self.redis_prefix}recent_alerts:{device_id}:{heures_actual}h"
+            
+            if self.redis:
+                cached_alerts = self.redis.get(cache_key)
+                if cached_alerts:
+                    self.logger.debug(f"📦 Alertes récentes depuis cache pour device {device_id}")
+                    return json.loads(cached_alerts)
+            
+            # Calculer la date de début
+            start_time = datetime.utcnow() - timedelta(hours=heures_actual)
+            
+            # Récupérer depuis la base de données
+            alertes = Alert.query.filter(
+                Alert.appareil_id == device_id,
+                Alert.date_creation >= start_time
+            ).order_by(Alert.date_creation.desc()).limit(limit).all()
+            
+            # Sérialiser les alertes avec détails
+            alertes_data = []
+            for alerte in alertes:
+                # Utiliser la méthode to_dict du modèle avec détails
+                alert_dict = alerte.to_dict(include_details=True)
+                alertes_data.append(alert_dict)
+            
+            # Statistiques
+            total_alertes = len(alertes_data)
+            alertes_critiques = len([a for a in alertes_data if a.get('gravite') == 'critique'])
+            alertes_warnings = len([a for a in alertes_data if a.get('gravite') == 'warning'])
+            alertes_info = len([a for a in alertes_data if a.get('gravite') == 'info'])
+            alertes_triphase = len([a for a in alertes_data if a.get('is_alerte_triphase')])
+            
+            result = {
+                'success': True,
+                'device_id': device_id,
+                'period_hours': heures_actual,
+                'total_alertes': total_alertes,
+                'alertes_par_gravite': {
+                    'critique': alertes_critiques,
+                    'warning': alertes_warnings,
+                    'info': alertes_info
+                },
+                'alertes_par_type': {
+                    'monophase': total_alertes - alertes_triphase,
+                    'triphase': alertes_triphase
+                },
+                'alertes': alertes_data,
+                'period': {
+                    'start': start_time.isoformat(),
+                    'end': datetime.utcnow().isoformat()
+                },
+                'retrieved_at': datetime.utcnow().isoformat()
+            }
+            
+            # Mettre en cache (5 minutes)
+            if self.redis:
+                self.redis.setex(cache_key, 300, json.dumps(result))
+            
+            self.logger.debug(f"✅ {total_alertes} alertes récentes récupérées pour device {device_id}")
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erreur récupération alertes récentes device {device_id}: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'device_id': device_id,
+                'retrieved_at': datetime.utcnow().isoformat()
+            }
+
+    def get_alertes_non_resolues(self, device_id: str, limit: int = 20) -> Dict[str, Any]:
+        """
+        Récupérer les alertes non résolues pour un appareil
+        """
+        try:
+            # Récupérer alertes avec statut 'nouvelle' ou 'vue'
+            alertes = Alert.query.filter(
+                Alert.appareil_id == device_id,
+                Alert.statut.in_(['nouvelle', 'vue'])
+            ).order_by(Alert.priorite.desc(), Alert.date_creation.desc()).limit(limit).all()
+            
+            # Sérialiser avec détails
+            alertes_data = []
+            for alerte in alertes:
+                alert_dict = alerte.to_dict(include_details=True)
+                alertes_data.append(alert_dict)
+            
+            # Compter par priorité en utilisant les valeurs directes des alertes
+            priorites = {
+                'urgent': len([a for a in alertes if a.priorite >= 8]),
+                'elevee': len([a for a in alertes if 5 <= a.priorite < 8]),
+                'normale': len([a for a in alertes if a.priorite < 5])
+            }
+            
+            return {
+                'success': True,
+                'device_id': device_id,
+                'total_non_resolues': len(alertes_data),
+                'priorites': priorites,
+                'alertes': alertes_data,
+                'retrieved_at': datetime.utcnow().isoformat()
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erreur alertes non résolues device {device_id}: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'device_id': device_id
+            }
+
+    def get_statistiques_alertes(self, device_id: str, jours: int = 7) -> Dict[str, Any]:
+        """
+        Récupérer les statistiques d'alertes pour un appareil
+        """
+        try:
+            start_date = datetime.utcnow() - timedelta(days=jours)
+            
+            # Récupérer toutes les alertes de la période
+            alertes = Alert.query.filter(
+                Alert.appareil_id == device_id,
+                Alert.date_creation >= start_date
+            ).all()
+            
+            # Statistiques détaillées
+            stats = {
+                'total': len(alertes),
+                'par_gravite': {'info': 0, 'warning': 0, 'critique': 0},
+                'par_type_systeme': {'monophase': 0, 'triphase': 0},
+                'par_statut': {'nouvelle': 0, 'vue': 0, 'resolue': 0},
+                'par_priorite': {'urgent': 0, 'elevee': 0, 'normale': 0},
+                'types_plus_frequents': {},
+                'alertes_triphase_specifiques': 0,
+                'phases_les_plus_problematiques': {'L1': 0, 'L2': 0, 'L3': 0}
+            }
+            
+            for alerte in alertes:
+                # Par gravité
+                stats['par_gravite'][alerte.gravite] += 1
+                
+                # Par type de système
+                stats['par_type_systeme'][alerte.type_systeme] += 1
+                
+                # Par statut
+                stats['par_statut'][alerte.statut] += 1
+                
+                # Par priorité
+                if alerte.priorite >= 8:
+                    stats['par_priorite']['urgent'] += 1
+                elif alerte.priorite >= 5:
+                    stats['par_priorite']['elevee'] += 1
+                else:
+                    stats['par_priorite']['normale'] += 1
+                
+                # Types les plus fréquents
+                if alerte.type_alerte not in stats['types_plus_frequents']:
+                    stats['types_plus_frequents'][alerte.type_alerte] = 0
+                stats['types_plus_frequents'][alerte.type_alerte] += 1
+                
+                # Alertes spécifiques triphasé
+                if alerte.is_alerte_triphase():
+                    stats['alertes_triphase_specifiques'] += 1
+                
+                # Phases problématiques
+                if alerte.phase_concernee and alerte.phase_concernee in ['L1', 'L2', 'L3']:
+                    stats['phases_les_plus_problematiques'][alerte.phase_concernee] += 1
+            
+            # Trier les types par fréquence
+            stats['types_plus_frequents'] = dict(
+                sorted(stats['types_plus_frequents'].items(), 
+                      key=lambda x: x[1], reverse=True)
+            )
+            
+            return {
+                'success': True,
+                'device_id': device_id,
+                'period_days': jours,
+                'period': {
+                    'start': start_date.isoformat(),
+                    'end': datetime.utcnow().isoformat()
+                },
+                'stats': stats,
+                'generated_at': datetime.utcnow().isoformat()
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erreur stats alertes device {device_id}: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'device_id': device_id
+            }
+
+    def resoudre_alerte(self, alerte_id: str, utilisateur_id: str = None, commentaire: str = None) -> Dict[str, Any]:
+        """
+        Marquer une alerte comme résolue
+        """
+        try:
+            alerte = Alert.query.get(alerte_id)
+            if not alerte:
+                return {
+                    'success': False,
+                    'error': 'Alerte non trouvée',
+                    'alerte_id': alerte_id
+                }
+            
+            if alerte.statut == 'resolue':
+                return {
+                    'success': False,
+                    'error': 'Alerte déjà résolue',
+                    'alerte_id': alerte_id
+                }
+            
+            # Utiliser la méthode resolve du modèle
+            ancien_statut = alerte.statut
+            alerte.resolve(user_id=utilisateur_id)
+            
+            # Invalider cache des alertes récentes
+            if self.redis:
+                pattern = f"{self.redis_prefix}recent_alerts:{alerte.appareil_id}:*"
+                keys = self.redis.keys(pattern)
+                if keys:
+                    self.redis.delete(*keys)
+            
+            self.logger.info(f"✅ Alerte {alerte_id} marquée comme résolue")
+            
+            return {
+                'success': True,
+                'alerte_id': alerte_id,
+                'device_id': alerte.appareil_id,
+                'ancien_statut': ancien_statut,
+                'nouveau_statut': 'resolue',
+                'resolu_par': utilisateur_id,
+                'date_resolution': alerte.date_resolution.isoformat(),
+                'commentaire': commentaire
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erreur résolution alerte {alerte_id}: {e}")
+            db.session.rollback()
+            return {
+                'success': False,
+                'error': str(e),
+                'alerte_id': alerte_id
+            }
+
+    def marquer_alerte_vue(self, alerte_id: str, utilisateur_id: str = None) -> Dict[str, Any]:
+        """
+        Marquer une alerte comme vue
+        """
+        try:
+            alerte = Alert.query.get(alerte_id)
+            if not alerte:
+                return {
+                    'success': False,
+                    'error': 'Alerte non trouvée',
+                    'alerte_id': alerte_id
+                }
+            
+            if alerte.statut != 'nouvelle':
+                return {
+                    'success': False,
+                    'error': f'Alerte déjà {alerte.statut}',
+                    'alerte_id': alerte_id,
+                    'current_status': alerte.statut
+                }
+            
+            # Utiliser la méthode mark_as_seen du modèle
+            ancien_statut = alerte.statut
+            alerte.mark_as_seen()
+            
+            self.logger.debug(f"✅ Alerte {alerte_id} marquée comme vue")
+            
+            return {
+                'success': True,
+                'alerte_id': alerte_id,
+                'device_id': alerte.appareil_id,
+                'ancien_statut': ancien_statut,
+                'nouveau_statut': 'vue',
+                'vue_par': utilisateur_id,
+                'date_vue': datetime.utcnow().isoformat()
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erreur marquage vue alerte {alerte_id}: {e}")
+            db.session.rollback()
+            return {
+                'success': False,
+                'error': str(e),
+                'alerte_id': alerte_id
+            }
+
+    def get_alertes_par_device_batch(self, device_ids: List[str], heures: int = 24) -> Dict[str, Any]:
+        """
+        Récupérer les alertes pour plusieurs appareils en batch
+        """
+        try:
+            if not device_ids:
+                return {
+                    'success': False,
+                    'error': 'Liste d\'IDs d\'appareils requise'
+                }
+            
+            start_time = datetime.utcnow() - timedelta(hours=heures)
+            
+            # Récupérer toutes les alertes en une seule requête
+            alertes = Alert.query.filter(
+                Alert.appareil_id.in_(device_ids),
+                Alert.date_creation >= start_time
+            ).order_by(Alert.date_creation.desc()).all()
+            
+            # Grouper par appareil
+            alertes_par_device = {}
+            total_alertes = 0
+            total_critiques = 0
+            total_triphase = 0
+            
+            for device_id in device_ids:
+                device_alertes = [alerte for alerte in alertes if alerte.appareil_id == device_id]
+                device_alertes_data = [alerte.to_dict(include_details=True) for alerte in device_alertes]
+                
+                critiques_count = len([a for a in device_alertes if a.gravite == 'critique'])
+                warnings_count = len([a for a in device_alertes if a.gravite == 'warning'])
+                triphase_count = len([a for a in device_alertes if a.is_alerte_triphase()])
+                
+                alertes_par_device[device_id] = {
+                    'device_id': device_id,
+                    'total_alertes': len(device_alertes_data),
+                    'alertes_critiques': critiques_count,
+                    'alertes_warnings': warnings_count,
+                    'alertes_triphase': triphase_count,
+                    'alertes': device_alertes_data
+                }
+                
+                total_alertes += len(device_alertes_data)
+                total_critiques += critiques_count
+                total_triphase += triphase_count
+            
+            return {
+                'success': True,
+                'period_hours': heures,
+                'devices_count': len(device_ids),
+                'total_alertes': total_alertes,
+                'total_critiques': total_critiques,
+                'total_triphase': total_triphase,
+                'alertes_par_device': alertes_par_device,
+                'period': {
+                    'start': start_time.isoformat(),
+                    'end': datetime.utcnow().isoformat()
+                },
+                'retrieved_at': datetime.utcnow().isoformat()
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erreur alertes batch: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'devices_requested': len(device_ids) if device_ids else 0
+            }
+
+    def get_alertes_actives_pour_device(self, device_id: str) -> Dict[str, Any]:
+        """
+        Récupérer les alertes actives pour un appareil (utilise la méthode du modèle)
+        """
+        try:
+            # Utiliser la méthode de classe existante
+            alertes_actives = Alert.get_alertes_actives(appareil_id=device_id)
+            
+            # Sérialiser
+            alertes_data = [alerte.to_dict(include_details=True) for alerte in alertes_actives]
+            
+            # Compter par priorité
+            priorites = {
+                'urgent': len([a for a in alertes_actives if a.priorite >= 8]),
+                'elevee': len([a for a in alertes_actives if 5 <= a.priorite < 8]),
+                'normale': len([a for a in alertes_actives if a.priorite < 5])
+            }
+            
+            return {
+                'success': True,
+                'device_id': device_id,
+                'total_actives': len(alertes_data),
+                'priorites': priorites,
+                'alertes': alertes_data,
+                'retrieved_at': datetime.utcnow().isoformat()
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erreur alertes actives device {device_id}: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'device_id': device_id
+            }
+
+    def get_alertes_critiques_recentes(self, device_id: str = None, heures: int = 24) -> Dict[str, Any]:
+        """
+        Récupérer les alertes critiques récentes
+        """
+        try:
+            # Utiliser la méthode de classe existante
+            alertes_critiques = Alert.get_alertes_critiques(hours_back=heures)
+            
+            # Filtrer par device si spécifié
+            if device_id:
+                alertes_critiques = [a for a in alertes_critiques if a.appareil_id == device_id]
+            
+            # Sérialiser
+            alertes_data = [alerte.to_dict(include_details=True) for alerte in alertes_critiques]
+            
+            return {
+                'success': True,
+                'device_id': device_id,
+                'period_hours': heures,
+                'total_critiques': len(alertes_data),
+                'alertes': alertes_data,
+                'period': {
+                    'start': (datetime.utcnow() - timedelta(hours=heures)).isoformat(),
+                    'end': datetime.utcnow().isoformat()
+                },
+                'retrieved_at': datetime.utcnow().isoformat()
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erreur alertes critiques: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'device_id': device_id
+            }
+
+
     # =================== GESTION CACHE REDIS ===================
     
     def _get_cached_analysis(self, cache_key: str) -> Optional[Dict]:

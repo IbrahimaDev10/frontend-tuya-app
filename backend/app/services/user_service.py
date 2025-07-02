@@ -243,7 +243,7 @@ class UserService:
             return False, f"Erreur lors de la suppression: {str(e)}"
     
     def reactiver_client(self, client_id: str, utilisateur_reactivateur: User) -> Tuple[bool, str]:
-        """Réactiver un client désactivé"""
+        """Réactiver un client désactivé ET ses utilisateurs"""
         try:
             if not utilisateur_reactivateur.is_superadmin():
                 return False, "Seul le superadmin peut réactiver des clients"
@@ -252,14 +252,49 @@ class UserService:
             if not client:
                 return False, "Client non trouvé ou déjà actif"
             
-            # Réactiver le client
+            print(f"🔄 Réactivation client {client.nom_entreprise}...")
+            
+            # ✅ 1. RÉACTIVER LE CLIENT
             client.actif = True
             
+            # ✅ 2. RÉACTIVER TOUS LES UTILISATEURS DU CLIENT
+            utilisateurs_inactifs = User.query.filter_by(
+                client_id=client_id, 
+                actif=False
+            ).all()
+            
+            utilisateurs_reactives = []
+            for utilisateur in utilisateurs_inactifs:
+                # ✅ Sécurité : Ne pas réactiver d'autres superadmins
+                if not utilisateur.is_superadmin():
+                    utilisateur.actif = True
+                    utilisateurs_reactives.append(utilisateur.nom_complet)
+                    print(f"👤 Utilisateur {utilisateur.nom_complet} réactivé")
+                else:
+                    print(f"⚠️ Superadmin {utilisateur.nom_complet} ignoré (sécurité)")
+            
+            # ✅ 3. NETTOYER LES CACHES LIÉS (optionnel)
+            self._cleanup_client_activation_caches(client_id)
+            
             db.session.commit()
-            return True, f"Client {client.nom_entreprise} réactivé (utilisateurs gardent leur état actuel)"
+            
+            # Message de confirmation détaillé
+            if utilisateurs_reactives:
+                message = (
+                    f"Client {client.nom_entreprise} réactivé avec succès. "
+                    f"{len(utilisateurs_reactives)} utilisateurs réactivés: "
+                    f"{', '.join(utilisateurs_reactives[:3])}"
+                    f"{'...' if len(utilisateurs_reactives) > 3 else ''}"
+                )
+            else:
+                message = f"Client {client.nom_entreprise} réactivé (aucun utilisateur inactif trouvé)"
+            
+            print(f"✅ {message}")
+            return True, message
             
         except Exception as e:
             db.session.rollback()
+            print(f"❌ Erreur réactivation client: {e}")
             return False, f"Erreur lors de la réactivation: {str(e)}"
     
     # =================== NOUVELLES MÉTHODES POUR L'ACTIVATION AVEC REDIS ===================
@@ -532,7 +567,7 @@ class UserService:
     # =================== GESTION DES UTILISATEURS ===================
     
     def creer_utilisateur(self, donnees_utilisateur: Dict[str, Any], utilisateur_createur: User) -> Tuple[Optional[Dict], Optional[str]]:
-        """Créer un nouvel utilisateur selon les règles de permissions avec activation par email"""
+        """Créer un nouvel utilisateur avec support site_id"""
         try:
             # Validation des données de base
             if not self._valider_donnees_utilisateur(donnees_utilisateur):
@@ -546,23 +581,34 @@ class UserService:
             # Déterminer le rôle et client_id selon les permissions
             role = donnees_utilisateur.get('role', 'user')
             client_id = donnees_utilisateur.get('client_id')
+            site_id = donnees_utilisateur.get('site_id')  # ✅ NOUVEAU
             
-            # RÈGLES DE PERMISSIONS
+            # RÈGLES DE PERMISSIONS (inchangées)
             if utilisateur_createur.is_superadmin():
-                # SUPERADMIN peut créer n'importe qui, n'importe où
                 if role == 'superadmin':
                     client_id = None
                 elif role in ['admin', 'user'] and not client_id:
                     return None, "client_id requis pour les admin/user"
             
             elif utilisateur_createur.is_admin():
-                # ADMIN peut créer seulement des USERS dans SON client
                 if role != 'user':
                     return None, "Un admin ne peut créer que des utilisateurs 'user'"
                 client_id = utilisateur_createur.client_id
             
             else:
                 return None, "Permission insuffisante pour créer des utilisateurs"
+            
+            # ✅ NOUVEAU : Validation site_id
+            site = None
+            if site_id:
+                from app.models.site import Site
+                site = Site.query.get(site_id)
+                if not site or not site.actif:
+                    return None, "Site non trouvé ou inactif"
+                
+                # Vérifier que le site appartient au bon client
+                if client_id and site.client_id != client_id:
+                    return None, "Le site ne correspond pas au client"
             
             # Vérifier que le client existe si spécifié
             client = None
@@ -571,7 +617,7 @@ class UserService:
                 if not client or not client.actif:
                     return None, "Client non trouvé ou inactif"
             
-            # 👤 ÉTAPE 1: Créer l'utilisateur INACTIF
+            # 👤 CRÉER L'UTILISATEUR avec site_id
             nouvel_utilisateur = User(
                 prenom=donnees_utilisateur['prenom'].strip(),
                 nom=donnees_utilisateur['nom'].strip(),
@@ -579,34 +625,21 @@ class UserService:
                 telephone=donnees_utilisateur.get('telephone', '').strip() or None,
                 role=role,
                 client_id=client_id,
-                actif=False  # Créer inactif, sera activé lors de l'activation
+                site_id=site_id,  # ✅ NOUVEAU : Assigner le site
+                actif=False
             )
             
-            # Créer avec un mot de passe temporaire (sera remplacé lors de l'activation)
+            # Mot de passe temporaire
             nouvel_utilisateur.set_password("temp_password_will_be_replaced")
             
             db.session.add(nouvel_utilisateur)
-            db.session.flush()  # Pour obtenir l'ID de l'utilisateur
+            db.session.flush()
             
-            # ✅ NOUVEAU : Générer token d'activation avec Redis
-            print(f"🔍 Génération token pour utilisateur:")
-            print(f"   - ID: {nouvel_utilisateur.id}")
-            print(f"   - Email: {nouvel_utilisateur.email}")
-            print(f"   - Prénom: {nouvel_utilisateur.prenom}")
-            print(f"   - Nom: {nouvel_utilisateur.nom}")
-            print(f"   - Rôle: {nouvel_utilisateur.role}")
-
-            # Générer le token d'activation selon le type d'utilisateur
-            token = self._generate_activation_token(nouvel_utilisateur.id, nouvel_utilisateur.email, role, 86400)  # 24h
-            print(f"🎫 Token généré: {token}")
-
-            # Vérifier que le token est bien enregistré
-            validation = self._validate_activation_token(token)
-            print(f"✅ Validation immédiate du token: {validation}")
+            # Génération token et envoi email (inchangé)
+            token = self._generate_activation_token(nouvel_utilisateur.id, nouvel_utilisateur.email, role, 86400)
             
-            # Envoyer l'email d'activation selon le rôle
+            # ✅ ENRICHIR l'email avec info site
             if role == 'admin':
-                # Email pour admin client
                 email_result = MailService.send_admin_activation_email(
                     user_email=nouvel_utilisateur.email,
                     prenom=nouvel_utilisateur.prenom,
@@ -616,7 +649,6 @@ class UserService:
                     expires_hours=24
                 )
             elif role == 'superadmin':
-                # Email pour superadmin
                 email_result = MailService.send_superadmin_activation_email(
                     user_email=nouvel_utilisateur.email,
                     prenom=nouvel_utilisateur.prenom,
@@ -625,32 +657,32 @@ class UserService:
                     expires_hours=24
                 )
             else:
-                # Email pour utilisateur standard
+                # ✅ User simple - ajouter info site dans l'email
                 email_result = MailService.send_user_activation_email(
                     user_email=nouvel_utilisateur.email,
                     prenom=nouvel_utilisateur.prenom,
                     nom=nouvel_utilisateur.nom,
                     client_name=client.nom_entreprise if client else "Système",
+                    site_name=site.nom_site if site else None,  # ✅ NOUVEAU
                     activation_token=token,
                     expires_hours=24
                 )
-
-            print(f"📧 Résultat envoi email: {email_result}")
             
             db.session.commit()
             
-            # 🎉 Préparer le résultat
+            # ✅ ENRICHIR le résultat avec info site
             resultat = {
                 'utilisateur': nouvel_utilisateur.to_dict(),
-                'utilisateur_objet': nouvel_utilisateur,  # Objet complet pour éviter les erreurs
-                'token_activation': token,  # Pour debug/test seulement
+                'utilisateur_objet': nouvel_utilisateur,
+                'token_activation': token,
                 'email_result': email_result,
                 'identifiants_connexion': {
                     'email': nouvel_utilisateur.email,
                     'status': 'En attente d\'activation'
                 },
                 'message_instructions': f"Un email d'activation a été envoyé à {nouvel_utilisateur.email}",
-                'client_info': client.to_dict() if client else None
+                'client_info': client.to_dict() if client else None,
+                'site_info': site.to_dict() if site else None  # ✅ NOUVEAU
             }
             
             return resultat, None
@@ -658,7 +690,8 @@ class UserService:
         except Exception as e:
             db.session.rollback()
             return None, f"Erreur lors de la création: {str(e)}"
-    
+
+
     def modifier_utilisateur(self, utilisateur_id: str, nouvelles_donnees: Dict[str, Any], utilisateur_modificateur: User) -> Tuple[Optional[User], Optional[str]]:
         """Modifier un utilisateur existant"""
         try:

@@ -43,6 +43,19 @@ class DeviceService:
         except Exception as e:
             logging.error(f"❌ Erreur initialisation extension protection: {e}")
             self._protection_extension = None
+
+
+        # 🚀 NOUVEAU : AJOUTER AlertService
+        try:
+            from app.services.alert_service import AlertService
+            self._alert_service = AlertService(redis_client=self.redis)
+            logging.info("✅ AlertService intégré dans DeviceService")
+        except ImportError as e:
+            logging.warning(f"⚠️ AlertService non disponible: {e}")
+            self._alert_service = None
+        except Exception as e:
+            logging.error(f"❌ Erreur initialisation AlertService: {e}")
+            self._alert_service = None
     
     # =================== GESTION CACHE REDIS ===================
     
@@ -428,6 +441,222 @@ class DeviceService:
             print(f"❌ Erreur traitement données: {e}")
             db.session.rollback()
             return {"success": False, "error": f"Erreur traitement: {str(e)}"}
+
+
+
+
+    def get_all_devices(self, utilisateur=None, include_non_assignes=False, refresh_status=True, use_cache=True):
+        """Récupérer tous les appareils avec filtrage par site utilisateur - VERSION ENRICHIE CORRIGÉE"""
+        try:
+            # Cache key basé sur les paramètres ET le site utilisateur
+            site_suffix = f"_site_{utilisateur.site_id}" if utilisateur and utilisateur.role == 'user' and utilisateur.site_id else ""
+            cache_suffix = f"{utilisateur.id if utilisateur else 'none'}_{include_non_assignes}_{refresh_status}{site_suffix}"
+            cache_key = f"devices_query:{cache_suffix}"
+            
+            # Vérifier cache
+            if use_cache and not refresh_status:
+                cached_result = self._get_generic_cache(cache_key)
+                if cached_result:
+                    print(f"📦 Liste appareils depuis cache (site: {utilisateur.site_id if utilisateur and utilisateur.role == 'user' else 'all'})")
+                    return cached_result
+            
+            # Synchronisation si demandée
+            if refresh_status:
+                print("🔄 Actualisation des statuts avant récupération...")
+                sync_result = self.import_tuya_devices(use_cache=use_cache)
+                if not sync_result.get("success"):
+                    print(f"⚠️ Échec synchronisation: {sync_result.get('error')}")
+                else:
+                    db.session.expire_all()
+            
+            # ✅ RÉCUPÉRATION SELON PERMISSIONS ET SITE
+            if utilisateur and utilisateur.is_superadmin():
+                if include_non_assignes:
+                    devices = Device.query.all()
+                else:
+                    devices = Device.query.filter_by(statut_assignation='assigne').all()
+                scope = "superadmin"
+                
+            elif utilisateur and utilisateur.is_admin():
+                devices = Device.query.filter_by(
+                    client_id=utilisateur.client_id,
+                    statut_assignation='assigne'
+                ).all()
+                scope = "admin"
+                
+            elif utilisateur and utilisateur.role == 'user':
+                # ✅ NOUVEAU : User simple - filtrage par site
+                if not utilisateur.site_id:
+                    devices = []
+                    scope = "user_no_site"
+                else:
+                    devices = Device.query.filter_by(
+                        client_id=utilisateur.client_id,
+                        site_id=utilisateur.site_id,
+                        statut_assignation='assigne'
+                    ).all()
+                    scope = f"user_site_{utilisateur.site_id}"
+                    
+            else:
+                devices = Device.get_non_assignes() if include_non_assignes else []
+                scope = "anonymous"
+            
+            # ✅ CORRECTION : Double vérification avec syntaxe correcte
+            devices_accessibles = []
+            for device in devices:
+                try:
+                    # Si pas d'utilisateur, inclure l'appareil
+                    if utilisateur is None:
+                        devices_accessibles.append(device)
+                    # Si utilisateur présent, vérifier les permissions
+                    elif device.peut_etre_vu_par_utilisateur(utilisateur):
+                        devices_accessibles.append(device)
+                    else:
+                        print(f"🔒 Appareil {device.nom_appareil} filtré par permissions pour {utilisateur.nom_complet}")
+                except Exception as e:
+                    print(f"⚠️ Erreur vérification permissions appareil {getattr(device, 'nom_appareil', device.id)}: {e}")
+                    # En cas d'erreur, ne pas inclure l'appareil (sécurité)
+                    continue
+            
+            # Statistiques enrichies avec info site
+            online_count = sum(1 for d in devices_accessibles if d.en_ligne)
+            offline_count = len(devices_accessibles) - online_count
+            
+            # Compter appareils avec protection/programmation
+            protection_active = sum(1 for d in devices_accessibles if getattr(d, 'protection_automatique_active', False))
+            programmation_active = sum(1 for d in devices_accessibles if getattr(d, 'programmation_active', False))
+            
+            # Statistiques par type d'appareil
+            types_count = {}
+            for device in devices_accessibles:
+                device_type = getattr(device, 'type_appareil', 'unknown')
+                types_count[device_type] = types_count.get(device_type, 0) + 1
+            
+            result = {
+                "success": True,
+                "devices": [self._device_to_dict_enhanced(device) for device in devices_accessibles],
+                "count": len(devices_accessibles),
+                "last_sync": datetime.utcnow().isoformat() if refresh_status else None,
+                "user_scope": scope,
+                "user_info": {
+                    "role": utilisateur.role if utilisateur else None,
+                    "site_id": utilisateur.site_id if utilisateur and utilisateur.role == 'user' else None,
+                    "site_nom": utilisateur.site.nom_site if utilisateur and utilisateur.role == 'user' and utilisateur.site else None
+                } if utilisateur else None,
+                "stats": {
+                    "total": len(devices_accessibles),
+                    "online": online_count,
+                    "offline": offline_count,
+                    "protection_active": protection_active,
+                    "programmation_active": programmation_active,
+                    "par_type": types_count,
+                    "sync_method": "full_import" if refresh_status else "cache",
+                    "filtering_applied": utilisateur is not None,
+                    "original_count": len(devices),
+                    "filtered_count": len(devices) - len(devices_accessibles)
+                }
+            }
+            
+            # Mettre en cache avec TTL adapté
+            if use_cache:
+                # TTL plus court pour users (changements plus fréquents)
+                ttl = 60 if utilisateur and utilisateur.role == 'user' else 120
+                self._set_generic_cache(cache_key, result, ttl=ttl)
+            
+            print(f"📊 Appareils récupérés pour {scope}: {len(devices_accessibles)} ({online_count} 🟢, {offline_count} 🔴)")
+            
+            # Log de filtrage si applicable
+            filtered_count = len(devices) - len(devices_accessibles)
+            if filtered_count > 0:
+                print(f"🔒 {filtered_count} appareils filtrés par permissions")
+            
+            return result
+            
+        except Exception as e:
+            print(f"❌ Erreur récupération appareils: {e}")
+            import traceback
+            traceback.print_exc()
+            return {"success": False, "error": str(e)}
+
+
+    # ✅ NOUVELLE MÉTHODE : Spécifique aux appareils d'un site
+    def get_devices_by_site(self, site_id, utilisateur=None, use_cache=True):
+        """Récupérer les appareils d'un site spécifique"""
+        try:
+            cache_key = f"devices_site:{site_id}:{utilisateur.id if utilisateur else 'none'}"
+            
+            # Vérifier cache
+            if use_cache:
+                cached_result = self._get_generic_cache(cache_key)
+                if cached_result:
+                    print(f"📦 Appareils site {site_id} depuis cache")
+                    return cached_result
+            
+            # Vérifier permissions d'accès au site
+            if utilisateur:
+                if utilisateur.is_superadmin():
+                    # Superadmin peut voir tout
+                    pass
+                elif utilisateur.is_admin():
+                    # Admin peut voir les sites de son client
+                    from app.models.site import Site
+                    site = Site.query.get(site_id)
+                    if not site or site.client_id != utilisateur.client_id:
+                        return {"success": False, "error": "Accès interdit à ce site"}
+                elif utilisateur.role == 'user':
+                    # User simple peut voir que son site
+                    if utilisateur.site_id != site_id:
+                        return {"success": False, "error": "Accès interdit - site non assigné"}
+                else:
+                    return {"success": False, "error": "Permissions insuffisantes"}
+            
+            # Récupération des appareils du site
+            devices = Device.query.filter_by(
+                site_id=site_id,
+                statut_assignation='assigne'
+            ).all()
+            
+            # Filtrer par permissions utilisateur
+            if utilisateur:
+                devices_accessibles = [
+                    device for device in devices 
+                    if device.peut_etre_vu_par_utilisateur(utilisateur)
+                ]
+            else:
+                devices_accessibles = devices
+            
+            # Récupérer info du site
+            from app.models.site import Site
+            site = Site.query.get(site_id)
+            
+            # Statistiques
+            online_count = sum(1 for d in devices_accessibles if d.en_ligne)
+            offline_count = len(devices_accessibles) - online_count
+            
+            result = {
+                "success": True,
+                "site_id": site_id,
+                "site_info": site.to_dict() if site else None,
+                "devices": [self._device_to_dict_enhanced(device) for device in devices_accessibles],
+                "count": len(devices_accessibles),
+                "stats": {
+                    "total": len(devices_accessibles),
+                    "online": online_count,
+                    "offline": offline_count
+                },
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+            # Cache
+            if use_cache:
+                self._set_generic_cache(cache_key, result, ttl=180)  # 3 minutes
+            
+            print(f"📍 Site {site_id}: {len(devices_accessibles)} appareils")
+            return result
+            
+        except Exception as e:
+            print(f"❌ Erreur appareils site {site_id}: {e}")
+            return {"success": False, "error": str(e)}
 
 
     # =================== CONTRÔLE ET STATUT DES APPAREILS ===================
@@ -1012,8 +1241,10 @@ class DeviceService:
         
         return analysis
     
+
+
     def _save_device_data_with_processing(self, device, status_data):
-        """Sauvegarder les données avec traitement protection/analyse"""
+        """Sauvegarder les données avec traitement protection/analyse AMÉLIORÉ"""
         try:
             if not status_data.get("success") or not device.is_assigne():
                 return
@@ -1038,14 +1269,39 @@ class DeviceService:
             
             db.session.add(device_data)
             
-            # Traitement protection automatique
+            # 🚀 NOUVEAU : Analyse intelligente avec AlertService
+            if hasattr(self, '_alert_service') and self._alert_service:
+                try:
+                    # Utiliser AlertService pour analyse avancée
+                    alert_result = self._alert_service.analyser_et_creer_alertes(
+                        device_data, device, {'use_cache': True}
+                    )
+                    
+                    if alert_result.get('success', True):
+                        nb_alertes = alert_result.get('nb_alertes', 0)
+                        nb_critiques = alert_result.get('nb_alertes_critiques', 0)
+                        
+                        if nb_alertes > 0:
+                            print(f"🔔 {nb_alertes} alertes créées pour {device.nom_appareil} ({nb_critiques} critiques)")
+                            
+                            # Log pour monitoring
+                            logging.info(f"AlertService: {nb_alertes} alertes créées pour device {device.id}")
+                    else:
+                        logging.error(f"Erreur AlertService pour device {device.id}: {alert_result.get('error')}")
+                        
+                except Exception as e:
+                    logging.error(f"Erreur AlertService pour device {device.id}: {e}")
+                    # Fallback vers méthode classique si AlertService échoue
+                    self._check_thresholds_and_create_alerts_fallback(device, values)
+            else:
+                # Fallback vers méthode classique si AlertService non disponible
+                self._check_thresholds_and_create_alerts_fallback(device, values)
+            
+            # ✅ GARDER : Traitement protection automatique existant
             if device.protection_automatique_active:
                 protection_result = self._process_protection_monitoring(device, values)
                 if protection_result.get('protection_triggered'):
                     print(f"🚨 Protection déclenchée pour {device.nom_appareil}")
-            
-            # Vérifier seuils classiques et créer alertes
-            self._check_thresholds_and_create_alerts(device, values)
             
             # Mettre à jour dernière donnée
             device.derniere_donnee = timestamp
@@ -1055,9 +1311,11 @@ class DeviceService:
         except Exception as e:
             print(f"❌ Erreur sauvegarde données {device.tuya_device_id}: {e}")
             db.session.rollback()
-    
-    def _check_thresholds_and_create_alerts(self, device, values):
-        """Vérifier les seuils et créer des alertes classiques"""
+
+
+
+    def _check_thresholds_and_create_alerts_fallback(self, device, values):
+        """Méthode fallback pour création d'alertes classiques (renommée)"""
         try:
             alerts_to_create = []
             
@@ -1111,7 +1369,7 @@ class DeviceService:
                     "unite": "W"
                 })
             
-            # Créer les alertes
+            # Créer les alertes (méthode classique)
             for alert_data in alerts_to_create:
                 # Vérifier qu'une alerte similaire n'existe pas déjà (dernières 5 minutes)
                 recent_alert = Alert.query.filter_by(
@@ -1137,7 +1395,7 @@ class DeviceService:
                     db.session.add(alert)
             
         except Exception as e:
-            print(f"❌ Erreur vérification seuils: {e}")
+            print(f"❌ Erreur vérification seuils fallback: {e}")
     
     def _log_device_action(self, device, action_type, details):
         """Enregistrer une action dans l'historique"""

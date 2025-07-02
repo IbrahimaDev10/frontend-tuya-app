@@ -12,9 +12,26 @@
         <span class="emoji">👤</span><strong>Compte créé pour :</strong> {{ username }}<br>
         <span class="emoji">📧</span><strong>Email :</strong> {{ user_email }}<br>
         <span class="emoji">🏢</span><strong>Entreprise :</strong> {{ client_name }}<br>
+        {% if site_name %}
+        <span class="emoji">📍</span><strong>Site assigné :</strong> {{ site_name }}<br>
+        {% endif %}
         <span class="emoji">👥</span><strong>Rôle :</strong> Utilisateur
     </p>
 </div>
+
+<!-- Section spéciale pour le site -->
+{% if site_name %}
+<div class="alert alert-info" style="border-left: 4px solid #2196f3; background-color: #e3f2fd;">
+    <h3 style="margin-top: 0; color: #1976d2;"><span class="emoji">🏭</span>Votre site de travail</h3>
+    <p style="margin: 10px 0; font-size: 16px;">
+        <strong>{{ site_name }}</strong>
+    </p>
+    <p style="margin: 0; font-size: 14px; color: #555;">
+        Vous aurez accès uniquement aux appareils et données de ce site. 
+        Vous pourrez surveiller et contrôler les équipements qui y sont installés.
+    </p>
+</div>
+{% endif %}
 
 <p>Pour activer votre compte et définir votre mot de passe, cliquez sur le bouton ci-dessous :</p>
 

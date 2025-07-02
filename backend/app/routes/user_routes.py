@@ -459,15 +459,49 @@ def supprimer_client(current_user, client_id):
 @admin_required
 @validate_json_data(['prenom', 'nom', 'email'])
 def creer_utilisateur(data, current_user):
-    """Créer un nouvel utilisateur"""
+    """Créer un nouvel utilisateur avec site (version modifiée)"""
     try:
-        # ✅ CORRECT : creer_utilisateur retourne Tuple[Optional[Dict], Optional[str]]
-        resultat, erreur = user_service.creer_utilisateur(data, current_user)
+        # ✅ NOUVEAU : Valider site_id pour les utilisateurs simples
+        role = data.get('role', 'user')
+        site_id = data.get('site_id')
+        
+        # ✅ VALIDATION : site_id obligatoire pour user simple
+        if role == 'user' and not site_id:
+            return jsonify({
+                'error': 'site_id requis pour les utilisateurs simples',
+                'message': 'Veuillez sélectionner un site pour ce type d\'utilisateur'
+            }), 400
+        
+        # ✅ VALIDATION : Vérifier que le site existe et appartient au bon client
+        if site_id:
+            from app.models.site import Site
+            site = Site.query.get(site_id)
+            
+            if not site:
+                return jsonify({'error': 'Site non trouvé'}), 404
+            
+            if not site.actif:
+                return jsonify({'error': 'Site inactif'}), 400
+            
+            # Admin ne peut assigner que ses propres sites
+            if not current_user.is_superadmin() and site.client_id != current_user.client_id:
+                return jsonify({
+                    'error': 'Site non autorisé',
+                    'message': 'Vous ne pouvez assigner que des sites de votre client'
+                }), 403
+        
+        # ✅ AJOUTER site_id aux données
+        data_avec_site = data.copy()
+        if site_id:
+            data_avec_site['site_id'] = site_id
+        
+        # Appel service existant avec données enrichies
+        resultat, erreur = user_service.creer_utilisateur(data_avec_site, current_user)
         
         if erreur:
             return jsonify({'error': erreur}), 400
         
-        # ✅ CORRECT : resultat est un dict, pas un objet User
+        # ✅ ENRICHIR la réponse avec info site
         utilisateur_dict = resultat['utilisateur']
         nom_complet = f"{utilisateur_dict['prenom']} {utilisateur_dict['nom']}"
         
@@ -482,7 +516,17 @@ def creer_utilisateur(data, current_user):
             }
         }
         
-        # Si token disponible pour debug
+        # ✅ AJOUTER info site si présent
+        if site_id and 'site' in locals():
+            response_data['site_info'] = {
+                'id': site.id,
+                'nom': site.nom_site,
+                'adresse': site.adresse,
+                'ville': site.ville
+            }
+            response_data['message'] += f' pour le site "{site.nom_site}"'
+        
+        # Token debug si disponible
         if 'token_activation' in resultat:
             response_data['debug_token'] = resultat['token_activation']
         
@@ -491,6 +535,7 @@ def creer_utilisateur(data, current_user):
     except Exception as e:
         return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
 
+        
 @user_bp.route('/', methods=['GET'])
 @admin_required
 def lister_utilisateurs(current_user):

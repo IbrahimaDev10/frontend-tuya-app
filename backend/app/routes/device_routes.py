@@ -151,7 +151,7 @@ def health_check():
 @device_bp.route('/', methods=['GET'])
 @admin_required
 def lister_appareils(current_user):
-    """Lister les appareils avec cache et statuts temps réel"""
+    """Lister les appareils avec filtrage automatique par site utilisateur"""
     try:
         # ✅ NOUVEAUX paramètres
         site_id = request.args.get('site_id')
@@ -163,7 +163,41 @@ def lister_appareils(current_user):
         if inclure_non_assignes and not current_user.is_superadmin():
             return jsonify({'error': 'Seul le superadmin peut voir les appareils non-assignés'}), 403
         
-        # ✅ NOUVEAU : Utiliser get_all_devices optimisé avec cache
+        # ✅ GESTION FILTRAGE PAR RÔLE UTILISATEUR
+        if current_user.role == 'user':
+            # User simple : gestion spéciale
+            if not current_user.site_id:
+                return jsonify({
+                    'success': True,
+                    'data': [],
+                    'total': 0,
+                    'message': 'Aucun site assigné à cet utilisateur',
+                    'user_info': {
+                        'role': current_user.role,
+                        'site_assigned': False,
+                        'needs_site_assignment': True
+                    },
+                    'stats': {
+                        'total': 0,
+                        'online': 0,
+                        'offline': 0
+                    }
+                }), 200
+            
+            # ✅ FORCER le site_id au site de l'utilisateur
+            if site_id and site_id != current_user.site_id:
+                return jsonify({
+                    'error': 'Accès interdit à ce site',
+                    'message': f'Vous êtes assigné au site {current_user.site_id}',
+                    'user_site_id': current_user.site_id,
+                    'requested_site_id': site_id
+                }), 403
+            
+            # Pour user simple, toujours filtrer par son site
+            site_id = current_user.site_id
+            print(f"👤 User simple {current_user.nom_complet} - filtrage automatique par site {site_id}")
+        
+        # ✅ UTILISER LE DEVICESERVICE AVEC GESTION SITE
         if device_service and hasattr(device_service, 'get_all_devices'):
             result = device_service.get_all_devices(
                 utilisateur=current_user,
@@ -173,31 +207,70 @@ def lister_appareils(current_user):
             )
             
             if result.get('success'):
-                # Filtrer par site si demandé
+                # ✅ FILTRAGE SUPPLÉMENTAIRE par site si demandé ou forcé
                 devices = result.get('devices', [])
-                if site_id:
-                    devices = [d for d in devices if d.get('site_id') == site_id]
                 
-                return jsonify({
-                    'success': True,
-                    'data': devices,
-                    'total': len(devices),
-                    'stats': result.get('stats', {}),
-                    'last_sync': result.get('last_sync'),
-                    'filtres': {
-                        'site_id': site_id,
-                        'inclure_non_assignes': inclure_non_assignes,
-                        'refresh_status': refresh_status,
-                        'use_cache': use_cache
-                    },
-                    'from_cache': result.get('stats', {}).get('sync_method') == 'cache'
-                }), 200
+                if site_id:
+                    devices_filtered = [d for d in devices if d.get('site_id') == site_id]
+                    
+                    # Recalculer les stats après filtrage
+                    online_count = sum(1 for d in devices_filtered if d.get('en_ligne'))
+                    offline_count = len(devices_filtered) - online_count
+                    
+                    return jsonify({
+                        'success': True,
+                        'data': devices_filtered,
+                        'total': len(devices_filtered),
+                        'stats': {
+                            'total': len(devices_filtered),
+                            'online': online_count,
+                            'offline': offline_count,
+                            'protection_active': sum(1 for d in devices_filtered if d.get('protection', {}).get('active')),
+                            'programmation_active': sum(1 for d in devices_filtered if d.get('programmation', {}).get('active'))
+                        },
+                        'user_info': {
+                            'role': current_user.role,
+                            'site_id': current_user.site_id if current_user.role == 'user' else None,
+                            'site_nom': current_user.site.nom_site if current_user.role == 'user' and current_user.site else None,
+                            'filtered_by_site': True
+                        },
+                        'site_filter': {
+                            'applied': True,
+                            'site_id': site_id,
+                            'forced_by_user_role': current_user.role == 'user'
+                        },
+                        'last_sync': result.get('last_sync'),
+                        'filtres': {
+                            'site_id': site_id,
+                            'inclure_non_assignes': inclure_non_assignes,
+                            'refresh_status': refresh_status,
+                            'use_cache': use_cache
+                        },
+                        'from_cache': result.get('stats', {}).get('sync_method') == 'cache'
+                    }), 200
+                else:
+                    # Pas de filtrage par site spécifique
+                    return jsonify({
+                        'success': True,
+                        'data': devices,
+                        'total': len(devices),
+                        'stats': result.get('stats', {}),
+                        'user_info': result.get('user_info', {}),
+                        'last_sync': result.get('last_sync'),
+                        'filtres': {
+                            'site_id': site_id,
+                            'inclure_non_assignes': inclure_non_assignes,
+                            'refresh_status': refresh_status,
+                            'use_cache': use_cache
+                        },
+                        'from_cache': result.get('stats', {}).get('sync_method') == 'cache'
+                    }), 200
             else:
                 # Fallback vers méthode manuelle
-                return _fallback_lister_appareils(current_user, site_id, inclure_non_assignes)
+                return _fallback_lister_appareils_avec_site(current_user, site_id, inclure_non_assignes)
         else:
             # Fallback si service non disponible
-            return _fallback_lister_appareils(current_user, site_id, inclure_non_assignes)
+            return _fallback_lister_appareils_avec_site(current_user, site_id, inclure_non_assignes)
         
     except Exception as e:
         print(f"Erreur liste appareils: {str(e)}")
@@ -249,6 +322,103 @@ def _fallback_lister_appareils(current_user, site_id, inclure_non_assignes):
     except Exception as e:
         print(f"Erreur fallback liste: {e}")
         return jsonify({'error': f'Erreur fallback: {str(e)}'}), 500
+
+
+
+def _fallback_lister_appareils_avec_site(current_user, site_id, inclure_non_assignes):
+    """Méthode fallback pour lister appareils avec gestion site (version améliorée)"""
+    try:
+        print(f"🔄 Fallback listing pour {current_user.role} - site_id: {site_id}")
+        
+        # ✅ CONSTRUCTION REQUÊTE selon le rôle
+        if current_user.is_superadmin():
+            if inclure_non_assignes:
+                query = Device.query
+            else:
+                query = Device.query.filter_by(statut_assignation='assigne')
+                
+        elif current_user.is_admin():
+            # Admin : tous les appareils de son client
+            query = Device.query.filter_by(
+                client_id=current_user.client_id,
+                statut_assignation='assigne'
+            )
+            
+        elif current_user.role == 'user':
+            # ✅ User simple : OBLIGATOIREMENT filtré par son site
+            if not current_user.site_id:
+                return jsonify({
+                    'success': True,
+                    'data': [],
+                    'total': 0,
+                    'message': 'Utilisateur sans site assigné',
+                    'fallback_mode': True
+                }), 200
+            
+            query = Device.query.filter_by(
+                client_id=current_user.client_id,
+                site_id=current_user.site_id,  # ✅ FILTRAGE PAR SON SITE
+                statut_assignation='assigne'
+            )
+        else:
+            # Cas par défaut
+            query = Device.query.filter_by(statut_assignation='non_assigne') if inclure_non_assignes else Device.query.filter(Device.id == None)
+        
+        # ✅ FILTRAGE SUPPLÉMENTAIRE par site si demandé (pour admin/superadmin)
+        if site_id and current_user.role != 'user':  # User simple a déjà son site forcé
+            query = query.filter_by(site_id=site_id)
+        
+        appareils = query.all()
+        
+        # ✅ DOUBLE VÉRIFICATION des permissions (sécurité)
+        appareils_accessibles = []
+        for device in appareils:
+            if device.peut_etre_vu_par_utilisateur(current_user):
+                appareils_accessibles.append(device)
+            else:
+                print(f"⚠️ Appareil {device.nom_appareil} filtré par permissions")
+        
+        # Statistiques
+        online_count = sum(1 for d in appareils_accessibles if d.en_ligne)
+        offline_count = len(appareils_accessibles) - online_count
+        
+        # ✅ INFO SITE pour user simple
+        site_info = None
+        if current_user.role == 'user' and current_user.site:
+            site_info = {
+                'id': current_user.site.id,
+                'nom': current_user.site.nom_site,
+                'adresse': current_user.site.adresse,
+                'ville': current_user.site.ville
+            }
+        
+        return jsonify({
+            'success': True,
+            'data': [device.to_dict(include_stats=True) for device in appareils_accessibles],
+            'total': len(appareils_accessibles),
+            'stats': {
+                'total': len(appareils_accessibles),
+                'online': online_count,
+                'offline': offline_count
+            },
+            'user_info': {
+                'role': current_user.role,
+                'site_id': current_user.site_id if current_user.role == 'user' else None,
+                'site_info': site_info
+            },
+            'filtres': {
+                'site_id': site_id,
+                'inclure_non_assignes': inclure_non_assignes,
+                'forced_site_filter': current_user.role == 'user'
+            },
+            'from_cache': False,
+            'fallback_mode': True
+        }), 200
+        
+    except Exception as e:
+        print(f"Erreur fallback liste avec site: {e}")
+        return jsonify({'error': f'Erreur fallback: {str(e)}'}), 500
+
 
 @device_bp.route('/<device_id>', methods=['GET'])
 @admin_required
@@ -307,15 +477,25 @@ def obtenir_appareil(current_user, device_id):
 @device_bp.route('/<device_id>/toggle', methods=['POST'])
 @admin_required
 def toggle_appareil(current_user, device_id):
-    """Basculer l'état d'un appareil avec gestion protection/programmation"""
+    """Basculer l'état d'un appareil avec vérification site utilisateur"""
     try:
         device = find_device_by_id_or_tuya_id(device_id)
         
         if not device:
             return jsonify({'error': f'Appareil non trouvé: {device_id}'}), 404
         
+        # ✅ VÉRIFICATION STRICTE des permissions (inclut le site pour user simple)
         if not device.peut_etre_controle_par_utilisateur(current_user):
-            return jsonify({'error': 'Accès en contrôle interdit pour cet appareil'}), 403
+            error_msg = 'Accès en contrôle interdit pour cet appareil'
+            
+            # Message plus spécifique pour user simple
+            if current_user.role == 'user':
+                if device.site_id != current_user.site_id:
+                    error_msg = f'Appareil non accessible - Vous êtes assigné au site {current_user.site_id}'
+                elif device.client_id != current_user.client_id:
+                    error_msg = 'Appareil non accessible - Client différent'
+            
+            return jsonify({'error': error_msg}), 403
         
         if not device.is_assigne():
             return jsonify({'error': 'Appareil non assigné à un client'}), 400
@@ -323,7 +503,7 @@ def toggle_appareil(current_user, device_id):
         data = request.get_json() or {}
         etat = data.get('etat')  # True=allumer, False=éteindre, None=toggle
         
-        # ✅ NOUVEAU : Vérifier override programmation si extension disponible
+        # ✅ VÉRIFICATIONS override programmation si extension disponible
         schedule_override = None
         if device_service and hasattr(device_service, '_protection_extension'):
             try:
@@ -344,7 +524,11 @@ def toggle_appareil(current_user, device_id):
             'new_state': resultat.get('new_state'),
             'device_name': device.nom_appareil,
             'device_id': device.id,
-            'tuya_device_id': device.tuya_device_id
+            'tuya_device_id': device.tuya_device_id,
+            'user_info': {
+                'role': current_user.role,
+                'site_id': current_user.site_id if current_user.role == 'user' else None
+            }
         }
         
         # Ajouter info override si applicable
@@ -357,6 +541,8 @@ def toggle_appareil(current_user, device_id):
         print(f"Erreur toggle device {device_id}: {str(e)}")
         return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
 
+
+        
 @device_bp.route('/<device_id>/controle', methods=['POST'])
 @admin_required
 @validate_json_data(['action'])
@@ -1165,6 +1351,188 @@ def get_graphique_metric(current_user, device_id, metric_type):
         print(f"Erreur graphique {metric_type} {device_id}: {str(e)}")
         return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
 
+
+# =================== NOUVELLE ROUTE POUR INFO SITE UTILISATEUR ===================
+
+@device_bp.route('/mon-site', methods=['GET'])
+@admin_required
+def get_mon_site_info(current_user):
+    """Récupérer les informations du site de l'utilisateur"""
+    try:
+        if current_user.role != 'user':
+            return jsonify({
+                'success': False,
+                'error': 'Cette route est réservée aux utilisateurs simples',
+                'user_role': current_user.role,
+                'message': 'Les administrateurs ont accès à tous les sites'
+            }), 400
+        
+        if not current_user.site_id:
+            return jsonify({
+                'success': False,
+                'error': 'Aucun site assigné',
+                'message': 'Contactez votre administrateur pour obtenir l\'assignation à un site',
+                'user_id': current_user.id,
+                'user_name': current_user.nom_complet
+            }), 404
+        
+        from app.models.site import Site
+        site = Site.query.get(current_user.site_id)
+        
+        if not site:
+            return jsonify({
+                'success': False,
+                'error': 'Site non trouvé en base de données',
+                'site_id': current_user.site_id,
+                'message': 'Problème de cohérence des données - contactez l\'administrateur'
+            }), 404
+        
+        # ✅ COMPTER les appareils du site de l'utilisateur
+        appareils_site = Device.query.filter_by(
+            client_id=current_user.client_id,
+            site_id=current_user.site_id,
+            statut_assignation='assigne'
+        ).all()
+        
+        # Filtrer par permissions (sécurité)
+        appareils_accessibles = [
+            device for device in appareils_site 
+            if device.peut_etre_vu_par_utilisateur(current_user)
+        ]
+        
+        online_count = sum(1 for d in appareils_accessibles if d.en_ligne)
+        offline_count = len(appareils_accessibles) - online_count
+        
+        # Statistiques par type d'appareil
+        types_count = {}
+        for device in appareils_accessibles:
+            device_type = device.type_appareil
+            types_count[device_type] = types_count.get(device_type, 0) + 1
+        
+        # Dernière activité
+        derniere_activite = None
+        if appareils_accessibles:
+            devices_avec_donnees = [d for d in appareils_accessibles if d.derniere_donnee]
+            if devices_avec_donnees:
+                device_plus_recent = max(devices_avec_donnees, key=lambda d: d.derniere_donnee)
+                derniere_activite = {
+                    'timestamp': device_plus_recent.derniere_donnee.isoformat(),
+                    'device_name': device_plus_recent.nom_appareil
+                }
+        
+        return jsonify({
+            'success': True,
+            'user_info': {
+                'id': current_user.id,
+                'nom_complet': current_user.nom_complet,
+                'email': current_user.email,
+                'role': current_user.role,
+                'date_creation': current_user.date_creation.isoformat() if current_user.date_creation else None
+            },
+            'site_info': site.to_dict(include_stats=True),
+            'appareils_stats': {
+                'total': len(appareils_accessibles),
+                'online': online_count,
+                'offline': offline_count,
+                'par_type': types_count,
+                'derniere_activite': derniere_activite,
+                'taux_disponibilite': round((online_count / len(appareils_accessibles)) * 100, 2) if appareils_accessibles else 0
+            },
+            'permissions': {
+                'peut_voir_appareils': True,
+                'peut_controler_appareils': True,
+                'peut_configurer_appareils': True,  # Selon vos règles business
+                'limites': 'Accès uniquement aux appareils de ce site'
+            },
+            'navigation': {
+                'appareils_url': '/api/devices/',
+                'site_map_link': site.get_map_link() if hasattr(site, 'get_map_link') else None
+            }
+        }), 200
+        
+    except Exception as e:
+        print(f"Erreur info site utilisateur: {str(e)}")
+        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
+# =================== ROUTE POUR LISTER SITES ACCESSIBLES ===================
+
+@device_bp.route('/sites-accessibles', methods=['GET'])
+@admin_required
+def get_sites_accessibles(current_user):
+    """Récupérer les sites accessibles selon le rôle utilisateur"""
+    try:
+        from app.models.site import Site
+        
+        if current_user.is_superadmin():
+            # Superadmin : tous les sites
+            sites = Site.query.filter_by(actif=True).all()
+            scope = "superadmin"
+            
+        elif current_user.is_admin():
+            # Admin : sites de son client
+            sites = Site.query.filter_by(
+                client_id=current_user.client_id,
+                actif=True
+            ).all()
+            scope = "admin"
+            
+        elif current_user.role == 'user':
+            # User simple : uniquement son site
+            if current_user.site_id and current_user.site:
+                sites = [current_user.site]
+            else:
+                sites = []
+            scope = "user"
+            
+        else:
+            sites = []
+            scope = "unknown"
+        
+        sites_data = []
+        for site in sites:
+            # Compter les appareils par site
+            appareils_count = Device.query.filter_by(
+                site_id=site.id,
+                statut_assignation='assigne'
+            ).count()
+            
+            appareils_online = Device.query.filter_by(
+                site_id=site.id,
+                statut_assignation='assigne',
+                en_ligne=True
+            ).count()
+            
+            site_dict = site.to_dict()
+            site_dict.update({
+                'appareils_stats': {
+                    'total': appareils_count,
+                    'online': appareils_online,
+                    'offline': appareils_count - appareils_online
+                },
+                'accessible': True,
+                'user_can_access': True
+            })
+            
+            sites_data.append(site_dict)
+        
+        return jsonify({
+            'success': True,
+            'sites': sites_data,
+            'total': len(sites_data),
+            'user_scope': scope,
+            'user_info': {
+                'role': current_user.role,
+                'assigned_site_id': current_user.site_id if current_user.role == 'user' else None
+            },
+            'message': f'{len(sites_data)} sites accessibles'
+        }), 200
+        
+    except Exception as e:
+        print(f"Erreur sites accessibles: {str(e)}")
+        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
+
+
 # =================== ROUTES D'ADMINISTRATION (améliorées) ===================
 
 @device_bp.route('/import-tuya', methods=['POST'])
@@ -1921,42 +2289,7 @@ def get_service_health(current_user):
 
 # =================== NOUVELLES ROUTES D'ANALYSE BATCH ===================
 
-@device_bp.route('/analyze-batch', methods=['POST'])
-@admin_required
-@validate_json_data(['device_ids'])
-def analyze_devices_batch(data, current_user):
-    """Analyser plusieurs appareils en batch"""
-    try:
-        device_ids = data['device_ids']
-        use_cache = data.get('use_cache', True)
-        
-        if not isinstance(device_ids, list) or len(device_ids) == 0:
-            return jsonify({'error': 'device_ids doit être une liste non vide'}), 400
-        
-        if len(device_ids) > 20:  # Limite pour analyse batch
-            return jsonify({'error': 'Maximum 20 appareils par analyse batch'}), 400
-        
-        # ✅ NOUVEAU : Utiliser extension analyse si disponible
-        if device_service and hasattr(device_service, '_analysis_extension'):
-            analysis_result = device_service._analysis_extension.batch_analyze_devices(
-                device_ids, use_cache
-            )
-            
-            if analysis_result.get('success'):
-                return jsonify(analysis_result), 200
-            else:
-                return jsonify(analysis_result), 400
-        
-        # Fallback sans extension
-        return jsonify({
-            'success': False,
-            'error': 'Extension analyse non disponible',
-            'message': 'Fonctionnalité analyse batch non activée'
-        }), 501
-        
-    except Exception as e:
-        print(f"Erreur analyse batch: {str(e)}")
-        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
 
 @device_bp.route('/analyze-client/<client_id>', methods=['POST'])
 @admin_required

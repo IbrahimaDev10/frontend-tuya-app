@@ -278,6 +278,30 @@ def register_blueprints(app):
             
     except Exception as e:
         app.logger.error(f"❌ Erreur import blueprint sites: {e}")
+
+
+    # 📍 BLUEPRINT ALERTS
+    try:
+        app.logger.info("🔍 Import du blueprint alerts...")
+        
+        alert_routes_file_path = os.path.join(routes_dir, 'alert_routes.py')
+        
+        if os.path.exists(alert_routes_file_path):
+            # Charger le module alert_routes
+            spec = importlib.util.spec_from_file_location("app.routes.alert_routes", alert_routes_file_path)
+            alert_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(alert_module)
+            
+            # Récupérer et enregistrer le blueprint
+            alert_bp = alert_module.alert_bp
+            app.register_blueprint(alert_bp)
+            app.logger.info("✅ Blueprint alerts enregistré sur /api/alerts")
+            
+        else:
+            app.logger.warning(f"⚠️ Fichier alert_routes non trouvé: {alert_routes_file_path}")
+            
+    except Exception as e:
+        app.logger.error(f"❌ Erreur import blueprint alerts: {e}")
     
     # 🔥 BLUEPRINT DEVICES (PRIORITÉ)
     try:
