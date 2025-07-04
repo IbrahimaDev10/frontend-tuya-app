@@ -308,7 +308,7 @@ class TuyaClient:
                 
                 # Mapping pour les compteurs d'énergie
                 if code == "cur_voltage":
-                    values["tension"] = value / 10 if value else None
+                    values["tension"] = value / 100 if value else None
                 elif code == "cur_current":
                     values["courant"] = value / 1000 if value else None
                 elif code == "cur_power":
