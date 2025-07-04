@@ -350,7 +350,7 @@ class MailService:
         
 
     @staticmethod
-    def send_user_activation_email(user_email, prenom, nom, client_name, activation_token, expires_hours=24):
+    def send_user_activation_email(user_email, prenom, nom, client_name, activation_token, expires_hours=24, site_name=None):
         """
         Envoie un email d'activation spécifique pour les utilisateurs standards
             
@@ -360,6 +360,7 @@ class MailService:
         :param client_name: nom de l'entreprise/client
         :param activation_token: token d'activation
         :param expires_hours: durée de validité en heures (défaut: 24h)
+        :param site_name: nom du site assigné (optionnel) ✅ NOUVEAU
         """
         if not MailService.is_enabled():
             logging.warning("Service mail non configuré - email d'activation utilisateur non envoyé")
@@ -372,15 +373,22 @@ class MailService:
                 
             # Nom complet pour affichage
             full_name = f"{prenom} {nom}"
+            
+            # ✅ NOUVEAU : Sujet enrichi avec site si disponible
+            if site_name:
+                subject = f"🎉 Activation de votre compte - {client_name} (Site: {site_name})"
+            else:
+                subject = f"🎉 Activation de votre compte utilisateur - {client_name}"
                 
             result = MailService.send_email(
-            to=user_email,
-            subject=f"🎉 Activation de votre compte utilisateur - {client_name}",
-            template="user_activation",  # Template spécifique pour utilisateurs
-            username=full_name,
-            prenom=prenom,
-            nom=nom,
+                to=user_email,
+                subject=subject,
+                template="user_activation",  # Template spécifique pour utilisateurs
+                username=full_name,
+                prenom=prenom,
+                nom=nom,
                 client_name=client_name,
+                site_name=site_name,  # ✅ NOUVEAU : Passer site_name au template
                 user_email=user_email,
                 activation_token=activation_token,
                 activation_url=activation_url,
@@ -390,7 +398,8 @@ class MailService:
             )
                 
             if result['success']:
-                logging.info(f"Email d'activation utilisateur envoyé à {user_email} pour {client_name}")
+                site_info = f" pour le site {site_name}" if site_name else ""
+                logging.info(f"Email d'activation utilisateur envoyé à {user_email} pour {client_name}{site_info}")
             else:
                 logging.error(f"Échec envoi email activation utilisateur à {user_email}: {result['message']}")
                     
@@ -399,6 +408,7 @@ class MailService:
         except Exception as e:
             logging.error(f"Erreur envoi email d'activation utilisateur: {e}")
             return {"success": False, "message": str(e)}
+
 
     @staticmethod
     def send_superadmin_activation_email(user_email, prenom, nom, activation_token, expires_hours=24):

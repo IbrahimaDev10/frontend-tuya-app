@@ -14,6 +14,10 @@ class User(db.Model):
     # Relation client (NULL pour superadmin)
     client_id = db.Column(db.String(36), db.ForeignKey('clients.id'), nullable=True, index=True)
     
+
+    #Site assigné (pour users simples null pour client)
+    site_id = db.Column(db.String(36), db.ForeignKey('sites.id'), nullable=True, index=True)
+
     # Informations utilisateur - SIMPLIFIÉ avec prénom/nom
     prenom = db.Column(db.String(100), nullable=False, index=True)
     nom = db.Column(db.String(100), nullable=False, index=True)
@@ -34,6 +38,7 @@ class User(db.Model):
     
     # ✅ CORRECTION : Utiliser back_populates au lieu de backref
     client = db.relationship('Client', back_populates='utilisateurs', lazy='select')
+    site = db.relationship('Site', backref='utilisateurs', lazy='select')  
     
     # Relations autres
     acces_appareils = db.relationship('DeviceAccess', backref='utilisateur', lazy='dynamic', cascade='all, delete-orphan')
@@ -95,3 +100,37 @@ class User(db.Model):
             data['client_nom'] = self.client.nom_entreprise if self.client else None
         
         return data
+
+
+
+        # ✅ NOUVELLES MÉTHODES pour gestion site
+    def can_access_site(self, site_id):
+        """Vérifier si l'utilisateur peut accéder à un site"""
+        if self.is_superadmin():
+            return True
+        
+        if self.is_admin():
+            # Admin peut accéder à tous les sites de son client
+            from app.models.site import Site
+            site = Site.query.get(site_id)
+            return site and site.client_id == self.client_id
+        
+        # User simple : uniquement son site assigné
+        return self.site_id == site_id
+
+
+    def get_sites_accessibles(self):
+        """Récupérer les sites auxquels l'utilisateur a accès"""
+        if self.is_superadmin():
+            from app.models.site import Site
+            return Site.query.filter_by(actif=True).all()
+        
+        if self.is_admin():
+            from app.models.site import Site
+            return Site.query.filter_by(client_id=self.client_id, actif=True).all()
+        
+        # User simple : uniquement son site
+        if self.site_id and self.site:
+            return [self.site]
+        
+        return []

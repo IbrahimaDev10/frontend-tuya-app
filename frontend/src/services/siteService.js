@@ -38,6 +38,8 @@ class SiteService {
     return apiClient.post(`/sites/${siteId}/geocoder`);
   }
 
+  
+
   async sitesProches(siteId, radiusKm = 10) {
     return apiClient.get(`/sites/${siteId}/sites-proches`, {
       params: { radius: radiusKm }
