@@ -6,21 +6,23 @@ import ClientLayout from '../../layouts/ClientLayout'
 import DeviceService from '../../services/deviceService'
 import Button from '../../components/Button'
 import Input from '../../components/Input'
-import DeviceModal from './DeviceModal'
+import DeviceModal from './DeviceModal' // Non utilisé dans ce fichier, mais laissé pour référence
 import AssignModal from './AssignModal'
+import DropdownMenu from '../../components/DropdownMenu'
 import DeviceDetailsModal from './DeviceDetailsModal'
 import ConfirmModal from '../../components/ConfirmModal'
 import Toast from '../../components/Toast'
 import './DeviceManagement.css'
 import MultiChartView from '../DeviceCharts/MultiChartView'
+import { useNavigate } from 'react-router-dom';
 
 const DeviceManagement = () => {
-  const { isSuperadmin, isAdmin, isClient } = useAuth()
+  const { isSuperadmin, isAdmin, isClient, user: currentUser } = useAuth() // <-- NOUVEAU : Récupérez l'utilisateur courant
   const [devices, setDevices] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedTab, setSelectedTab] = useState('assigned')
-  const [showDeviceModal, setShowDeviceModal] = useState(false)
+  const [showDeviceModal, setShowDeviceModal] = useState(false) // Non utilisé
   const [showAssignModal, setShowAssignModal] = useState(false)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [selectedDevice, setSelectedDevice] = useState(null)
@@ -32,6 +34,7 @@ const DeviceManagement = () => {
   const [loadingDeviceIds, setLoadingDeviceIds] = useState([])
 
   const Layout = isSuperadmin() ? SuperAdminLayout : isAdmin() ? AdminLayout : ClientLayout
+  const navigate = useNavigate(); // <-- ÉTAPE 1 : Initialiser useNavigate
 
   const [showChartsModal, setShowChartsModal] = useState(false)
   const [selectedDeviceForCharts, setSelectedDeviceForCharts] = useState(null)
@@ -39,25 +42,38 @@ const DeviceManagement = () => {
 
   useEffect(() => {
     loadData()
-  }, [selectedTab])
-
+  }, [selectedTab, currentUser]) // <-- NOUVEAU : Ajoutez currentUser comme dépendance
+  
   const loadData = async () => {
     try {
       setLoading(true)
       
       let devicesResponse
-      if (selectedTab === 'assigned') {
-        devicesResponse = await DeviceService.listerAppareils()
-      } else if (selectedTab === 'unassigned' && isSuperadmin()) {
-        devicesResponse = await DeviceService.listerNonAssignes()
-      } else {
-        devicesResponse = await DeviceService.listerAppareils(null, isSuperadmin())
+      let siteIdToFilter = null;
+
+      // <-- NOUVEAU : Logique de filtrage par site pour les utilisateurs simples
+      if (currentUser && currentUser.role === 'user' && currentUser.site_id) {
+        siteIdToFilter = currentUser.site_id;
+        // Pour un utilisateur simple, on ne montre que les appareils de son site,
+        // donc les onglets "unassigned" et "all" n'ont pas de sens ou doivent être adaptés.
+        // Ici, on force à "assigned" pour simplifier.
+        if (selectedTab !== 'assigned') {
+          setSelectedTab('assigned'); // Force l'onglet à "assigned"
+        }
       }
 
-      const statsResponse = await DeviceService.obtenirStatistiques()
+      if (selectedTab === 'assigned') {
+        devicesResponse = await DeviceService.listerAppareils(siteIdToFilter); // <-- Passez siteIdToFilter
+      } else if (selectedTab === 'unassigned' && isSuperadmin()) {
+        devicesResponse = await DeviceService.listerNonAssignes();
+      } else { // 'all' tab
+        devicesResponse = await DeviceService.listerAppareils(siteIdToFilter, isSuperadmin()); // <-- Passez siteIdToFilter
+      }
+
+      const statsResponse = await DeviceService.obtenirStatistiques();
       
-      setDevices(devicesResponse.data.data || devicesResponse.data.devices || [])
-      setStats(statsResponse.data.data || {})
+      setDevices(devicesResponse.data.data || devicesResponse.data.devices || []);
+      setStats(statsResponse.data.data || {});
       
     } catch (error) {
       showToast('Erreur lors du chargement des données', 'error')
@@ -79,7 +95,9 @@ const DeviceManagement = () => {
     }
 
     try {
-      const response = await DeviceService.rechercherAppareils(term)
+      // Pour la recherche, nous devons aussi potentiellement filtrer par site
+      const siteIdToFilter = (currentUser && currentUser.role === 'user' && currentUser.site_id) ? currentUser.site_id : null;
+      const response = await DeviceService.rechercherAppareils(term, siteIdToFilter); // <-- Passez siteIdToFilter
       setDevices(response.data.data)
     } catch (error) {
       showToast('Erreur lors de la recherche', 'error')
@@ -123,31 +141,38 @@ const DeviceManagement = () => {
   }
 
   const handleToggleDevice = async (device) => {
-    const deviceId = device.tuya_device_id
-    setLoadingDeviceIds((prev) => [...prev, deviceId])
-  
-    try {
-      const result = await DeviceService.toggleAppareil(deviceId)
-  
-      if (result.success) {
-        showToast(result.message, 'success')
-  
-        setDevices(prev =>
-          prev.map(d =>
-            d.id === device.id
-              ? { ...d, etat_switch: result.newState }
-              : d
-          )
+  const deviceId = device.tuya_device_id
+  setLoadingDeviceIds((prev) => [...prev, deviceId])
+
+  try {
+    // Déterminez le nouvel état souhaité basé sur l'état actuel de Tuya
+    // Si device.etat_actuel_tuya est True (ON), le nouvel état souhaité est False (OFF)
+    // Si device.etat_actuel_tuya est False (OFF), le nouvel état souhaité est True (ON)
+    const newStateValue = !device.etat_actuel_tuya; 
+    
+    // Appelez le service avec le deviceId Tuya et le nouvel état souhaité
+    const result = await DeviceService.toggleAppareil(deviceId, newStateValue); 
+
+    if (result.success) {
+      showToast(result.message, 'success')
+
+      // Mettez à jour l'état local des appareils avec le nouvel état reçu du backend
+      setDevices(prev =>
+        prev.map(d =>
+          d.id === device.id
+            ? { ...d, etat_actuel_tuya: result.newState } // Utilisez le nouveau champ
+            : d
         )
-      } else {
-        showToast(result.message, 'error')
-      }
-    } catch (error) {
-      showToast('Erreur lors du contrôle de l’appareil', 'error')
-    } finally {
-      setLoadingDeviceIds((prev) => prev.filter(id => id !== deviceId))
+      )
+    } else {
+      showToast(result.message, 'error')
     }
+  } catch (error) {
+    showToast('Erreur lors du contrôle de l’appareil', 'error')
+  } finally {
+    setLoadingDeviceIds((prev) => prev.filter(id => id !== deviceId))
   }
+}
   
   
 
@@ -156,7 +181,7 @@ const DeviceManagement = () => {
                 setShowAssignModal(true)
               }
 
-              const handleCreateDevice = (device) => {
+              const handleCreateDevice = (device) => { // Non utilisé
                 setSelectedDevice(device)
                 setShowDeviceModal(true)
               }
@@ -216,6 +241,11 @@ const handleShowCharts = (device) => {
   setSelectedDeviceForCharts(device)
   setShowChartsModal(true)
 }
+
+  // <-- ÉTAPE 2 : Créer la fonction de navigation vers la page de configuration
+  const handleGoToConfigPage = (device) => {
+    navigate(`/devices/config/${device.id}`);
+  };
 
   if (loading) {
     return (
@@ -298,28 +328,36 @@ const handleShowCharts = (device) => {
         </div>
 
         {/* Onglets */}
-        <div className="tabs">
-          <button
-            className={`tab ${selectedTab === 'assigned' ? 'active' : ''}`}
-            onClick={() => setSelectedTab('assigned')}
-          >
-            Appareils assignés
-          </button>
-          {isSuperadmin() && (
+        {/* <-- NOUVEAU : Affichage conditionnel des onglets */}
+        {currentUser && currentUser.role !== 'user' ? (
+          <div className="tabs">
             <button
-              className={`tab ${selectedTab === 'unassigned' ? 'active' : ''}`}
-              onClick={() => setSelectedTab('unassigned')}
+              className={`tab ${selectedTab === 'assigned' ? 'active' : ''}`}
+              onClick={() => setSelectedTab('assigned')}
             >
-              Non assignés ({stats.non_assignes || 0})
+              Appareils assignés
             </button>
-          )}
-          <button
-            className={`tab ${selectedTab === 'all' ? 'active' : ''}`}
-            onClick={() => setSelectedTab('all')}
-          >
-            Tous les appareils
-          </button>
-        </div>
+            {isSuperadmin() && (
+              <button
+                className={`tab ${selectedTab === 'unassigned' ? 'active' : ''}`}
+                onClick={() => setSelectedTab('unassigned')}
+              >
+                Non assignés ({stats.non_assignes || 0})
+              </button>
+            )}
+            <button
+              className={`tab ${selectedTab === 'all' ? 'active' : ''}`}
+              onClick={() => setSelectedTab('all')}
+            >
+              Tous les appareils
+            </button>
+          </div>
+        ) : (
+          // Pour les utilisateurs simples, un seul onglet "Mes appareils"
+          <div className="tabs">
+            <button className="tab active">Mes appareils</button>
+          </div>
+        )}
 
         {/* Tableau des appareils */}
         <DevicesTable
@@ -333,6 +371,8 @@ const handleShowCharts = (device) => {
                 showAssignActions={selectedTab === 'unassigned' || isSuperadmin()}
                 isSuperadmin={isSuperadmin()}
                 isClient={isClient()}
+                onGoToConfigPage={handleGoToConfigPage}
+                currentUserRole={currentUser?.role} // <-- NOUVEAU : Passez le rôle de l'utilisateur
               />
                       {/* Modals */}
         {showAssignModal && (
@@ -396,7 +436,9 @@ const DevicesTable = ({
   onShowCharts, // Nouvelle prop
   showAssignActions,
   isSuperadmin,
-  isClient
+  isClient,
+  onGoToConfigPage, // <-- NOUVEAU : Prop pour la navigation
+  currentUserRole // <-- NOUVEAU : Récupérez le rôle ici
 }) => (
   <div className="table-container">
     <table className="data-table">
@@ -407,6 +449,8 @@ const DevicesTable = ({
           <th>Statut</th>
           <th>État</th>
           {isSuperadmin && <th>Client</th>}
+          {/* <-- NOUVEAU : Afficher la colonne Site si Superadmin ou Admin */}
+          {(isSuperadmin || currentUserRole === 'admin') && <th>Site</th>} 
           <th>En ligne</th>
           <th>Actions</th>
         </tr>
@@ -431,12 +475,16 @@ const DevicesTable = ({
               </span>
             </td>
             <td>
-              <span className={`state-badge ${device.etat_switch ? 'on' : 'off'}`}>
-                {device.etat_switch ? 'ON' : 'OFF'}
+              <span className={`state-badge ${device.etat_actuel_tuya ? 'on' : 'off'}`}>
+                {device.etat_actuel_tuya ? 'ON' : 'OFF'}
               </span>
             </td>
             {isSuperadmin && (
               <td>{device.client?.nom_entreprise || 'N/A'}</td>
+            )}
+            {/* <-- NOUVEAU : Afficher le nom du site */}
+            {(isSuperadmin || currentUserRole === 'admin') && (
+              <td>{device.site?.nom_site || 'N/A'}</td>
             )}
             <td>
               <span className={`online-badge ${device.en_ligne ? 'online' : 'offline'}`}>
@@ -445,69 +493,92 @@ const DevicesTable = ({
             </td>
             <td>
               <div className="action-buttons">
+                {/* Bouton Détails (toujours visible) */}
                 <Button
                   variant="outline"
                   size="small"
                   onClick={() => onDetails(device)}
                   title="Détails"
                 >
-                  👁️
+                  👁️ Détails
                 </Button>
                 
-                {device.statut_assignation === 'assigne' && (
-                  <Button
-                    variant="outline"
-                    size="small"
-                    onClick={() => onShowCharts(device)}
-                    title="Voir les graphiques"
-                  >
-                    📈
-                  </Button>
-                )}
-                
-                {device.statut_assignation === 'assigne' && !isClient && (
+                {/* Bouton ON/OFF (visible si assigné et contrôlable) */}
+                {device.statut_assignation === 'assigne' && !isClient && currentUserRole !== 'user' && (
                   <Button
                     variant="outline"
                     size="small"
                     onClick={() => onToggle(device)}
                     title="Toggle ON/OFF"
                   >
-                    {device.etat_switch ? '⏸️' : '▶️'}
+                    {device.etat_actuel_tuya ? '⏸️ OFF'  : '▶️ ON'}
                   </Button>
                 )}
-                
-                {device.statut_assignation === 'assigne' && (
-                  <Button
-                    variant="outline"
-                    size="small"
-                    onClick={() => onCollectData(device)}
-                    title="Collecter données"
-                  >
-                    📊
-                  </Button>
-                )}
-                
-                {showAssignActions && device.statut_assignation !== 'assigne' && (
-                  <Button
-                    variant="primary"
-                    size="small"
-                    onClick={() => onAssign(device)}
-                    title="Assigner"
-                  >
-                    📎
-                  </Button>
-                )}
-                
-                {showAssignActions && device.statut_assignation === 'assigne' && isSuperadmin && (
-                  <Button
-                    variant="secondary"
-                    size="small"
-                    onClick={() => onUnassign(device)}
-                    title="Désassigner"
-                  >
-                    ✂️
-                  </Button>
-                )}
+
+                {/* Bouton "Plus d'actions" avec menu déroulant */}
+                <DropdownMenu icon="•••" title="Plus d'actions">
+                  {/* Les autres boutons vont ici */}
+
+                  {/* Bouton Voir les graphiques */}
+                  {device.statut_assignation === 'assigne' && (
+                    <Button
+                      variant="text" // Utilisez 'text' pour un style de lien dans le menu
+                      size="small"
+                      onClick={() => onShowCharts(device)}
+                      title="Voir les graphiques"
+                    >
+                      📈 Voir les graphiques
+                    </Button>
+                  )}
+                  
+                  {/* Bouton Collecter données */}
+                  {device.statut_assignation === 'assigne' && (
+                    <Button
+                      variant="text"
+                      size="small"
+                      onClick={() => onCollectData(device)}
+                      title="Collecter données"
+                    >
+                      📊 Collecter données
+                    </Button>
+                  )}
+                  
+                  {/* Bouton Configurer l'appareil */}
+                  {device.statut_assignation === 'assigne' && (isSuperadmin || currentUserRole === 'admin') && (
+                    <Button
+                      variant="text"
+                      size="small"
+                      onClick={() => onGoToConfigPage(device)}
+                      title="Configurer l'appareil"
+                    >
+                      ⚙️ Configurer
+                    </Button>
+                  )}
+
+                  {/* Bouton Assigner (si non assigné et l'action est visible) */}
+                  {showAssignActions && device.statut_assignation !== 'assigne' && currentUserRole !== 'user' && (
+                    <Button
+                      variant="text"
+                      size="small"
+                      onClick={() => onAssign(device)}
+                      title="Assigner"
+                    >
+                      📎 Assigner
+                    </Button>
+                  )}
+                  
+                  {/* Bouton Désassigner (si assigné et Superadmin) */}
+                  {showAssignActions && device.statut_assignation === 'assigne' && isSuperadmin && (
+                    <Button
+                      variant="text"
+                      size="small"
+                      onClick={() => onUnassign(device)}
+                      title="Désassigner"
+                    >
+                      ✂️ Désassigner
+                    </Button>
+                  )}
+                </DropdownMenu>
               </div>
             </td>
           </tr>

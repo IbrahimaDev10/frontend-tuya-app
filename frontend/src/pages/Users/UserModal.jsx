@@ -1,42 +1,90 @@
 import React, { useState, useEffect } from 'react'
 import { useAuth } from '../../store/authContext'
 import UserService from '../../services/userService'
+import SiteService from '../../services/siteService'
 import Button from '../../components/Button'
 import Input from '../../components/Input'
 import Swal from 'sweetalert2';
 import './UserModal.css'
 
 const UserModal = ({ user, onClose, onSave, clients = [] }) => {
-  const { isSuperadmin } = useAuth()
+  const { isSuperadmin, isAdmin, user: currentUser } = useAuth() // <-- AJOUTEZ currentUser pour son client_id
   const [formData, setFormData] = useState({
     prenom: '',
     nom: '',
     email: '',
     telephone: '',
     role: 'user',
-    client_id: ''
+    client_id: '', // Sera pré-rempli pour les admins
+    site_id: ''
   })
   const [errors, setErrors] = useState({})
   const [loading, setLoading] = useState(false)
-  
-
+  const [sitesForClient, setSitesForClient] = useState([]) // État pour les sites du client sélectionné/courant
 
   const isEdit = !!user
 
+  // Initialisation du formulaire
   useEffect(() => {
     if (isEdit && user) {
+      // Mode édition: pré-remplir avec les données de l'utilisateur à modifier
       setFormData({
         prenom: user.prenom || '',
         nom: user.nom || '',
         email: user.email || '',
         telephone: user.telephone || '',
         role: user.role || 'user',
-        client_id: user.client_id || ''
+        client_id: user.client_id || '',
+        site_id: user.site_id || ''
       })
+    } else {
+      // Mode création:
+      // Si l'utilisateur connecté est un admin, pré-remplir client_id avec son propre client_id
+      if (isAdmin() && currentUser?.client_id) {
+        setFormData(prev => ({
+          ...prev,
+          client_id: currentUser.client_id,
+          role: 'user' // Un admin ne peut créer que des utilisateurs simples
+        }))
+      }
     }
-  }, [user])
+  }, [user, isEdit, isAdmin, currentUser])
+
+  // Effet pour charger les sites quand client_id change
+  useEffect(() => {
+    const fetchSites = async () => {
+      const clientIdToFetch = formData.client_id;
+
+      if (clientIdToFetch) {
+        try {
+          // Si l'utilisateur connecté est un admin, il ne peut lister que les sites de son client
+          // Si c'est un superadmin, il peut lister les sites de n'importe quel client_id
+          const response = await SiteService.listerSites(clientIdToFetch);
+          setSitesForClient(response.data.data || []);
+        } catch (error) {
+          console.error("Erreur lors du chargement des sites pour le client:", error);
+          setSitesForClient([]);
+        }
+      } else {
+        setSitesForClient([]);
+      }
+    };
+    fetchSites();
+  }, [formData.client_id]);
   
-  
+  // Réinitialiser site_id si le rôle ou le client change de manière incompatible
+  useEffect(() => {
+    // Si le rôle n'est pas 'user', le site_id doit être vide
+    if (formData.role !== 'user' && formData.site_id) {
+      setFormData(prev => ({ ...prev, site_id: '' }));
+    }
+    // Si le client_id change, et que le site_id actuel n'appartient pas au nouveau client, réinitialiser
+    // Cette vérification est importante après le chargement des sitesForClient
+    if (formData.site_id && sitesForClient.length > 0 && !sitesForClient.some(site => site.id === formData.site_id)) {
+      setFormData(prev => ({ ...prev, site_id: '' }));
+    }
+  }, [formData.role, formData.client_id, sitesForClient]);
+
 
   const handleChange = (e) => {
     const { name, value } = e.target
@@ -70,8 +118,23 @@ const UserModal = ({ user, onClose, onSave, clients = [] }) => {
       newErrors.email = 'Format email invalide'
     }
 
-    if (isSuperadmin() && !formData.client_id && formData.role !== 'superadmin') {
-      newErrors.client_id = 'Client requis pour les rôles admin/user'
+    // Validation du client_id
+    // Si l'utilisateur connecté est Superadmin
+    if (isSuperadmin()) {
+      if (formData.role !== 'superadmin' && !formData.client_id) {
+        newErrors.client_id = 'Client requis pour les rôles admin/utilisateur'
+      }
+    } 
+    // Si l'utilisateur connecté est Admin (client_id est pré-rempli, mais on peut vérifier qu'il n'est pas vide)
+    else if (isAdmin()) {
+      if (!formData.client_id) { // Devrait toujours être pré-rempli par currentUser.client_id
+        newErrors.client_id = 'Client requis'
+      }
+    }
+
+    // Validation pour site_id
+    if (formData.role === 'user' && !formData.site_id) {
+      newErrors.site_id = 'Site requis pour les utilisateurs simples'
     }
 
     return newErrors
@@ -90,37 +153,24 @@ const UserModal = ({ user, onClose, onSave, clients = [] }) => {
     setErrors({})
 
     try {
+      // Préparer les données à envoyer
+      const dataToSend = { ...formData };
+      // Si l'utilisateur connecté est admin, le rôle est forcé à 'user'
+      if (isAdmin()) {
+        dataToSend.role = 'user';
+      }
+
       if (isEdit) {
-        await UserService.modifierUtilisateur(user.id, formData)
+        await UserService.modifierUtilisateur(user.id, dataToSend)
       } else {
-        const response = await UserService.creerUtilisateur(formData)
+        const response = await UserService.creerUtilisateur(dataToSend)
         if (response.data.mot_de_passe_temporaire) {
-          // Copier dans le presse-papier
           await navigator.clipboard.writeText(response.data.mot_de_passe_temporaire)
-          // Ajouter un message de succès           
-          Swal.fire({
-            title: 'Utilisateur créé avec succès !',
-            html: `
-              <p><strong>Mot de passe :</strong> ${response.data.mot_de_passe_temporaire}</p>
-              <p>(Copié dans le presse-papier)</p>
-            `,
-            icon: 'success'
-          });
+          
         } else if (response.data.lien_activation) {
-          // Cas d'un administrateur créé avec lien d'activation
-          Swal.fire({
-            title: 'Administrateur créé avec succès !',
-            html: `
-              <p>Un email d'activation a été envoyé à <strong>${formData.email}</strong></p>
-              <p>L'administrateur devra cliquer sur le lien pour activer son compte.</p>
-            `,
-            icon: 'success'
-          });
+          
         } else {
-          Swal.fire({
-            title: 'Utilisateur créé avec succès !',
-            icon: 'success'
-          });
+          
         }
       }
 
@@ -187,50 +237,81 @@ const UserModal = ({ user, onClose, onSave, clients = [] }) => {
               error={errors.telephone}
             />
 
+            {/* Champ Rôle : Visible uniquement pour les Superadmins */}
             {isSuperadmin() && (
-              <>
-                <div className="form-group">
-                  <label className="input-label">Rôle</label>
-                  <select
-                    name="role"
-                    value={formData.role}
-                    onChange={handleChange}
-                    className="input"
-                  >
-                    <option value="user">Utilisateur</option>
-                    <option value="admin">Administrateur</option>
-                    <option value="superadmin">Super Admin</option>
-                  </select>
-                </div>
-
-                {formData.role !== 'superadmin' && (
-                  <div className="form-group">
-                    <label className="input-label">
-                      Client
-                      <span className="required">*</span>
-                    </label>
-                    <select
-                      name="client_id"
-                      value={formData.client_id}
-                      onChange={handleChange}
-                      className={`input ${errors.client_id ? 'input-error' : ''}`}
-                    >
-                      <option value="">Sélectionner un client</option>
-                      {clients.map(client => (
-                        <option key={client.id} value={client.id}>
-                            {client.nom_entreprise || client.nom}
-                        </option>
-                        ))}
-
-
-                    </select>
-                    {errors.client_id && (
-                      <span className="input-error-message">{errors.client_id}</span>
-                    )}
-                  </div>
-                )}
-              </>
+              <div className="form-group">
+                <label className="input-label">Rôle</label>
+                <select
+                  name="role"
+                  value={formData.role}
+                  onChange={handleChange}
+                  className="input"
+                >
+                  <option value="user">Utilisateur</option>
+                  <option value="admin">Administrateur</option>
+                  <option value="superadmin">Super Admin</option>
+                </select>
+              </div>
             )}
+
+            {/* Champ Client :
+                - Visible pour les Superadmins (sauf si rôle = superadmin)
+                - Masqué pour les Admins (client_id est pré-rempli et non modifiable)
+            */}
+            {isSuperadmin() && formData.role !== 'superadmin' && (
+              <div className="form-group">
+                <label className="input-label">
+                  Client
+                  <span className="required">*</span>
+                </label>
+                <select
+                  name="client_id"
+                  value={formData.client_id}
+                  onChange={handleChange}
+                  className={`input ${errors.client_id ? 'input-error' : ''}`}
+                >
+                  <option value="">Sélectionner un client</option>
+                  {clients.map(client => (
+                    <option key={client.id} value={client.id}>
+                        {client.nom_entreprise || client.nom}
+                    </option>
+                    ))}
+                </select>
+                {errors.client_id && (
+                  <span className="input-error-message">{errors.client_id}</span>
+                )}
+              </div>
+            )}   
+            {/* Champ Site :
+                - Visible si le rôle est 'user'
+                - Visible pour les Superadmins (si client_id sélectionné)
+                - Visible pour les Admins (si client_id pré-rempli)
+            */}
+            {formData.role === 'user' && formData.client_id && (
+              <div className="form-group">
+                <label className="input-label">
+                  Site
+                  <span className="required">*</span>
+                </label>
+                <select
+                  name="site_id"
+                  value={formData.site_id}
+                  onChange={handleChange}
+                  className={`input ${errors.site_id ? 'input-error' : ''}`}
+                >
+                  <option value="">Sélectionner un site</option>
+                  {sitesForClient.map(site => (
+                    <option key={site.id} value={site.id}>
+                      {site.nom_site}
+                    </option>
+                  ))}
+                </select>
+                {errors.site_id && (
+                  <span className="input-error-message">{errors.site_id}</span>
+                )}
+              </div>
+            )}
+
           </div>
 
           <div className="modal-footer">

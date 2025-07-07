@@ -9,7 +9,7 @@ Backend Flask pour l'application Tuya.
 python -m venv venv
 source venv/bin/activate  # Sur Unix
 # ou
-venv\Scripts\activate  # Sur Windows
+source nenv/Scripts/activate  # Sur Windows
 
 ## Dépendances
 
@@ -17,3 +17,5 @@ venv\Scripts\activate  # Sur Windows
 ```bash
 pip install -r requirements.txt
 
+## Demarerr
+python app.py

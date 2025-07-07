@@ -117,6 +117,8 @@ class Device(db.Model):
     derniere_donnee = db.Column(db.DateTime, nullable=True)
     actif = db.Column(db.Boolean, default=True, nullable=False, index=True)
     en_ligne = db.Column(db.Boolean, default=False, nullable=False, index=True)
+    etat_actuel_tuya = db.Column(db.Boolean, nullable=True) # True pour ON, False pour OFF
+    derniere_maj_etat_tuya = db.Column(db.DateTime, nullable=True)
     
     # =================== RELATIONS ===================
     donnees = db.relationship('DeviceData', backref='appareil', lazy='dynamic', cascade='all, delete-orphan')
@@ -692,7 +694,8 @@ class Device(db.Model):
         }
     
     def to_dict(self, include_stats=False, include_tuya_info=False, 
-               include_protection=False, include_programmation=False):
+               include_protection=False, include_programmation=False,
+               include_client_site=True): # <-- AJOUTEZ CE NOUVEAU PARAMÈTRE
         """Convertir en dictionnaire avec options"""
         base_dict = {
             'id': self.id,
@@ -701,6 +704,8 @@ class Device(db.Model):
             'type_appareil': self.type_appareil,
             'en_ligne': self.en_ligne,
             'actif': self.actif,
+            'etat_actuel_tuya': self.etat_actuel_tuya, # Inclure le nouvel état
+            'derniere_maj_etat_tuya': self.derniere_maj_etat_tuya.isoformat() if self.derniere_maj_etat_tuya else None,
             'statut_assignation': self.statut_assignation,
             'client_id': self.client_id,
             'site_id': getattr(self, 'site_id', None),
@@ -708,6 +713,36 @@ class Device(db.Model):
             'derniere_donnee': self.derniere_donnee.isoformat() if self.derniere_donnee else None
         }
         
+        # --- DÉBUT DE LA MODIFICATION ---
+        if include_client_site:
+            if self.client:
+                base_dict['client'] = {
+                    'id': self.client.id,
+                    'nom_entreprise': self.client.nom_entreprise,
+                    # Ajoutez d'autres champs du client que vous souhaitez exposer
+                    'email_contact': self.client.email_contact, 
+                    'telephone': self.client.telephone,
+                    'actif': self.client.actif
+                }
+            else:
+                base_dict['client'] = None 
+            
+            if self.site:
+                base_dict['site'] = {
+                    'id': self.site.id,
+                    'nom_site': self.site.nom_site,
+                    'adresse': self.site.adresse,
+                    'ville': self.site.ville,
+                    'code_postal': self.site.code_postal,
+                    'latitude': self.site.latitude,
+                    'longitude': self.site.longitude,
+                    'actif': self.site.actif
+                    # Ajoutez d'autres champs du site que vous souhaitez exposer
+                }
+            else:
+                base_dict['site'] = None 
+        # --- FIN DE LA MODIFICATION ---
+
         if include_tuya_info:
             base_dict.update({
                 'tuya_nom_original': getattr(self, 'tuya_nom_original', None),
@@ -725,10 +760,11 @@ class Device(db.Model):
             base_dict.update({
                 'type_systeme': getattr(self, 'type_systeme', 'monophase'),
                 'emplacement': getattr(self, 'emplacement', None),
-                'description': getattr(self, 'description', None)
+                # 'description': getattr(self, 'description', None) # Vous n'avez pas de colonne 'description'
             })
         
         return base_dict
+
     
     def assigner_a_client(self, client_id, site_id, utilisateur_assigneur_id=None):
         """Assigner l'appareil à un client"""

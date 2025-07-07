@@ -1,0 +1,133 @@
+/* frontend/src/pages/Devices/DeviceConfigurationPage.css */
+
+.device-config-page {
+    max-width: 1200px; /* Adaptez à votre max-width préféré */
+    margin: 2rem auto;
+    padding: 20px;
+    background-color: white; /* Utilisez white directement ou une variable si définie */
+    border-radius: 12px; /* Correspond à votre modal-content border-radius */
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04); /* Correspond à votre modal-content box-shadow */
+}
+
+.device-config-page h1 {
+    color: #111827; /* Couleur de texte plus foncée, comme vos h3 de modal */
+    font-size: 2.2rem;
+    margin-bottom: 1.5rem;
+    text-align: center;
+}
+
+.device-config-page p {
+    margin-bottom: 0.5rem;
+    color: #6b7280; /* Couleur de texte secondaire, comme vos modal-close */
+    font-size: 0.95rem;
+}
+
+.device-config-page .device-info-summary {
+    background-color: #f8fafc; /* Couleur de fond comme device-info-card */
+    border: 1px solid #e2e8f0; /* Couleur de bordure comme device-info-card */
+    border-radius: 8px; /* Correspond à device-info-card border-radius */
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+    box-shadow: none; /* Pas d'ombre ici, ou une ombre légère si vous voulez */
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1rem;
+}
+
+.device-info-summary strong {
+    color: #1e293b; /* Couleur de texte comme vos h4 de device-info-card */
+}
+
+.config-sections {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1.5rem;
+    margin-top: 2rem;
+}
+
+.config-card {
+    background-color: white;
+    border: 1px solid #e2e8f0; /* Couleur de bordure comme device-info-card */
+    border-radius: 8px; /* Correspond à device-info-card border-radius */
+    padding: 1.8rem;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); /* Ombre légère */
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.config-card h2 {
+    color: #1e293b; /* Couleur de texte comme vos h4 de device-info-card */
+    font-size: 1.6rem;
+    margin-bottom: 0.8rem;
+    border-bottom: 1px solid #e2e8f0; /* Correspond à form-section border-bottom */
+    padding-bottom: 0.5rem;
+}
+
+.config-card p {
+    margin-bottom: 0.5rem;
+    color: #64748b; /* Couleur de texte comme vos labels info-item */
+}
+
+.config-card .button {
+    margin-top: auto;
+    align-self: flex-start;
+    padding: 0.75rem 1.25rem;
+    font-size: 0.9rem;
+}
+
+/* Styles pour les états de chargement et d'erreur (reprises de DeviceManagement.css et adaptées) */
+.loading-container, .error-container, .empty-state {
+    text-align: center;
+    padding: 3rem;
+    color: #6b7280; /* Couleur de texte secondaire */
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    margin: 2rem auto;
+    max-width: 800px;
+}
+
+.loading-spinner {
+    border: 4px solid #f3f3f3;
+    border-left-color: #007bff; /* Couleur primaire */
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 20px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .device-config-page {
+        margin: 1rem;
+        padding: 15px;
+    }
+    .device-config-page h1 {
+        font-size: 1.8rem;
+    }
+    .device-info-summary {
+        grid-template-columns: 1fr;
+    }
+    .config-sections {
+        grid-template-columns: 1fr;
+    }
+    .config-card {
+        padding: 1.2rem;
+    }
+    .config-card h2 {
+        font-size: 1.4rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .device-config-page h1 {
+        font-size: 1.5rem;
+    }
+}

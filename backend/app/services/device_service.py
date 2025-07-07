@@ -6,10 +6,14 @@ from app.models.device import Device
 from app.models.device_data import DeviceData
 from app.models.alert import Alert
 from app import db, get_redis
-from datetime import datetime, timedelta, time
+from datetime import datetime, timedelta
+import time
 import json
 import logging
 import uuid
+
+from app.models.device_action_log import DeviceActionLog
+
 class DeviceService:
     """Service principal unifié pour la gestion complète des appareils IoT"""
     
@@ -744,46 +748,139 @@ class DeviceService:
             if not self.tuya_client.reconnect_if_needed():
                 return {"success": False, "error": "Connexion Tuya impossible"}
             
-            # Exécuter la commande
-            if command == "toggle" or command == "switch":
-                result = self.tuya_client.toggle_device(tuya_device_id, value)
-            else:
-                commands = {
-                    "commands": [
-                        {
-                            "code": command,
-                            "value": value
-                        }
-                    ]
-                }
-                result = self.tuya_client.send_device_command(tuya_device_id, commands)
+            # --- Détermination de la commande Tuya et envoi ---
+            tuya_command_code = "switch_1" # Code par défaut pour le switch (ajustez si nécessaire)
+            tuya_command_value = value # La valeur à envoyer (True/False)
             
-            if result.get("success"):
+            if command == "toggle":
+                # Pour un toggle, si 'value' n'est pas spécifié, on inverse l'état actuel connu
+                if value is None:
+                    # Utiliser l'état connu en DB si disponible, sinon tenter de le récupérer
+                    current_switch_state = device.etat_actuel_tuya
+                    if current_switch_state is None:
+                        # Tenter de récupérer l'état actuel de Tuya si non connu
+                        current_status_result = self.get_device_status(tuya_device_id, use_cache=False)
+                        if current_status_result.get("success"):
+                            # Chercher 'switch_1' ou 'switch'
+                            if "switch_1" in current_status_result.get("values", {}):
+                                current_switch_state = current_status_result["values"]["switch_1"]
+                            elif "switch" in current_status_result.get("values", {}):
+                                current_switch_state = current_status_result["values"]["switch"]
+                    
+                    if current_switch_state is not None:
+                        tuya_command_value = not current_switch_state
+                    else:
+                        print(f"⚠️ Impossible de déterminer l'état actuel pour toggle {tuya_device_id}. Veuillez spécifier 'value'.")
+                        return {"success": False, "error": "Impossible de déterminer l'état actuel pour le toggle."}
+                # Si 'value' est spécifié pour un toggle, on l'utilise directement
+                
+            elif command == "switch":
+                # Pour un switch, 'value' doit être True ou False
+                if value is None or not isinstance(value, bool):
+                    return {"success": False, "error": "La commande 'switch' requiert une valeur booléenne (True/False)."}
+                tuya_command_value = value
+            
+            else: # Autres commandes (ex: 'countdown_1', 'mode', etc.)
+                tuya_command_code = command
+                tuya_command_value = value
+            
+            # Envoi de la commande à Tuya
+            commands_payload = {
+                "commands": [
+                    {
+                        "code": tuya_command_code,
+                        "value": tuya_command_value
+                    }
+                ]
+            }
+            
+            print(f"🔧 Envoi commande à {tuya_device_id}: {commands_payload}")
+            tuya_api_result = self.tuya_client.send_device_command(tuya_device_id, commands_payload)
+            
+            if tuya_api_result.get("success"):
+                print(f"✅ Commande envoyée à {tuya_device_id}")
+                
+                # NOUVEAU : Tenter de récupérer le nouvel état réel de l'appareil après la commande
+                time.sleep(1.5) # Augmenté à 1.5 secondes pour plus de fiabilité
+                
+                new_status_from_tuya = None
+                try_count = 0
+                max_tries = 3
+                
+                while new_status_from_tuya is None and try_count < max_tries:
+                    try_count += 1
+                    print(f"🔍 Tentative {try_count}/{max_tries} de récupération du nouvel état pour {tuya_device_id}...")
+                    fetched_status_result = self.get_device_status(tuya_device_id, use_cache=False)
+                    
+                    if fetched_status_result.get("success"):
+                        # --- MODIFICATION CLÉ ICI ---
+                        # Chercher 'switch_1' en priorité, sinon 'switch'
+                        if "switch_1" in fetched_status_result.get("values", {}):
+                            new_status_from_tuya = fetched_status_result["values"]["switch_1"]
+                        elif "switch" in fetched_status_result.get("values", {}):
+                            new_status_from_tuya = fetched_status_result["values"]["switch"]
+                        # --- FIN MODIFICATION CLÉ ---
+                        
+                        if new_status_from_tuya is not None: # Si on a trouvé un état de switch
+                            print(f"✅ Nouvel état Tuya récupéré: {new_status_from_tuya}")
+                        else:
+                            print(f"⚠️ Récupération d'état échouée ou aucun code 'switch'/'switch_1' trouvé. Réponse: {fetched_status_result}")
+                            time.sleep(0.5 * try_count) # Délai croissant entre les tentatives
+                    else:
+                        print(f"⚠️ Récupération d'état échouée. Réponse: {fetched_status_result}")
+                        time.sleep(0.5 * try_count) # Délai croissant entre les tentatives
+                
+                # Mettre à jour l'état dans la base de données locale
+                if new_status_from_tuya is not None:
+                    device.etat_actuel_tuya = new_status_from_tuya
+                    device.derniere_maj_etat_tuya = datetime.utcnow()
+                    db.session.commit()
+                    print(f"✅ Appareil {device.nom_appareil} (Tuya ID: {tuya_device_id}) mis à jour en DB: etat_actuel_tuya={device.etat_actuel_tuya}")
+                else:
+                    print(f"❌ Échec de la récupération du nouvel état Tuya après {max_tries} tentatives pour {tuya_device_id}.")
+                    # Fallback: Si on n'a pas pu récupérer l'état réel, on utilise la valeur qu'on a tenté d'envoyer
+                    # C'est moins fiable mais permet une mise à jour immédiate du frontend.
+                    if tuya_command_code == "switch_1" and tuya_command_value is not None:
+                        device.etat_actuel_tuya = tuya_command_value
+                        device.derniere_maj_etat_tuya = datetime.utcnow()
+                        db.session.commit()
+                        print(f"⚠️ Fallback: État DB mis à jour avec la valeur envoyée ({tuya_command_value}) pour {tuya_device_id}.")
+                    
                 # Enregistrer l'action dans l'historique
-                self._log_device_action(device, 'manual_control', {
-                    'command': command,
-                    'value': value,
-                    'result': 'success'
-                })
+                try:
+                    # Assurez-vous que la méthode _log_device_action est correctement définie
+                    # et que DeviceActionLog est accessible (importé ou défini).
+                    self._log_device_action(device, 'manual_control', {
+                        'command': command,
+                        'value': value,
+                        'result': 'success',
+                        'new_state_reported': device.etat_actuel_tuya # Utiliser l'état mis à jour en DB
+                    })
+                except Exception as log_err:
+                    print(f"Erreur log action: {log_err}")
                 
                 # Invalider cache après contrôle
                 if invalidate_cache:
                     self._invalidate_device_cache(tuya_device_id)
                 
-                # Récupérer nouveau statut après délai
-                try:
-                    import time
-                    time.sleep(1)
-                    new_status = self.get_device_status(tuya_device_id, use_cache=False)
-                    if new_status.get("success"):
-                        result['new_status'] = new_status
-                except:
-                    pass
-            
-            return result
+                # Retourner le résultat avec le nouvel état réel ou le meilleur état connu
+                return {
+                    "success": True,
+                    "message": "Commande exécutée avec succès.",
+                    "new_state": device.etat_actuel_tuya, # L'état qui sera utilisé par le frontend
+                    "tuya_response": tuya_api_result # Pour le debug si besoin
+                }
+            else:
+                print(f"❌ Échec de l'envoi de la commande à Tuya pour {tuya_device_id}. Réponse: {tuya_api_result}")
+                return {
+                    "success": False,
+                    "error": tuya_api_result.get("error", "Échec de l'envoi de la commande à Tuya."),
+                    "tuya_response": tuya_api_result
+                }
                 
         except Exception as e:
             print(f"❌ Erreur contrôle appareil {tuya_device_id}: {e}")
+            db.session.rollback() # Rollback en cas d'erreur
             return {"success": False, "error": str(e)}
     
     # =================== GESTION PROTECTION AUTOMATIQUE ===================
@@ -1397,25 +1494,23 @@ class DeviceService:
         except Exception as e:
             print(f"❌ Erreur vérification seuils fallback: {e}")
     
-    def _log_device_action(self, device, action_type, details):
-        """Enregistrer une action dans l'historique"""
+    def _log_device_action(self, device, action_type, details, result='success', user_id=None, ip_address=None, user_agent=None):
+        """Méthode interne pour logger les actions sur les appareils."""
         try:
-            from app.models.device import DeviceActionLog
-            
-            log_entry = DeviceActionLog.log_action(
+            # Utilisez la méthode statique log_action de la classe DeviceActionLog
+            DeviceActionLog.log_action(
                 device_id=device.id,
                 client_id=device.client_id,
                 action_type=action_type,
-                action_subtype=details.get('command') or details.get('action_type'),
-                result='success' if details.get('result') == 'success' else 'failed',
-                details=details
+                result=result,
+                details=details,
+                user_id=user_id,
+                ip_address=ip_address,
+                user_agent=user_agent
             )
-            
-            if log_entry:
-                print(f"📝 Action loggée: {action_type} pour {device.nom_appareil}")
-            
+            print(f"✅ Action '{action_type}' loggée pour l'appareil {device.nom_appareil}.")
         except Exception as e:
-            print(f"Erreur log action: {e}")
+            print(f"❌ Erreur lors du logging de l'action '{action_type}' pour {device.nom_appareil}: {e}") 
 
 
     # =================== MÉTHODES DE RÉCUPÉRATION AVANCÉES ===================
@@ -1669,7 +1764,7 @@ class DeviceService:
     def get_device_real_time_data(self, tuya_device_id, use_cache=True):
         """Données temps réel enrichies"""
         try:
-            # Statut complet
+            # Statut complet (cette fonction mettra à jour etat_actuel_tuya dans la DB)
             status_result = self.get_device_status(tuya_device_id, use_cache=use_cache)
             
             if not status_result.get("success"):
@@ -1678,19 +1773,23 @@ class DeviceService:
             device = Device.get_by_tuya_id(tuya_device_id)
             is_online = status_result.get("is_online", False)
             
+            # NOUVEAU : Assurez-vous que l'état du switch est explicitement inclus dans 'data'
+            # (bien que 'values' devrait déjà le contenir si Tuya le fournit)
+            real_time_data_values = status_result.get("values", {})
+            
             result = {
                 "success": True,
                 "device_id": tuya_device_id,
                 "device_name": device.nom_appareil if device else "Inconnu",
                 "is_online": is_online,
-                "data": status_result.get("values", {}),
+                "data": real_time_data_values, # 'data' contient les valeurs brutes de Tuya
                 "timestamp": datetime.utcnow().isoformat(),
-                "enhanced_status": status_result
+                "enhanced_status": status_result # Gardez l'objet complet si utile pour le debug
             }
             
             # Ajouter recommandations si en ligne
             if is_online and device:
-                result["recommendations"] = self._generate_device_recommendations(device, status_result.get("values", {}))
+                result["recommendations"] = self._generate_device_recommendations(device, real_time_data_values)
             
             return result
             
@@ -1786,17 +1885,50 @@ class DeviceService:
         try:
             print("🔄 Synchronisation complète des appareils...")
             
-            # Import depuis Tuya
+            # Import depuis Tuya (cela met déjà à jour les appareils existants et en crée de nouveaux)
+            # Assurez-vous que import_tuya_devices met à jour l'état en ligne et l'état du switch
             import_result = self.import_tuya_devices(use_cache=not force_refresh, force_refresh=force_refresh)
             
             if not import_result.get("success"):
                 return import_result
             
+            # NOUVEAU : Mettre à jour l'état ON/OFF pour tous les appareils après l'import
+            # C'est important car import_tuya_devices pourrait ne pas récupérer l'état du switch
+            # ou vous voulez une mise à jour fraîche pour tous.
+            
+            # Récupérer tous les appareils de notre DB
+            all_devices_in_db = Device.query.all()
+            
+            for device in all_devices_in_db:
+                try:
+                    # Récupérer le statut le plus récent de Tuya (sans cache)
+                    status_result = self.get_device_status(device.tuya_device_id, use_cache=False)
+                    
+                    if status_result.get("success"):
+                        # Mettre à jour le statut en ligne (en_ligne)
+                        device.update_online_status(status_result.get("is_online", False))
+                        
+                        # Mettre à jour l'état ON/OFF (etat_actuel_tuya)
+                        if "switch" in status_result.get("values", {}):
+                            device.etat_actuel_tuya = status_result["values"]["switch"]
+                            device.derniere_maj_etat_tuya = datetime.utcnow()
+                            db.session.add(device) # Marquer l'objet comme modifié
+                        
+                    else:
+                        # Si la récupération du statut échoue, marquer l'appareil comme hors ligne
+                        device.update_online_status(False)
+                        print(f"⚠️ Impossible de récupérer le statut de {device.nom_appareil} ({device.tuya_device_id}).")
+                except Exception as e:
+                    print(f"❌ Erreur lors de la mise à jour du statut de {device.nom_appareil}: {e}")
+                    device.update_online_status(False) # Marquer comme hors ligne en cas d'erreur
+            
+            db.session.commit() # Commiter tous les changements après la boucle
+            
             # Exécuter actions programmées en attente
             scheduled_result = self.execute_scheduled_actions()
             
             # Statistiques finales
-            all_devices = Device.query.all()
+            all_devices = Device.query.all() # Re-query pour les stats à jour
             online_final = Device.query.filter_by(en_ligne=True).count()
             offline_final = Device.query.filter_by(en_ligne=False).count()
             
@@ -1817,7 +1949,9 @@ class DeviceService:
             
         except Exception as e:
             print(f"❌ Erreur synchronisation: {e}")
+            db.session.rollback() # Rollback en cas d'erreur
             return {"success": False, "error": str(e)}
+
     
     def get_device_statistics(self, include_advanced=True):
         """Statistiques avancées des appareils"""

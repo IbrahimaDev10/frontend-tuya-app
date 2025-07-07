@@ -111,14 +111,30 @@ def creer_site(data, current_user):  # ✅ CORRIGÉ : data en premier
 def lister_sites(current_user):
     """Lister les sites selon les permissions"""
     try:
-        # Paramètre optionnel pour filtrer par client (superadmin seulement)
-        client_id = request.args.get('client_id')
+        # Paramètre optionnel pour filtrer par client
+        requested_client_id = request.args.get('client_id')
         
-        # Vérification des permissions pour le filtre client_id
-        if client_id and not current_user.is_superadmin():
-            return jsonify({'error': 'Seul le superadmin peut filtrer par client'}), 403
+        # Déterminer le client_id réel à utiliser pour le filtrage
+        client_id_to_filter = None
         
-        sites, erreur = site_service.lister_sites(current_user, client_id)
+        if current_user.is_superadmin():
+            # Superadmin peut lister tous les sites ou filtrer par n'importe quel client_id
+            client_id_to_filter = requested_client_id
+        elif current_user.is_admin():
+            # Admin ne peut lister que les sites de son propre client.
+            # Si un client_id est demandé, il doit correspondre à celui de l'admin.
+            if requested_client_id and requested_client_id != current_user.client_id:
+                return jsonify({
+                    'error': 'Accès interdit: Vous ne pouvez lister que les sites de votre client.'
+                }), 403
+            client_id_to_filter = current_user.client_id
+        else:
+            # Si d'autres rôles peuvent accéder à cette route, définissez leur logique ici.
+            # Pour l'instant, admin_required bloque les 'user' simples.
+            pass # Ne devrait pas arriver ici avec admin_required
+
+        # Appeler le service avec le client_id déterminé
+        sites, erreur = site_service.lister_sites(current_user, client_id_to_filter)
         
         if erreur:
             return jsonify({'error': erreur}), 403
@@ -127,10 +143,11 @@ def lister_sites(current_user):
             'success': True,
             'data': sites,
             'total': len(sites),
-            'client_id_filtre': client_id
+            'client_id_filtre': client_id_to_filter # Renvoyer le client_id réellement utilisé
         }), 200
         
     except Exception as e:
+        print(f"Erreur serveur lors du listage des sites: {str(e)}")
         return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
 
 @site_bp.route('/<site_id>', methods=['GET'])

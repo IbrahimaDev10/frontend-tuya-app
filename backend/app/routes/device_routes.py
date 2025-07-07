@@ -33,6 +33,26 @@ except ImportError as e:
 
 # =================== FONCTIONS UTILITAIRES (mises à jour) ===================
 
+def authenticated_user_required(f):
+    """Décorateur pour les routes accessibles à tout utilisateur authentifié"""
+    @wraps(f)
+    @jwt_required()
+    def decorated_function(*args, **kwargs):
+        try:
+            user_id = get_jwt_identity()
+            current_user = User.query.get(user_id)
+            
+            # Vérifie si l'utilisateur existe et est actif
+            if not current_user or not current_user.actif:
+                return jsonify({'error': 'Authentification requise ou utilisateur inactif'}), 401
+            
+            # Si l'utilisateur est actif, il a accès
+            return f(current_user, *args, **kwargs)
+        except Exception as e:
+            return jsonify({'error': f'Erreur authentification: {str(e)}'}), 401
+    return decorated_function
+
+
 def find_device_by_id_or_tuya_id(device_id):
     """Trouver un appareil par UUID ou tuya_device_id"""
     device = Device.query.get(device_id)
@@ -149,7 +169,7 @@ def health_check():
         }), 500
 
 @device_bp.route('/', methods=['GET'])
-@admin_required
+@authenticated_user_required
 def lister_appareils(current_user):
     """Lister les appareils avec filtrage automatique par site utilisateur"""
     try:
@@ -421,7 +441,7 @@ def _fallback_lister_appareils_avec_site(current_user, site_id, inclure_non_assi
 
 
 @device_bp.route('/<device_id>', methods=['GET'])
-@admin_required
+@authenticated_user_required
 def obtenir_appareil(current_user, device_id):
     """Obtenir les détails d'un appareil avec enrichissement"""
     try:
@@ -475,7 +495,7 @@ def obtenir_appareil(current_user, device_id):
 # =================== CONTRÔLE DES APPAREILS (amélioré) ===================
 
 @device_bp.route('/<device_id>/toggle', methods=['POST'])
-@admin_required
+@authenticated_user_required
 def toggle_appareil(current_user, device_id):
     """Basculer l'état d'un appareil avec vérification site utilisateur"""
     try:
@@ -544,7 +564,7 @@ def toggle_appareil(current_user, device_id):
 
         
 @device_bp.route('/<device_id>/controle', methods=['POST'])
-@admin_required
+@authenticated_user_required
 @validate_json_data(['action'])
 def controler_appareil(data, current_user, device_id):
     """Contrôler un appareil avec action spécifique"""
@@ -578,7 +598,7 @@ def controler_appareil(data, current_user, device_id):
 # =================== GESTION DES DONNÉES (optimisée) ===================
 
 @device_bp.route('/<device_id>/donnees', methods=['GET'])
-@admin_required
+@authenticated_user_required
 def obtenir_donnees_appareil(current_user, device_id):
     """Obtenir l'historique des données d'un appareil avec cache"""
     try:
@@ -657,7 +677,7 @@ def obtenir_donnees_appareil(current_user, device_id):
         return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
 
 @device_bp.route('/<device_id>/collecter-donnees', methods=['POST'])
-@admin_required
+@authenticated_user_required
 def collecter_donnees(current_user, device_id):
     """Collecter manuellement les données d'un appareil avec enrichissement"""
     try:
@@ -1245,7 +1265,7 @@ def get_device_recommendations(current_user, device_id):
 # =================== ROUTES GRAPHIQUES (optimisées) ===================
 
 @device_bp.route('/<device_id>/graphique/<metric_type>', methods=['GET'])
-@admin_required
+@authenticated_user_required
 def get_graphique_metric(current_user, device_id, metric_type):
     """Obtenir les données pour graphiques avec cache"""
     try:
@@ -1355,7 +1375,7 @@ def get_graphique_metric(current_user, device_id, metric_type):
 # =================== NOUVELLE ROUTE POUR INFO SITE UTILISATEUR ===================
 
 @device_bp.route('/mon-site', methods=['GET'])
-@admin_required
+@authenticated_user_required
 def get_mon_site_info(current_user):
     """Récupérer les informations du site de l'utilisateur"""
     try:
@@ -1457,7 +1477,7 @@ def get_mon_site_info(current_user):
 # =================== ROUTE POUR LISTER SITES ACCESSIBLES ===================
 
 @device_bp.route('/sites-accessibles', methods=['GET'])
-@admin_required
+@authenticated_user_required
 def get_sites_accessibles(current_user):
     """Récupérer les sites accessibles selon le rôle utilisateur"""
     try:
@@ -1582,7 +1602,7 @@ def import_appareils_tuya(current_user):
         return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
     
 @device_bp.route('/sync-tuya', methods=['POST'])
-@admin_required
+@authenticated_user_required
 def synchroniser_tuya(current_user):
     """Synchroniser les statuts avec Tuya avec options"""
     try:
@@ -1714,7 +1734,7 @@ def desassigner_appareil(current_user, device_id):
 # =================== ROUTES DE STATUT ET DIAGNOSTICS (enrichies) ===================
 
 @device_bp.route('/<device_id>/statut', methods=['GET'])
-@admin_required
+@authenticated_user_required
 def get_device_status(current_user, device_id):
     """Obtenir le statut actuel d'un appareil avec enrichissement"""
     try:
@@ -1827,7 +1847,7 @@ def ping_device(current_user, device_id):
 # =================== ROUTES DE RECHERCHE ET STATISTIQUES (optimisées) ===================
 
 @device_bp.route('/rechercher', methods=['GET', 'POST'])
-@admin_required
+@authenticated_user_required
 def rechercher_appareils(current_user):
     """Rechercher des appareils par nom avec cache"""
     try:
@@ -1910,7 +1930,7 @@ def rechercher_appareils(current_user):
         return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
 
 @device_bp.route('/statistiques', methods=['GET'])
-@admin_required
+@authenticated_user_required
 def obtenir_statistiques(current_user):
     """Obtenir des statistiques sur les appareils avec cache"""
     try:

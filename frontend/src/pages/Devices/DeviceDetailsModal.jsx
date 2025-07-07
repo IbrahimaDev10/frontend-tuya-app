@@ -3,11 +3,13 @@ import MultiChartView from '../../pages/DeviceCharts/MultiChartView'
 import QuickStatsPanel from '../../pages/DeviceCharts/QuickStatsPanel'
 import DeviceService from '../../services/deviceService'
 import Button from '../../components/Button'
-import './DeviceModal.css'
+import './DeviceModal.css' // Assurez-vous que ce CSS est approprié pour ce modal aussi
 
 const DeviceDetailsModal = ({ device, onClose }) => {
-  const [deviceDetails, setDeviceDetails] = useState(null)
-  const [deviceData, setDeviceData] = useState([])
+  // MODIFICATION 1: Utiliser deviceFullDetails pour stocker les détails complets de l'appareil
+  // C'est l'objet retourné par obtenirAppareil qui contient etat_actuel_tuya, en_ligne, etc.
+  const [deviceFullDetails, setDeviceFullDetails] = useState(null) 
+  const [deviceData, setDeviceData] = useState([]) // Historique des données
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('overview')
   const [refreshing, setRefreshing] = useState(false)
@@ -16,40 +18,50 @@ const DeviceDetailsModal = ({ device, onClose }) => {
 
   useEffect(() => {
     if (device) {
-      loadDeviceDetails()
+      // MODIFICATION 2: Appeler loadFullDeviceDetails au lieu de loadDeviceDetails
+      loadFullDeviceDetails() 
       loadDeviceData()
     }
   }, [device])
 
-  const loadDeviceDetails = async () => {
+  // MODIFICATION 3: Nouvelle fonction pour charger tous les détails de l'appareil
+  const loadFullDeviceDetails = async () => {
     try {
-      const response = await DeviceService.obtenirStatutAppareil(device.id || device.tuya_device_id)
+      setRefreshing(true) // Activer le rafraîchissement pendant le chargement
+      // Utiliser device.id pour obtenir les détails complets de l'appareil
+      const response = await DeviceService.obtenirAppareil(device.id) 
       if (response.data.success) {
-        setDeviceDetails(response.data)
+        setDeviceFullDetails(response.data.data) // Stocker toutes les données de l'appareil
       }
     } catch (error) {
-      console.error('Erreur chargement détails:', error)
+      console.error('Erreur chargement détails complets:', error)
+    } finally {
+      setRefreshing(false) // Désactiver le rafraîchissement
+      setLoading(false) // Marquer le chargement initial comme terminé
     }
   }
 
   const loadDeviceData = async () => {
     try {
-      const response = await DeviceService.obtenirDonneesAppareil(device.id || device.tuya_device_id, 50)
+      // MODIFICATION 4: Utiliser device.id pour obtenir les données historiques
+      const response = await DeviceService.obtenirDonneesAppareil(device.id, 50) 
       if (response.data.success) {
         setDeviceData(response.data.data || [])
       }
     } catch (error) {
       console.error('Erreur chargement données:', error)
     } finally {
-      setLoading(false)
+      // setLoading(false) // Déplacé dans loadFullDeviceDetails pour une meilleure gestion
     }
   }
 
   const handleRefresh = async () => {
     setRefreshing(true)
     try {
-      await DeviceService.collecterDonnees(device.tuya_device_id)
-      await loadDeviceDetails()
+      // MODIFICATION 5: Utiliser device.id pour collecter les données
+      await DeviceService.collecterDonnees(device.id) 
+      // MODIFICATION 6: Recharger les détails complets après rafraîchissement
+      await loadFullDeviceDetails() 
       await loadDeviceData()
     } catch (error) {
       console.error('Erreur rafraîchissement:', error)
@@ -58,14 +70,27 @@ const DeviceDetailsModal = ({ device, onClose }) => {
     }
   }
 
+  // MODIFICATION 7: Adapter handleToggle pour passer la valeur booléenne
   const handleToggle = async () => {
+    if (!deviceFullDetails) return; // S'assurer que les données de l'appareil sont chargées
+
     try {
-      const response = await DeviceService.toggleAppareil(device.id || device.tuya_device_id)
-      if (response.data.success) {
-        await loadDeviceDetails()
+      // Déterminer le nouvel état souhaité (inverse de l'état actuel)
+      const targetState = !deviceFullDetails.etat_actuel_tuya; 
+      // Utiliser device.tuya_device_id pour le toggle (car c'est ce que le backend attend)
+      const result = await DeviceService.toggleAppareil(device.tuya_device_id, targetState); 
+      
+      if (result.success) {
+        // MODIFICATION 8: Mettre à jour l'état local du modal avec le nouvel état
+        setDeviceFullDetails(prev => ({
+          ...prev,
+          etat_actuel_tuya: result.newState // result.newState vient du backend
+        }));
+      } else {
+        console.error('Erreur toggle:', result.message);
       }
     } catch (error) {
-      console.error('Erreur toggle:', error)
+      console.error('Erreur toggle:', error);
     }
   }
 
@@ -82,7 +107,8 @@ const DeviceDetailsModal = ({ device, onClose }) => {
     return new Date(dateString).toLocaleString('fr-FR')
   }
 
-  if (loading) {
+  // MODIFICATION 9: Afficher le spinner tant que deviceFullDetails n'est pas chargé
+  if (loading || !deviceFullDetails) { 
     return (
       <div className="modal-overlay" onClick={onClose}>
         <div className="modal-content large" onClick={(e) => e.stopPropagation()}>
@@ -105,7 +131,8 @@ const DeviceDetailsModal = ({ device, onClose }) => {
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content extra-large" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3>{device?.nom_appareil || device?.tuya_nom_original}</h3>
+          {/* MODIFICATION 10: Utiliser deviceFullDetails pour le nom */}
+          <h3>{deviceFullDetails?.nom_appareil || deviceFullDetails?.tuya_nom_original}</h3> 
           <div className="header-actions">
             <Button
               variant="outline"
@@ -115,13 +142,15 @@ const DeviceDetailsModal = ({ device, onClose }) => {
             >
               🔄 Actualiser
             </Button>
-            {device?.statut_assignation === 'assigne' && (
+            {/* MODIFICATION 11: Utiliser deviceFullDetails pour vérifier le statut d'assignation */}
+            {deviceFullDetails?.statut_assignation === 'assigne' && ( 
               <Button
                 variant="primary"
                 size="small"
                 onClick={handleToggle}
               >
-                {deviceDetails?.statut_bdd?.etat_switch ? '⏸️ OFF' : '▶️ ON'}
+                {/* MODIFICATION 12: Utiliser deviceFullDetails.etat_actuel_tuya pour l'affichage du bouton */}
+                {deviceFullDetails?.etat_actuel_tuya ? '⏸️ OFF' : '▶️ ON'} 
               </Button>
             )}
             <button className="modal-close" onClick={onClose}>×</button>
@@ -164,20 +193,23 @@ const DeviceDetailsModal = ({ device, onClose }) => {
               <div className="status-cards">
                 <div className="status-card">
                   <h4>État</h4>
-                  <div className={`status-indicator ${device?.etat_switch ? 'on' : 'off'}`}>
-                    {device?.etat_switch ? '🟢 ON' : '🔴 OFF'}
+                  {/* MODIFICATION 13: Utiliser deviceFullDetails.etat_actuel_tuya pour l'affichage de l'état */}
+                  <div className={`status-indicator ${deviceFullDetails?.etat_actuel_tuya ? 'on' : 'off'}`}>
+                    {deviceFullDetails?.etat_actuel_tuya ? '🟢 ON' : '🔴 OFF'}
                   </div>
                 </div>
                 <div className="status-card">
                   <h4>Connexion</h4>
-                  <div className={`status-indicator ${device?.en_ligne ? 'online' : 'offline'}`}>
-                    {device?.en_ligne ? '🟢 En ligne' : '🔴 Hors ligne'}
+                  {/* MODIFICATION 14: Utiliser deviceFullDetails.en_ligne pour l'affichage en ligne */}
+                  <div className={`status-indicator ${deviceFullDetails?.en_ligne ? 'online' : 'offline'}`}>
+                    {deviceFullDetails?.en_ligne ? '🟢 En ligne' : '🔴 Hors ligne'}
                   </div>
                 </div>
                 <div className="status-card">
                   <h4>Assignation</h4>
-                  <div className={`status-indicator ${device?.statut_assignation === 'assigne' ? 'assigned' : 'unassigned'}`}>
-                    {device?.statut_assignation === 'assigne' ? '📎 Assigné' : '❓ Non assigné'}
+                  {/* MODIFICATION 15: Utiliser deviceFullDetails.statut_assignation pour l'affichage d'assignation */}
+                  <div className={`status-indicator ${deviceFullDetails?.statut_assignation === 'assigne' ? 'assigned' : 'unassigned'}`}>
+                    {deviceFullDetails?.statut_assignation === 'assigne' ? '📎 Assigné' : '❓ Non assigné'}
                   </div>
                 </div>
               </div>
@@ -188,33 +220,34 @@ const DeviceDetailsModal = ({ device, onClose }) => {
                 <div className="info-grid">
                   <div className="info-item">
                     <label>Nom:</label>
-                    <span>{device?.nom_appareil}</span>
+                    <span>{deviceFullDetails?.nom_appareil}</span>
                   </div>
                   <div className="info-item">
                     <label>Type:</label>
-                    <span>{device?.type_appareil}</span>
+                    <span>{deviceFullDetails?.type_appareil}</span>
                   </div>
                   <div className="info-item">
                     <label>Emplacement:</label>
-                    <span>{device?.emplacement || 'Non défini'}</span>
+                    <span>{deviceFullDetails?.emplacement || 'Non défini'}</span>
                   </div>
                   <div className="info-item">
                     <label>Client:</label>
-                    <span>{device?.client?.nom_entreprise || 'Non assigné'}</span>
+                    <span>{deviceFullDetails?.client?.nom_entreprise || 'Non assigné'}</span>
                   </div>
                   <div className="info-item">
                     <label>Installation:</label>
-                    <span>{formatDate(device?.date_installation)}</span>
+                    <span>{formatDate(deviceFullDetails?.date_installation)}</span>
                   </div>
                   <div className="info-item">
                     <label>Dernière activité:</label>
-                    <span>{formatDate(device?.derniere_donnee)}</span>
+                    <span>{formatDate(deviceFullDetails?.derniere_donnee)}</span>
                   </div>
                 </div>
               </div>
 
               {/* Mesures actuelles */}
-              {deviceDetails?.statut_tuya && (
+              {/* MODIFICATION 16: Utiliser deviceFullDetails.real_time_status.data pour les mesures */}
+              {deviceFullDetails?.real_time_status?.data && ( 
                 <div className="measurements-section">
                   <h4>Mesures actuelles</h4>
                   <div className="measurements-grid">
@@ -223,7 +256,7 @@ const DeviceDetailsModal = ({ device, onClose }) => {
                       <div className="measurement-content">
                         <h5>Tension</h5>
                         <div className="measurement-value">
-                          {formatValue(deviceDetails.statut_tuya.values?.tension, 'V')}
+                          {formatValue(deviceFullDetails.real_time_status.data?.tension, 'V')}
                         </div>
                       </div>
                     </div>
@@ -232,7 +265,7 @@ const DeviceDetailsModal = ({ device, onClose }) => {
                       <div className="measurement-content">
                         <h5>Courant</h5>
                         <div className="measurement-value">
-                          {formatValue(deviceDetails.statut_tuya.values?.courant, 'A')}
+                          {formatValue(deviceFullDetails.real_time_status.data?.courant, 'A')}
                         </div>
                       </div>
                     </div>
@@ -241,7 +274,7 @@ const DeviceDetailsModal = ({ device, onClose }) => {
                       <div className="measurement-content">
                         <h5>Puissance</h5>
                         <div className="measurement-value">
-                          {formatValue(deviceDetails.statut_tuya.values?.puissance, 'W')}
+                          {formatValue(deviceFullDetails.real_time_status.data?.puissance, 'W')}
                         </div>
                       </div>
                     </div>
@@ -250,7 +283,7 @@ const DeviceDetailsModal = ({ device, onClose }) => {
                       <div className="measurement-content">
                         <h5>Énergie</h5>
                         <div className="measurement-value">
-                          {formatValue(deviceDetails.statut_tuya.values?.energie, 'kWh')}
+                          {formatValue(deviceFullDetails.real_time_status.data?.energie, 'kWh')}
                         </div>
                       </div>
                     </div>
@@ -294,8 +327,10 @@ const DeviceDetailsModal = ({ device, onClose }) => {
                           <td>{formatValue(data.courant)}</td>
                           <td>{formatValue(data.puissance)}</td>
                           <td>
-                            <span className={`state-badge ${device.etat_switch ? 'on' : 'off'}`}>
-                              {device.etat_switch ? 'ON' : 'OFF'}
+                            {/* MODIFICATION 17: Utiliser data.etat_actuel_tuya si disponible dans les données historiques */}
+                            {/* Sinon, utiliser deviceFullDetails.etat_actuel_tuya comme fallback ou laisser vide */}
+                            <span className={`state-badge ${data.etat_actuel_tuya ? 'on' : 'off'}`}>
+                              {data.etat_actuel_tuya ? 'ON' : 'OFF'}
                             </span>
                           </td>
                         </tr>
@@ -320,27 +355,28 @@ const DeviceDetailsModal = ({ device, onClose }) => {
                 <div className="info-grid">
                   <div className="info-item">
                     <label>Device ID:</label>
-                    <span className="code">{device?.tuya_device_id}</span>
+                    <span>{deviceFullDetails?.tuya_device_id}</span>
                   </div>
                   <div className="info-item">
                     <label>Nom original:</label>
-                    <span>{device?.tuya_nom_original}</span>
+                    <span>{deviceFullDetails?.tuya_nom_original}</span>
                   </div>
                   <div className="info-item">
                     <label>Modèle:</label>
-                    <span>{device?.tuya_modele}</span>
+                    <span>{deviceFullDetails?.tuya_modele}</span>
                   </div>
                   <div className="info-item">
                     <label>Firmware:</label>
-                    <span>{device?.tuya_version_firmware || 'N/A'}</span>
+                    <span>{deviceFullDetails?.tuya_version_firmware || 'N/A'}</span>
                   </div>
                   <div className="info-item">
                     <label>Catégorie:</label>
-                    <span>{device?.tuya_categorie || 'N/A'}</span>
+                    {/* MODIFICATION 18: tuya_categorie n'est pas dans le modèle Device, utilisez type_appareil si c'est ce que vous voulez */}
+                    <span>{deviceFullDetails?.type_appareil || 'N/A'}</span> 
                   </div>
                   <div className="info-item">
                     <label>UUID (BDD):</label>
-                    <span className="code">{device?.id}</span>
+                    <span>{deviceFullDetails?.id}</span>
                   </div>
                 </div>
               </div>
@@ -351,30 +387,32 @@ const DeviceDetailsModal = ({ device, onClose }) => {
                 <div className="info-grid">
                 <div className="info-item">
                   <label>Tension min:</label>
-                  <span>{formatValue(device?.seuils?.tension_min, 'V')}</span>
+                  {/* MODIFICATION 19: Utiliser deviceFullDetails pour les seuils */}
+                  <span>{formatValue(deviceFullDetails?.seuil_tension_min, 'V')}</span> 
                 </div>
                 <div className="info-item">
                   <label>Tension max:</label>
-                  <span>{formatValue(device?.seuils?.tension_max, 'V')}</span>
+                  <span>{formatValue(deviceFullDetails?.seuil_tension_max, 'V')}</span>
                 </div>
                 <div className="info-item">
                   <label>Courant max:</label>
-                  <span>{formatValue(device?.seuils?.courant_max, 'A')}</span>
+                  <span>{formatValue(deviceFullDetails?.seuil_courant_max, 'A')}</span>
                 </div>
                 <div className="info-item">
                   <label>Puissance max:</label>
-                  <span>{formatValue(device?.seuils?.puissance_max, 'W')}</span>
+                  <span>{formatValue(deviceFullDetails?.seuil_puissance_max, 'W')}</span>
                 </div>
 
                 </div>
               </div>
 
               {/* Données brutes */}
-              {deviceDetails?.statut_tuya?.values && (
+              {/* MODIFICATION 20: Utiliser deviceFullDetails.real_time_status.data pour les données brutes */}
+              {deviceFullDetails?.real_time_status?.data && ( 
                 <div className="info-section">
                   <h4>Données brutes Tuya</h4>
                   <pre className="json-display">
-                    {JSON.stringify(deviceDetails.statut_tuya.values, null, 2)}
+                    {JSON.stringify(deviceFullDetails.real_time_status.data, null, 2)}
                   </pre>
                 </div>
               )}
@@ -385,9 +423,11 @@ const DeviceDetailsModal = ({ device, onClose }) => {
           {/* Graphiques */}
           {activeTab === 'charts' && (
             <div className="charts-content">
-              {device?.statut_assignation === 'assigne' ? (
+              {/* MODIFICATION 21: Utiliser deviceFullDetails pour vérifier le statut d'assignation */}
+              {deviceFullDetails?.statut_assignation === 'assigne' ? ( 
                 <>
-                  <QuickStatsPanel device={device} />
+                  {/* MODIFICATION 22: Passer deviceFullDetails à QuickStatsPanel */}
+                  <QuickStatsPanel device={deviceFullDetails} /> 
                   <div className="charts-section">
                     <div className="charts-header">
                       <h4>📈 Graphiques détaillés</h4>
@@ -423,8 +463,9 @@ const DeviceDetailsModal = ({ device, onClose }) => {
                       )}
                       {showCharts && (
                         <div className="charts-modal-overlay">
-                          <MultiChartView
-                            device={device}
+                          {/* MODIFICATION 23: Passer deviceFullDetails à MultiChartView */}
+                          <MultiChartView 
+                            device={deviceFullDetails} 
                             onClose={() => setShowCharts(false)}
                           />
                         </div>

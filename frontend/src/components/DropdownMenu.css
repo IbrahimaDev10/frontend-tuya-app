@@ -1,0 +1,64 @@
+/* src/components/DropdownMenu.css */
+.dropdown-container {
+  position: relative;
+  display: inline-block;
+}
+
+.dropdown-toggle {
+  background-color: var(--color-background-secondary); /* Couleur de fond des boutons */
+  color: var(--color-text-primary); /* Couleur du texte */
+  border: 1px solid var(--color-border); /* Bordure */
+  padding: 8px 12px;
+  border-radius: var(--border-radius);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px; /* Pour le bouton "..." */
+}
+
+.dropdown-toggle:hover {
+  background-color: var(--color-background-hover);
+  border-color: var(--color-primary);
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: 100%; /* Juste en dessous du bouton */
+  right: 0; /* Aligner à droite */
+  background-color: var(--color-background-card); /* Fond du menu */
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow-medium);
+  z-index: 1000; /* Assurez-vous qu'il est au-dessus des autres éléments */
+  min-width: 160px;
+  padding: 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px; /* Espacement entre les éléments du menu */
+}
+
+.dropdown-menu .button { /* Style pour les boutons à l'intérieur du menu */
+  width: calc(100% - 16px); /* Prend toute la largeur moins le padding */
+  margin: 0 8px; /* Padding latéral */
+  justify-content: flex-start; /* Aligner le texte à gauche */
+  padding: 8px 12px;
+  border: none; /* Pas de bordure pour les éléments du menu */
+  background: none; /* Pas de fond */
+  color: var(--color-text-primary);
+  font-size: 14px;
+  text-align: left;
+}
+
+.dropdown-menu .button:hover {
+  background-color: var(--color-background-hover);
+}
+
+/* Ajustements pour les boutons de petite taille */
+.dropdown-toggle.small {
+  padding: 6px 10px;
+  font-size: 12px;
+}

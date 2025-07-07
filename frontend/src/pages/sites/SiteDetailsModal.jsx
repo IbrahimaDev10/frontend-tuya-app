@@ -226,7 +226,7 @@ const SiteDetailsModal = ({ site, onClose, onEdit }) => {
                     <div className="device-stat">
                       <span className="stat-label">Actifs:</span>
                       <span className="stat-value">
-                        {siteDevices.filter(d => d.etat_switch).length}
+                        {siteDevices.filter(d => d.etat_actuel_tuya).length}
                       </span>
                     </div>
                     <div className="device-stat">
@@ -265,8 +265,8 @@ const SiteDetailsModal = ({ site, onClose, onEdit }) => {
                           <span className={`status-badge ${device.en_ligne ? 'online' : 'offline'}`}>
                             {device.en_ligne ? '🟢' : '🔴'}
                           </span>
-                          <span className={`state-badge ${device.etat_switch ? 'on' : 'off'}`}>
-                            {device.etat_switch ? 'ON' : 'OFF'}
+                          <span className={`state-badge ${device.etat_actuel_tuya ? 'on' : 'off'}`}>
+                            {device.etat_actuel_tuya ? 'ON' : 'OFF'}
                           </span>
                         </div>
                       </div>

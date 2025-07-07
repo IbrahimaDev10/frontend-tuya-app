@@ -5,6 +5,8 @@ from datetime import datetime
 import uuid
 import json
 
+
+
 class DeviceActionLog(db.Model):
     """Modèle pour logger les actions sur les appareils"""
     

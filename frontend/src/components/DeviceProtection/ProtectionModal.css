@@ -1,0 +1,137 @@
+/* frontend/src/pages/Devices/ProtectionModal.css */
+
+/* Pas de .modal-overlay, .modal-content, .modal-header, .modal-body, .modal-footer ici.
+   Ces styles sont déjà définis dans votre CSS de base pour les modaux. */
+
+/* Styles spécifiques aux sections de protection */
+.protection-section {
+    background: #f8fafc; /* Couleur de fond comme device-info-card */
+    border-radius: 8px; /* Correspond à device-info-card border-radius */
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    border: 1px solid #e2e8f0; /* Correspond à device-info-card border */
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.section-header h4 {
+    margin: 0;
+    color: #1e293b; /* Couleur de texte comme vos h4 de device-info-card */
+    font-size: 1.2rem;
+}
+
+/* Toggle Switch (si non déjà globalement défini avec ces styles) */
+.toggle-switch {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.toggle-switch input[type="checkbox"] {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-switch label {
+    display: block;
+    width: 50px;
+    height: 25px;
+    background-color: #d1d5db; /* Couleur de bordure input */
+    border-radius: 25px;
+    position: relative;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+.toggle-switch label::after {
+    content: '';
+    position: absolute;
+    top: 2.5px;
+    left: 2.5px;
+    width: 20px;
+    height: 20px;
+    background-color: white;
+    border-radius: 50%;
+    transition: transform 0.3s;
+}
+
+.toggle-switch input[type="checkbox"]:checked + label {
+    background-color: #22c55e; /* Vert succès */
+}
+
+.toggle-switch input[type="checkbox"]:checked + label::after {
+    transform: translateX(25px);
+}
+
+
+.protection-config {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.config-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+}
+
+.checkbox-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.checkbox-group input[type="checkbox"] {
+    width: 16px; /* Taille standard pour checkbox */
+    height: 16px;
+    visibility: visible; /* Rendre visible si caché par un style global */
+    accent-color: #3b82f6; /* Couleur d'accentuation pour checkbox */
+}
+
+.restart-config {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.info-box {
+    background: #eff6ff; /* Couleur de fond comme info-box de votre exemple */
+    border: 1px solid #bfdbfe; /* Couleur de bordure comme info-box de votre exemple */
+    border-radius: 6px; /* Correspond à info-box border-radius */
+    padding: 12px; /* Correspond à info-box padding */
+    font-size: 0.875rem; /* Correspond à info-box font-size */
+    color: #1e40af; /* Correspond à info-box color */
+    margin-top: 16px; /* Correspond à info-box margin-top */
+}
+
+.error-message {
+    background: #fef2f2; /* Couleur de fond comme error-message de votre exemple */
+    border: 1px solid #fecaca; /* Couleur de bordure comme error-message de votre exemple */
+    color: #dc2626; /* Correspond à error-message color */
+    padding: 12px; /* Correspond à error-message padding */
+    border-radius: 6px; /* Correspond à error-message border-radius */
+    margin-bottom: 16px; /* Correspond à error-message margin-bottom */
+    font-size: 0.875rem; /* Correspond à error-message font-size */
+    text-align: center;
+}
+
+/* Responsive pour les modaux (reprises de votre exemple) */
+@media (max-width: 768px) {
+    .protection-section {
+        padding: 1rem;
+    }
+
+    .config-grid, .restart-config {
+        grid-template-columns: 1fr; /* Une colonne sur mobile */
+    }
+}

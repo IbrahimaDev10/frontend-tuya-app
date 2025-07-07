@@ -51,36 +51,35 @@ class DeviceService {
     });
   }
 
-  async toggleAppareil(deviceId, etat = null) {
-    const data = etat !== null ? { etat } : {}
+async toggleAppareil(deviceId, etat = null) { // 'etat' est la valeur booléenne que vous voulez envoyer (True/False)
+    const data = { etat: etat }; // Envoyez la valeur explicite
   
     try {
-      const res = await apiClient.post(`/devices/${deviceId}/toggle`, data)
-      const response = res.data
+      // L'API Flask attend un POST avec un body JSON
+      const res = await apiClient.post(`/devices/${deviceId}/toggle`, data);
+      const response = res.data; // C'est la réponse JSON du backend
   
-      if (response.success && response.response?.success) {
+      if (response.success) { // Vérifiez directement response.success
         return {
           success: true,
           message: response.message || 'Action effectuée',
-          newState: response.response.new_state,
-          previousState: response.response.previous_state,
-          switchUsed: response.response.switch_code_used,
-          deviceId: response.response.device_id
-        }
+          newState: response.new_state, // <-- C'est ici que vous récupérez le new_state du backend
+          // ... autres champs si votre backend les renvoie et que vous en avez besoin
+        };
       } else {
         return {
           success: false,
-          message: response.message || 'Échec de l’action'
-        }
+          message: response.error || 'Échec de l’action', // Utilisez response.error pour les messages d'erreur
+        };
       }
     } catch (error) {
-      console.error('Erreur dans toggleAppareil:', error)
+      console.error('Erreur dans toggleAppareil:', error);
       return {
         success: false,
-        message: 'Erreur réseau ou serveur'
-      }
+        message: 'Erreur réseau ou serveur',
+      };
     }
-  }
+}
   
 
   // =================== COLLECTE DE DONNÉES ===================
@@ -131,8 +130,10 @@ class DeviceService {
     return apiClient.get('/devices/statistiques');
   }
 
-  async rechercherAppareils(terme) {
-    return apiClient.post('/devices/rechercher', { q: terme });
+  async rechercherAppareils(terme, siteId = null) {
+    const data = { q: terme };
+    if (siteId) data.site_id = siteId; // <-- AJOUTÉ
+    return apiClient.post('/devices/rechercher', data); // Utilisation de POST avec un corps pour les paramètres
   }
 
   async obtenirHistorique(deviceId, limit = 100, hoursBack = 24) {
@@ -165,6 +166,48 @@ class DeviceService {
   async debugFiles() {
     return apiClient.get('/devices/debug-files');
   }
+
+
+  // =================== PROTECTION AUTOMATIQUE ===================
+  
+  async configurerProtectionAutomatique(deviceId, protectionConfig) {
+    return apiClient.post(`/devices/${deviceId}/protection/configure`, {
+      protection_config: protectionConfig
+    });
+  }
+
+  async obtenirStatutProtection(deviceId) {
+    return apiClient.get(`/devices/${deviceId}/protection/status`);
+  }
+
+  // =================== PROGRAMMATION HORAIRES ===================
+  
+  async configurerProgrammationHoraires(deviceId, scheduleConfig) {
+    return apiClient.post(`/devices/${deviceId}/schedule/configure`, {
+      schedule_config: scheduleConfig
+    });
+  }
+
+  async obtenirStatutProgrammation(deviceId) {
+    return apiClient.get(`/devices/${deviceId}/schedule/status`);
+  }
+
+  async desactiverProgrammation(deviceId) {
+    return apiClient.post(`/devices/${deviceId}/schedule/disable`);
+  }
+
+  async obtenirProchainesActions(limit = 10) {
+    return apiClient.get(`/devices/scheduled-actions/next?limit=${limit}`);
+  }
+
+  async executerActionsProgrammees(maxActions = 50) {
+    return apiClient.post(`/devices/scheduled-actions/execute?max_actions=${maxActions}`);
+  }
+
+  async executerRedemarrage() {
+    return apiClient.post('/devices/protection/execute-restarts');
+  }
+
 }
 
 export default new DeviceService();

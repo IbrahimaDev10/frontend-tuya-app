@@ -17,7 +17,8 @@ const DeviceModal = ({ device, onClose, onSuccess, mode = 'edit' }) => {
   })
   const [errors, setErrors] = useState({})
   const [loading, setLoading] = useState(false)
-  const [deviceStatus, setDeviceStatus] = useState(null)
+  // MODIFICATION 1: Utiliser deviceData pour stocker les détails complets de l'appareil, y compris l'état Tuya
+  const [deviceData, setDeviceData] = useState(null) 
   const [refreshing, setRefreshing] = useState(false)
 
   useEffect(() => {
@@ -32,21 +33,24 @@ const DeviceModal = ({ device, onClose, onSuccess, mode = 'edit' }) => {
         seuil_puissance_max: device.seuil_puissance_max || '',
         actif: device.actif !== false
       })
-      loadDeviceStatus()
+      // MODIFICATION 2: Charger les données complètes de l'appareil au lieu de seulement le statut
+      loadFullDeviceData() 
     }
   }, [device, mode])
 
-  const loadDeviceStatus = async () => {
+  // MODIFICATION 3: Nouvelle fonction pour charger toutes les données de l'appareil
+  const loadFullDeviceData = async () => {
     if (!device) return
     
     try {
       setRefreshing(true)
-      const response = await DeviceService.obtenirAppareil(device.id || device.tuya_device_id)
+      // Utiliser device.id car c'est l'ID interne de votre DB, plus fiable pour obtenir les détails
+      const response = await DeviceService.obtenirAppareil(device.id) 
       if (response.data.success) {
-        setDeviceStatus(response.data.data)
+        setDeviceData(response.data.data) // Stocker toutes les données de l'appareil
       }
     } catch (error) {
-      console.error('Erreur chargement statut:', error)
+      console.error('Erreur chargement données appareil:', error)
     } finally {
       setRefreshing(false)
     }
@@ -117,8 +121,9 @@ const DeviceModal = ({ device, onClose, onSuccess, mode = 'edit' }) => {
         seuil_puissance_max: formData.seuil_puissance_max ? parseFloat(formData.seuil_puissance_max) : null
       }
 
+      // MODIFICATION 4: Utiliser device.id pour modifier l'appareil
       const response = await DeviceService.modifierAppareil(
-      device.tuya_device_id,
+        device.id, // Utilisez device.id ici
         updateData
       )
 
@@ -138,21 +143,34 @@ const DeviceModal = ({ device, onClose, onSuccess, mode = 'edit' }) => {
     }
   }
 
+  // MODIFICATION 5: Adapter handleToggleDevice pour passer la valeur booléenne
   const handleToggleDevice = async () => {
+    if (!deviceData) return; // S'assurer que les données de l'appareil sont chargées
+
     try {
-      const response = await DeviceService.toggleAppareil(device.tuya_device_id)
-      if (response.data.success) {
-        await loadDeviceStatus()
+      // Déterminer le nouvel état souhaité (inverse de l'état actuel)
+      const targetState = !deviceData.etat_actuel_tuya; 
+      const result = await DeviceService.toggleAppareil(device.tuya_device_id, targetState); // Passer la valeur
+      
+      if (result.success) {
+        // MODIFICATION 6: Mettre à jour l'état local du modal avec le nouvel état
+        setDeviceData(prev => ({
+          ...prev,
+          etat_actuel_tuya: result.newState // result.newState vient du backend
+        }));
+      } else {
+        console.error('Erreur toggle:', result.message);
       }
     } catch (error) {
-      console.error('Erreur toggle:', error)
+      console.error('Erreur toggle:', error);
     }
   }
 
+  // MODIFICATION 7: Adapter handleCollectData pour rafraîchir les données complètes
   const handleCollectData = async () => {
     try {
       await DeviceService.collecterDonnees(device.id || device.tuya_device_id)
-      await loadDeviceStatus()
+      await loadFullDeviceData() // Recharger toutes les données pour la mise à jour
     } catch (error) {
       console.error('Erreur collecte:', error)
     }
@@ -179,19 +197,21 @@ const DeviceModal = ({ device, onClose, onSuccess, mode = 'edit' }) => {
                 <Button
                   variant="outline"
                   size="small"
-                  onClick={loadDeviceStatus}
+                  onClick={loadFullDeviceData} // MODIFICATION 8: Appeler loadFullDeviceData
                   loading={refreshing}
                 >
                   🔄 Actualiser
                 </Button>
-                {device.statut_assignation === 'assigne' && (
+                {/* MODIFICATION 9: Utiliser deviceData pour vérifier le statut d'assignation */}
+                {deviceData?.statut_assignation === 'assigne' && ( 
                   <>
                     <Button
                       variant="outline"
                       size="small"
                       onClick={handleToggleDevice}
                     >
-                      {deviceStatus?.etat_switch ? '⏸️ OFF' : '▶️ ON'}
+                      {/* MODIFICATION 10: Utiliser deviceData.etat_actuel_tuya pour l'affichage du bouton */}
+                      {deviceData?.etat_actuel_tuya ? '⏸️ OFF' : '▶️ ON'} 
                     </Button>
                     <Button
                       variant="outline"
@@ -215,38 +235,41 @@ const DeviceModal = ({ device, onClose, onSuccess, mode = 'edit' }) => {
             )}
 
             {/* Informations de l'appareil */}
-            {device && (
+            {/* MODIFICATION 11: Utiliser deviceData pour l'affichage des informations */}
+            {deviceData && ( 
               <div className="device-info-card">
                 <h4>📱 Informations de l'appareil</h4>
                 <div className="device-details">
                   <div className="info-grid">
                     <div className="info-item">
                       <label>ID Tuya:</label>
-                      <span className="code">{device.tuya_device_id}</span>
+                      <span className="code">{deviceData.tuya_device_id}</span>
                     </div>
                     <div className="info-item">
                       <label>Type:</label>
-                      <span>{device.type_appareil}</span>
+                      <span>{deviceData.type_appareil}</span>
                     </div>
                     <div className="info-item">
                       <label>Modèle:</label>
-                      <span>{device.tuya_modele}</span>
+                      <span>{deviceData.tuya_modele}</span>
                     </div>
                     <div className="info-item">
                       <label>État:</label>
-                      <span className={`state-badge ${deviceStatus?.etat_switch ? 'on' : 'off'}`}>
-                        {deviceStatus?.etat_switch ? 'ON' : 'OFF'}
+                      {/* MODIFICATION 12: Utiliser deviceData.etat_actuel_tuya pour l'affichage de l'état */}
+                      <span className={`state-badge ${deviceData.etat_actuel_tuya ? 'on' : 'off'}`}>
+                        {deviceData.etat_actuel_tuya ? 'ON' : 'OFF'}
                       </span>
                     </div>
                     <div className="info-item">
                       <label>En ligne:</label>
-                      <span className={`online-badge ${deviceStatus?.en_ligne ? 'online' : 'offline'}`}>
-                        {deviceStatus?.en_ligne ? '🟢 Oui' : '🔴 Non'}
+                      {/* MODIFICATION 13: Utiliser deviceData.en_ligne pour l'affichage en ligne */}
+                      <span className={`online-badge ${deviceData.en_ligne ? 'online' : 'offline'}`}>
+                        {deviceData.en_ligne ? '🟢 Oui' : '🔴 Non'}
                       </span>
                     </div>
                     <div className="info-item">
                       <label>Client:</label>
-                      <span>{device.client?.nom_entreprise || 'Non assigné'}</span>
+                      <span>{deviceData.client?.nom_entreprise || 'Non assigné'}</span>
                     </div>
                   </div>
                 </div>

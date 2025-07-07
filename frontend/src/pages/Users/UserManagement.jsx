@@ -676,6 +676,7 @@ const UsersTable = ({ users, onEdit, onDelete, onToggleStatus, onGeneratePasswor
                   variant="outline"
                   size="small"
                   onClick={() => onEdit(user)}
+                  title="Modifier"
                 >
                   ✏️
                 </Button>
@@ -683,6 +684,7 @@ const UsersTable = ({ users, onEdit, onDelete, onToggleStatus, onGeneratePasswor
                   variant="secondary"
                   size="small"
                   onClick={() => onToggleStatus(user)}
+                  title={user.actif ? 'Désactiver' : 'Activer'}
                 >
                   {user.actif ? '❌' : '✅'}
                 </Button>
@@ -698,6 +700,7 @@ const UsersTable = ({ users, onEdit, onDelete, onToggleStatus, onGeneratePasswor
                   variant="secondary"
                   size="small"
                   onClick={() => onDelete(user)}
+                  title="Supprimer"
                 >
                   🗑️
                 </Button>
