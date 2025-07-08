@@ -10,6 +10,7 @@ python -m venv venv
 source venv/bin/activate  # Sur Unix
 # ou
 source nenv/Scripts/activate  # Sur Windows
+source envi/Scripts/activate
 
 ## Dépendances
 
