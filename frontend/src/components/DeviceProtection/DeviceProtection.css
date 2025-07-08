@@ -1,248 +1,297 @@
-/* frontend/src/pages/Devices/DeviceProtection.css (ou ProtectionModal.css / ScheduleModal.css) */
-
-/* Styles généraux pour le modal (déjà dans components/Modal.css, mais pour rappel) */
-.modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.6);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-}
-
-.modal-content.large { /* Utilisation de la classe 'large' pour les modaux plus grands */
-    background: var(--color-white);
-    padding: 2rem;
-    border-radius: var(--border-radius-md);
-    box-shadow: var(--shadow-lg);
-    max-width: 800px; /* Taille plus grande pour les configurations */
-    width: 90%;
-    max-height: 90vh; /* Limite la hauteur pour les petits écrans */
-    overflow-y: auto; /* Permet le défilement si le contenu est trop grand */
-    display: flex;
-    flex-direction: column;
-}
-
-.modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 1.5rem;
-    padding-bottom: 1rem;
-    border-bottom: 1px solid var(--color-border);
-}
-
-.modal-header h3 {
-    margin: 0;
-    color: var(--color-heading);
-    font-size: 1.8rem;
-}
-
-.modal-close {
-    background: none;
-    border: none;
-    font-size: 1.8rem;
-    color: var(--color-text-secondary);
-    cursor: pointer;
-    transition: color 0.2s ease;
-}
-
-.modal-close:hover {
-    color: var(--color-primary);
-}
-
-.modal-body {
-    flex-grow: 1; /* Permet au corps de prendre l'espace disponible */
-    padding-bottom: 1.5rem;
-}
-
-.modal-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 1rem;
-    padding-top: 1.5rem;
-    border-top: 1px solid var(--color-border);
-    margin-top: auto; /* Pousse le footer vers le bas si le contenu est petit */
-}
-
-/* Styles spécifiques aux sections de protection/programmation */
-.protection-section, .schedule-section {
-    background: var(--color-background-light);
-    border-radius: var(--border-radius-sm);
-    padding: 1.5rem;
-    margin-bottom: 1.5rem;
-    border: 1px solid var(--color-border);
+/* Protection Modal Styles */
+.protection-section,
+.schedule-section {
+  margin-bottom: 2rem;
+  padding: 1.5rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
 }
 
 .section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #e9ecef;
 }
 
 .section-header h4 {
-    margin: 0;
-    color: var(--color-heading);
-    font-size: 1.2rem;
+  margin: 0;
+  color: #333;
+  font-size: 1.1rem;
 }
 
 .toggle-switch {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .toggle-switch input[type="checkbox"] {
-    /* Styles pour le toggle switch si vous n'utilisez pas une librairie */
-    width: 0;
-    height: 0;
-    visibility: hidden;
+  width: auto;
+  margin: 0;
 }
 
 .toggle-switch label {
-    cursor: pointer;
-    text-indent: -9999px;
-    width: 50px;
-    height: 25px;
-    background: var(--color-gray-light);
-    display: block;
-    border-radius: 100px;
-    position: relative;
-    transition: background-color 0.2s ease;
+  font-weight: 500;
+  color: #333;
+  margin: 0;
+  cursor: pointer;
 }
 
-.toggle-switch label:after {
-    content: '';
-    position: absolute;
-    top: 2.5px;
-    left: 2.5px;
-    width: 20px;
-    height: 20px;
-    background: var(--color-white);
-    border-radius: 90px;
-    transition: 0.2s;
-}
-
-.toggle-switch input:checked + label {
-    background: var(--color-success);
-}
-
-.toggle-switch input:checked + label:after {
-    left: calc(100% - 2.5px);
-    transform: translateX(-100%);
-}
-
-.toggle-switch label:active:after {
-    width: 30px;
-}
-
-.protection-config, .schedule-config {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
+.protection-config,
+.schedule-config {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e9ecef;
 }
 
 .config-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.config-options {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
 }
 
 .checkbox-group {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .checkbox-group input[type="checkbox"] {
-    width: auto; /* Override toggle-switch style */
-    height: auto;
-    visibility: visible;
+  width: auto;
+  margin: 0;
+}
+
+.checkbox-group label {
+  font-size: 0.9rem;
+  color: #333;
+  margin: 0;
+  cursor: pointer;
 }
 
 .restart-config {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 1rem;
-    margin-top: 1rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  background: white;
+  padding: 1rem;
+  border-radius: 6px;
+  border: 1px solid #e9ecef;
+}
+
+.general-options {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e9ecef;
+}
+
+.time-config {
+  margin-bottom: 1rem;
+}
+
+.days-config {
+  margin-bottom: 1rem;
+}
+
+.days-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.day-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background: white;
+  border-radius: 6px;
+  border: 1px solid #e9ecef;
+  transition: all 0.2s;
+}
+
+.day-checkbox:hover {
+  background: #f8f9fa;
+}
+
+.day-checkbox input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+}
+
+.day-checkbox label {
+  font-size: 0.9rem;
+  margin: 0;
+  cursor: pointer;
+  flex: 1;
+}
+
+.status-info {
+  background: white;
+  padding: 1rem;
+  border-radius: 6px;
+  border: 1px solid #e9ecef;
+}
+
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.status-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem;
+  background: #f8f9fa;
+  border-radius: 4px;
+}
+
+.status-item label {
+  font-weight: 500;
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.status-item span {
+  font-weight: bold;
+  color: #333;
+}
+
+.next-actions h5 {
+  margin: 0 0 0.5rem 0;
+  color: #333;
+  font-size: 1rem;
+}
+
+.actions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.action-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem;
+  background: #f8f9fa;
+  border-radius: 6px;
+  border: 1px solid #e9ecef;
+}
+
+.action-type {
+  font-weight: 500;
+  color: #333;
+}
+
+.action-time {
+  font-size: 0.9rem;
+  color: #666;
+  font-family: monospace;
 }
 
 .info-box {
-    background: var(--color-info-light);
-    color: var(--color-info-dark);
-    border: 1px solid var(--color-info-border);
-    border-radius: var(--border-radius-sm);
-    padding: 1rem;
-    margin-top: 1.5rem;
-    font-size: 0.9rem;
+  background: #e3f2fd;
+  border: 1px solid #bbdefb;
+  border-radius: 6px;
+  padding: 1rem;
+  margin-top: 1rem;
 }
 
-.error-message {
-    background: var(--color-danger-light);
-    color: var(--color-danger-dark);
-    border: 1px solid var(--color-danger-border);
-    border-radius: var(--border-radius-sm);
-    padding: 0.8rem;
-    margin-bottom: 1.5rem;
-    font-size: 0.9rem;
-    text-align: center;
+.info-box strong {
+  color: #1976d2;
 }
 
-/* Styles spécifiques pour le sélecteur de jours dans ScheduleModal */
-.days-selector {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
+/* Device Table Integration */
+.device-protection-status {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
 }
 
-.days-selector .button {
-    flex-grow: 1;
-    min-width: 40px; /* Pour les petits boutons de jours */
-    padding: 0.5rem 0.75rem;
+.protection-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
 }
 
-/* Responsive pour les modaux */
+.protection-indicator.active {
+  background: #4caf50;
+}
+
+.protection-indicator.inactive {
+  background: #757575;
+}
+
+.schedule-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.schedule-indicator.active {
+  background: #ff9800;
+}
+
+.schedule-indicator.inactive {
+  background: #757575;
+}
+
+/* Responsive */
 @media (max-width: 768px) {
-    .modal-content.large {
-        padding: 1.5rem;
-        width: 95%;
-    }
+  .config-grid,
+  .restart-config {
+    grid-template-columns: 1fr;
+  }
 
-    .modal-header h3 {
-        font-size: 1.5rem;
-    }
+  .section-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1rem;
+  }
 
-    .protection-section, .schedule-section {
-        padding: 1rem;
-    }
+  .days-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 
-    .config-grid, .restart-config {
-        grid-template-columns: 1fr; /* Une colonne sur mobile */
-    }
+  .status-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .action-item {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
 }
 
 @media (max-width: 480px) {
-    .modal-content.large {
-        padding: 1rem;
-    }
+  .protection-section,
+  .schedule-section {
+    padding: 1rem;
+  }
 
-    .modal-header h3 {
-        font-size: 1.3rem;
-    }
+  .days-grid {
+    grid-template-columns: 1fr;
+  }
 
-    .modal-footer {
-        flex-direction: column;
-        gap: 0.8rem;
-    }
-
-    .modal-footer .button {
-        width: 100%;
-    }
+  .day-checkbox {
+    justify-content: center;
+  }
 }

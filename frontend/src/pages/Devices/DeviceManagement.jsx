@@ -513,6 +513,7 @@ const DevicesTable = ({
                   >
                     {device.etat_actuel_tuya ? '⏸️ OFF'  : '▶️ ON'}
                   </Button>
+                  
                 )}
 
                 {/* Bouton "Plus d'actions" avec menu déroulant */}

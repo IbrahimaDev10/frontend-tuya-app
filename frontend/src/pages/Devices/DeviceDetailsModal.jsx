@@ -3,6 +3,8 @@ import MultiChartView from '../../pages/DeviceCharts/MultiChartView'
 import QuickStatsPanel from '../../pages/DeviceCharts/QuickStatsPanel'
 import DeviceService from '../../services/deviceService'
 import Button from '../../components/Button'
+import ProtectionModal from '../../components/DeviceProtection/ProtectionModal'
+import ScheduleModal from '../../components/DeviceProtection/ScheduleModal'
 import './DeviceModal.css' // Assurez-vous que ce CSS est approprié pour ce modal aussi
 
 const DeviceDetailsModal = ({ device, onClose }) => {
@@ -13,6 +15,9 @@ const DeviceDetailsModal = ({ device, onClose }) => {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('overview')
   const [refreshing, setRefreshing] = useState(false)
+
+  const [showProtectionModal, setShowProtectionModal] = useState(false)
+  const [showScheduleModal, setShowScheduleModal] = useState(false)
 
   const [showCharts, setShowCharts] = useState(false)
 
@@ -177,6 +182,12 @@ const DeviceDetailsModal = ({ device, onClose }) => {
           >
             🔧 Technique
           </button>
+          <button
+              className={`modal-tab ${activeTab === 'protection' ? 'active' : ''}`}
+              onClick={() => setActiveTab('protection')}
+            >
+              🛡️ Protection & Horaires
+            </button>
           <button
             className={`modal-tab ${activeTab === 'charts' ? 'active' : ''}`}
             onClick={() => setActiveTab('charts')}
@@ -419,6 +430,89 @@ const DeviceDetailsModal = ({ device, onClose }) => {
             </div>
           )}
 
+              {activeTab === 'protection' && (
+                <div className="protection-content">
+                  {device?.statut_assignation === 'assigne' ? (
+                    <div className="protection-panels">
+                      <div className="protection-panel">
+                        <div className="panel-header">
+                          <h4>🛡️ Protection Automatique</h4>
+                          <Button
+                            variant="primary"
+                            size="small"
+                            onClick={() => setShowProtectionModal(true)}
+                          >
+                            ⚙️ Configurer
+                          </Button>
+                        </div>
+                        <div className="panel-content">
+                          <p>La protection automatique surveille les seuils de tension, courant et température.</p>
+                          <div className="protection-status">
+                            <div className="status-item">
+                              <span>Statut:</span>
+                              <span className={`status-badge ${device.protection_automatique_active ? 'active' : 'inactive'}`}>
+                                {device.protection_automatique_active ? '✅ Activée' : '❌ Désactivée'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="protection-panel">
+                        <div className="panel-header">
+                          <h4>⏰ Programmation Horaires</h4>
+                          <Button
+                            variant="primary"
+                            size="small"
+                            onClick={() => setShowScheduleModal(true)}
+                          >
+                            📅 Configurer
+                          </Button>
+                        </div>
+                        <div className="panel-content">
+                          <p>Programmez l'allumage et l'extinction automatique selon vos horaires.</p>
+                          <div className="schedule-status">
+                            <div className="status-item">
+                              <span>Statut:</span>
+                              <span className={`status-badge ${device.programmation_active ? 'active' : 'inactive'}`}>
+                                {device.programmation_active ? '✅ Activée' : '❌ Désactivée'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="protection-not-available">
+                      <div className="empty-icon">🛡️</div>
+                      <h4>Protection non disponible</h4>
+                      <p>La protection et programmation ne sont disponibles que pour les appareils assignés.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+                          {showProtectionModal && (
+              <ProtectionModal
+                device={device}
+                onClose={() => setShowProtectionModal(false)}
+                onSave={() => {
+                  setShowProtectionModal(false)
+                  loadDeviceDetails()
+                }}
+              />
+            )}
+
+            {showScheduleModal && (
+              <ScheduleModal
+                device={device}
+                onClose={() => setShowScheduleModal(false)}
+                onSave={() => {
+                  setShowScheduleModal(false)
+                  loadDeviceDetails()
+                }}
+              />
+            )}
 
           {/* Graphiques */}
           {activeTab === 'charts' && (

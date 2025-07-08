@@ -820,6 +820,30 @@ def disable_device_protection(current_user, device_identifier):
     except Exception as e:
         print(f"❌ Erreur disable protection: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+    """Désactiver complètement la programmation horaire pour un appareil"""
+    try:
+        device = find_device_by_id_or_tuya_id(device_id)
+        if not device:
+            return jsonify({"success": False, "error": f"Appareil non trouvé: {device_id}"}), 404
+        
+        # Vérifier si l'extension protection est disponible et initialisée
+        if not (device_service and hasattr(device_service, '_protection_extension') and device_service._protection_extension):
+            return jsonify({
+                'error': 'Extension programmation non disponible',
+                'message': 'Fonctionnalité programmation horaire non activée ou initialisée'
+            }), 501
+
+        # Appeler la méthode de l'extension pour désactiver la programmation
+        result = device_service._protection_extension.disable_device_schedule(device.id)
+        
+        return jsonify(result), 200 if result.get('success') else 400
+        
+    except Exception as e:
+        print(f"❌ Erreur désactivation programmation: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
 @device_bp.route('/<device_id>/programmation/config', methods=['GET', 'POST'])
 @admin_required
 def manage_programmation_config(current_user, device_id):

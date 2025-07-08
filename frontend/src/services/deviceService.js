@@ -182,31 +182,48 @@ async toggleAppareil(deviceId, etat = null) { // 'etat' est la valeur booléenne
 
   // =================== PROGRAMMATION HORAIRES ===================
   
-  async configurerProgrammationHoraires(deviceId, scheduleConfig) {
-    return apiClient.post(`/devices/${deviceId}/schedule/configure`, {
-      schedule_config: scheduleConfig
-    });
-  }
+  async configurerProtectionAutomatique(deviceId, protectionConfig) {
+  return apiClient.post(`/devices/${deviceId}/protection/configure`, {
+    protection_config: protectionConfig
+  });
+}
 
-  async obtenirStatutProgrammation(deviceId) {
-    return apiClient.get(`/devices/${deviceId}/schedule/status`);
-  }
+async configurerProtectionAutomatique(deviceId, protectionConfig) {
+  return apiClient.post(`/devices/${deviceId}/protection/config`, { // <-- Changement ici
+    protection_config: protectionConfig // Le backend attend un objet avec la clé 'protection_config'
+  });
+}
 
-  async desactiverProgrammation(deviceId) {
-    return apiClient.post(`/devices/${deviceId}/schedule/disable`);
-  }
+async obtenirStatutProtection(deviceId) {
+  return apiClient.get(`/devices/${deviceId}/protection/config`); // <-- Changement ici
+}
+async configurerProgrammationHoraires(deviceId, scheduleConfig) {
+  return apiClient.post(`/devices/${deviceId}/schedule/configure`, {
+    schedule_config: scheduleConfig
+  });
+}
 
-  async obtenirProchainesActions(limit = 10) {
-    return apiClient.get(`/devices/scheduled-actions/next?limit=${limit}`);
-  }
+async obtenirStatutProgrammation(deviceId) {
+  return apiClient.get(`/devices/${deviceId}/schedule/status`);
+}
 
-  async executerActionsProgrammees(maxActions = 50) {
-    return apiClient.post(`/devices/scheduled-actions/execute?max_actions=${maxActions}`);
-  }
+async desactiverProgrammation(deviceId) {
+  return apiClient.post(`/devices/${deviceId}/schedule/disable`);
+}
+// Dans DeviceService.js
+async configurerProgrammationHoraires(deviceId, scheduleConfig) {
+  return apiClient.post(`/devices/${deviceId}/programmation/config`, scheduleConfig); // <-- Changement ici. Le backend attend directement l'objet scheduleConfig, pas encapsulé dans 'schedule_config'
+}
 
-  async executerRedemarrage() {
-    return apiClient.post('/devices/protection/execute-restarts');
-  }
+async obtenirStatutProgrammation(deviceId) {
+  return apiClient.get(`/devices/${deviceId}/programmation/config`); // <-- Changement ici
+}
+
+async desactiverProgrammation(deviceId){
+    // Appelle la même route avec l'action 'disable'
+    const response = await apiClient.post(`/devices/${deviceId}/programmation/config`, { action: 'disable' });
+    return response.data;
+}
 
 }
 

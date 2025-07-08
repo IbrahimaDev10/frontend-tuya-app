@@ -467,11 +467,13 @@ class DeviceService:
             # Synchronisation si demandée
             if refresh_status:
                 print("🔄 Actualisation des statuts avant récupération...")
-                sync_result = self.import_tuya_devices(use_cache=use_cache)
+                # MODIFICATION ICI : Appeler sync_all_devices au lieu de import_tuya_devices
+                sync_result = self.sync_all_devices(force_refresh=True) # <-- Utilisez force_refresh=True pour s'assurer que Tuya est interrogé
                 if not sync_result.get("success"):
                     print(f"⚠️ Échec synchronisation: {sync_result.get('error')}")
                 else:
-                    db.session.expire_all()
+                    # db.session.expire_all() est important pour que les objets Device soient rafraîchis depuis la DB
+                    db.session.expire_all() 
             
             # ✅ RÉCUPÉRATION SELON PERMISSIONS ET SITE
             if utilisateur and utilisateur.is_superadmin():
@@ -581,6 +583,7 @@ class DeviceService:
             import traceback
             traceback.print_exc()
             return {"success": False, "error": str(e)}
+
 
 
     # ✅ NOUVELLE MÉTHODE : Spécifique aux appareils d'un site

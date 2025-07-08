@@ -1,137 +1,297 @@
-/* frontend/src/pages/Devices/ProtectionModal.css */
-
-/* Pas de .modal-overlay, .modal-content, .modal-header, .modal-body, .modal-footer ici.
-   Ces styles sont déjà définis dans votre CSS de base pour les modaux. */
-
-/* Styles spécifiques aux sections de protection */
-.protection-section {
-    background: #f8fafc; /* Couleur de fond comme device-info-card */
-    border-radius: 8px; /* Correspond à device-info-card border-radius */
-    padding: 1.5rem;
-    margin-bottom: 1.5rem;
-    border: 1px solid #e2e8f0; /* Correspond à device-info-card border */
+/* Protection Modal Styles */
+.protection-section,
+.schedule-section {
+  margin-bottom: 2rem;
+  padding: 1.5rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
 }
 
 .section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #e9ecef;
 }
 
 .section-header h4 {
-    margin: 0;
-    color: #1e293b; /* Couleur de texte comme vos h4 de device-info-card */
-    font-size: 1.2rem;
+  margin: 0;
+  color: #333;
+  font-size: 1.1rem;
 }
 
-/* Toggle Switch (si non déjà globalement défini avec ces styles) */
 .toggle-switch {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .toggle-switch input[type="checkbox"] {
-    position: absolute;
-    opacity: 0;
-    width: 0;
-    height: 0;
+  width: auto;
+  margin: 0;
 }
 
 .toggle-switch label {
-    display: block;
-    width: 50px;
-    height: 25px;
-    background-color: #d1d5db; /* Couleur de bordure input */
-    border-radius: 25px;
-    position: relative;
-    cursor: pointer;
-    transition: background-color 0.3s;
+  font-weight: 500;
+  color: #333;
+  margin: 0;
+  cursor: pointer;
 }
 
-.toggle-switch label::after {
-    content: '';
-    position: absolute;
-    top: 2.5px;
-    left: 2.5px;
-    width: 20px;
-    height: 20px;
-    background-color: white;
-    border-radius: 50%;
-    transition: transform 0.3s;
-}
-
-.toggle-switch input[type="checkbox"]:checked + label {
-    background-color: #22c55e; /* Vert succès */
-}
-
-.toggle-switch input[type="checkbox"]:checked + label::after {
-    transform: translateX(25px);
-}
-
-
-.protection-config {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
+.protection-config,
+.schedule-config {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e9ecef;
 }
 
 .config-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.config-options {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
 }
 
 .checkbox-group {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .checkbox-group input[type="checkbox"] {
-    width: 16px; /* Taille standard pour checkbox */
-    height: 16px;
-    visibility: visible; /* Rendre visible si caché par un style global */
-    accent-color: #3b82f6; /* Couleur d'accentuation pour checkbox */
+  width: auto;
+  margin: 0;
+}
+
+.checkbox-group label {
+  font-size: 0.9rem;
+  color: #333;
+  margin: 0;
+  cursor: pointer;
 }
 
 .restart-config {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 1rem;
-    margin-top: 1rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  background: white;
+  padding: 1rem;
+  border-radius: 6px;
+  border: 1px solid #e9ecef;
+}
+
+.general-options {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e9ecef;
+}
+
+.time-config {
+  margin-bottom: 1rem;
+}
+
+.days-config {
+  margin-bottom: 1rem;
+}
+
+.days-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.day-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background: white;
+  border-radius: 6px;
+  border: 1px solid #e9ecef;
+  transition: all 0.2s;
+}
+
+.day-checkbox:hover {
+  background: #f8f9fa;
+}
+
+.day-checkbox input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+}
+
+.day-checkbox label {
+  font-size: 0.9rem;
+  margin: 0;
+  cursor: pointer;
+  flex: 1;
+}
+
+.status-info {
+  background: white;
+  padding: 1rem;
+  border-radius: 6px;
+  border: 1px solid #e9ecef;
+}
+
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.status-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem;
+  background: #f8f9fa;
+  border-radius: 4px;
+}
+
+.status-item label {
+  font-weight: 500;
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.status-item span {
+  font-weight: bold;
+  color: #333;
+}
+
+.next-actions h5 {
+  margin: 0 0 0.5rem 0;
+  color: #333;
+  font-size: 1rem;
+}
+
+.actions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.action-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem;
+  background: #f8f9fa;
+  border-radius: 6px;
+  border: 1px solid #e9ecef;
+}
+
+.action-type {
+  font-weight: 500;
+  color: #333;
+}
+
+.action-time {
+  font-size: 0.9rem;
+  color: #666;
+  font-family: monospace;
 }
 
 .info-box {
-    background: #eff6ff; /* Couleur de fond comme info-box de votre exemple */
-    border: 1px solid #bfdbfe; /* Couleur de bordure comme info-box de votre exemple */
-    border-radius: 6px; /* Correspond à info-box border-radius */
-    padding: 12px; /* Correspond à info-box padding */
-    font-size: 0.875rem; /* Correspond à info-box font-size */
-    color: #1e40af; /* Correspond à info-box color */
-    margin-top: 16px; /* Correspond à info-box margin-top */
+  background: #e3f2fd;
+  border: 1px solid #bbdefb;
+  border-radius: 6px;
+  padding: 1rem;
+  margin-top: 1rem;
 }
 
-.error-message {
-    background: #fef2f2; /* Couleur de fond comme error-message de votre exemple */
-    border: 1px solid #fecaca; /* Couleur de bordure comme error-message de votre exemple */
-    color: #dc2626; /* Correspond à error-message color */
-    padding: 12px; /* Correspond à error-message padding */
-    border-radius: 6px; /* Correspond à error-message border-radius */
-    margin-bottom: 16px; /* Correspond à error-message margin-bottom */
-    font-size: 0.875rem; /* Correspond à error-message font-size */
-    text-align: center;
+.info-box strong {
+  color: #1976d2;
 }
 
-/* Responsive pour les modaux (reprises de votre exemple) */
+/* Device Table Integration */
+.device-protection-status {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.protection-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.protection-indicator.active {
+  background: #4caf50;
+}
+
+.protection-indicator.inactive {
+  background: #757575;
+}
+
+.schedule-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.schedule-indicator.active {
+  background: #ff9800;
+}
+
+.schedule-indicator.inactive {
+  background: #757575;
+}
+
+/* Responsive */
 @media (max-width: 768px) {
-    .protection-section {
-        padding: 1rem;
-    }
+  .config-grid,
+  .restart-config {
+    grid-template-columns: 1fr;
+  }
 
-    .config-grid, .restart-config {
-        grid-template-columns: 1fr; /* Une colonne sur mobile */
-    }
+  .section-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1rem;
+  }
+
+  .days-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .status-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .action-item {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .protection-section,
+  .schedule-section {
+    padding: 1rem;
+  }
+
+  .days-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .day-checkbox {
+    justify-content: center;
+  }
 }

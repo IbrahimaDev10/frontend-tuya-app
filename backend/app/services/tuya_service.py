@@ -308,15 +308,15 @@ class TuyaClient:
                 
                 # Mapping pour les compteurs d'énergie
                 if code == "cur_voltage":
-                    values["tension"] = value / 100 if value else None
+                    values["tension"] = value / 100 if value is not None else None # Garder 'is not None' pour éviter None si la valeur n'est pas là
                 elif code == "cur_current":
-                    values["courant"] = value / 1000 if value else None
+                    values["courant"] = value / 1000 if value is not None else None # <-- MODIFIÉ : 'if value is not None'
                 elif code == "cur_power":
-                    values["puissance"] = value / 10 if value else None
+                    values["puissance"] = value / 10 if value is not None else None # <-- MODIFIÉ : 'if value is not None'
                 elif code == "add_ele":
-                    values["energie"] = value / 1000 if value else None
+                    values["energie"] = value / 1000 if value is not None else None # <-- MODIFIÉ : 'if value is not None'
                 elif code == "switch":
-                    values["etat_switch"] = bool(value)
+                    values["etat_switch"] = bool(value) if value is not None else None # <-- MODIFIÉ : 'if value is not None'
                 else:
                     values[code] = value
             
@@ -333,7 +333,8 @@ class TuyaClient:
         except Exception as e:
             print(f"❌ Erreur valeurs actuelles {device_id}: {e}")
             return {"success": False, "error": str(e)}
-    
+
+
     def toggle_device(self, device_id, state=None):
         """Allumer/éteindre un appareil avec détection automatique du code switch"""
         try:

@@ -2,35 +2,27 @@ import React, { useState, useEffect } from 'react'
 import DeviceService from '../../services/deviceService'
 import Button from '../Button'
 import Input from '../Input'
-
-// Dans ScheduleModal.jsx
-import './ScheduleModal.css';
-
+import './DeviceProtection.css'
 
 const ScheduleModal = ({ device, onClose, onSave }) => {
-  // Initialisation de l'état avec une structure qui correspond à la fois au formulaire
-  // et à ce que le backend attend/renvoie.
-  // Utilisez les noms de clés du backend pour les sections de programmation.
   const [scheduleConfig, setScheduleConfig] = useState({
-    programmation_active: false, // Correspond à la clé globale du backend
+    enabled: true,
     timezone: "Africa/Dakar",
-    override_protection: false, // Si cette option existe dans votre backend
-    horaires_config: { // L'objet qui contient les configurations d'allumage/extinction
-      allumage: {
-        enabled: true,
-        time: "07:00",
-        days: [1, 2, 3, 4, 5], // Lundi-Vendredi
-        force_on: true
-      },
-      extinction: {
-        enabled: true,
-        time: "22:00",
-        days: [1, 2, 3, 4, 5, 6, 7], // Tous les jours
-        force_off: true
-      }
+    override_protection: false,
+    allumage: {
+      enabled: true,
+      time: "07:00",
+      days: [1, 2, 3, 4, 5], // Lundi-Vendredi
+      force_on: true
+    },
+    extinction: {
+      enabled: true,
+      time: "22:00",
+      days: [1, 2, 3, 4, 5, 6, 7], // Tous les jours
+      force_off: true
     }
   })
-  const [scheduleStatus, setScheduleStatus] = useState(null) // Pour afficher des infos de statut
+  const [scheduleStatus, setScheduleStatus] = useState(null)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [errors, setErrors] = useState({})
@@ -54,76 +46,55 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
   const loadScheduleStatus = async () => {
     try {
       setLoading(true)
-      const response = await DeviceService.obtenirStatutProgrammation(device.id || device.tuya_device_id)
+      const response = await DeviceService.obtenirStatutProgrammation(device.tuya_device_id)
       
       if (response.data.success) {
-        setScheduleStatus(response.data) // Stocke le statut complet pour affichage
-        const backendConfig = response.data // La réponse contient directement les clés
-        
-        // Mappez la réponse du backend à votre état local
-        setScheduleConfig(prev => ({
-          ...prev,
-          programmation_active: backendConfig.programmation_active,
-          timezone: backendConfig.schedule_config?.timezone || prev.timezone, // Utilisez schedule_config
-          override_protection: backendConfig.schedule_config?.override_protection || prev.override_protection, // Si applicable
-          horaires_config: {
-            allumage: {
-              ...prev.horaires_config.allumage,
-              ...backendConfig.schedule_config?.allumage // Utilisez schedule_config
-            },
-            extinction: {
-              ...prev.horaires_config.extinction,
-              ...backendConfig.schedule_config?.extinction // Utilisez schedule_config
-            }
-          }
-        }))
+        setScheduleStatus(response.data)
+        const config = response.data.schedule_config
+        if (config) {
+          setScheduleConfig(prev => ({
+            ...prev,
+            ...config,
+            enabled: response.data.programmation_active
+          }))
+        }
       }
     } catch (error) {
       console.error('Erreur chargement programmation:', error)
-      // Gérer l'erreur, peut-être définir un état d'erreur
     } finally {
       setLoading(false)
     }
   }
 
-  // Gère les changements dans les sous-sections (allumage, extinction)
-  const handleConfigChange = (sectionKey, field, value) => {
+  const handleConfigChange = (section, field, value) => {
     setScheduleConfig(prev => ({
       ...prev,
-      horaires_config: {
-        ...prev.horaires_config,
-        [sectionKey]: {
-          ...prev.horaires_config[sectionKey],
-          [field]: value
-        }
+      [section]: {
+        ...prev[section],
+        [field]: value
       }
     }))
   }
 
-  // Gère le toggle principal de la programmation
   const handleMainToggle = (enabled) => {
     setScheduleConfig(prev => ({
       ...prev,
-      programmation_active: enabled
+      enabled
     }))
   }
 
-  // Gère le toggle des jours de la semaine
-  const handleDayToggle = (sectionKey, day) => {
+  const handleDayToggle = (section, day) => {
     setScheduleConfig(prev => {
-      const currentDays = prev.horaires_config[sectionKey].days
+      const currentDays = prev[section].days
       const newDays = currentDays.includes(day)
         ? currentDays.filter(d => d !== day)
-        : [...currentDays, day].sort((a, b) => a - b) // S'assurer que les jours sont triés
+        : [...currentDays, day].sort()
       
       return {
         ...prev,
-        horaires_config: {
-          ...prev.horaires_config,
-          [sectionKey]: {
-            ...prev.horaires_config[sectionKey],
-            days: newDays
-          }
+        [section]: {
+          ...prev[section],
+          days: newDays
         }
       }
     })
@@ -134,23 +105,13 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
       setSaving(true)
       setErrors({})
       
-      // Le payload doit correspondre à ce que le backend attend pour /programmation/config
-      // C'est-à-dire un objet avec 'action: configure' et les détails de la configuration
-      const payload = {
-        programmation_active: scheduleConfig.programmation_active,
-        timezone: scheduleConfig.timezone,
-        override_protection: scheduleConfig.override_protection,
-        allumage: scheduleConfig.horaires_config.allumage,
-        extinction: scheduleConfig.horaires_config.extinction
-      };
-
-      const response = await DeviceService.configurerProgrammationHoraires(
-        device.id || device.tuya_device_id,
-        payload // Envoyez le payload directement
-      )
+       const response = await DeviceService.configurerProgrammationHoraires(
+      device.tuya_device_id,
+      scheduleConfig // Cet objet sera envoyé directement par DeviceService.js
+    )
       
       if (response.data.success) {
-        onSave() // Appeler la fonction de rappel pour fermer le modal et rafraîchir
+        onSave()
       } else {
         setErrors({ general: response.data.error || 'Erreur lors de la sauvegarde' })
       }
@@ -158,45 +119,47 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
       setErrors({ 
         general: error.response?.data?.error || 'Erreur lors de la sauvegarde' 
       })
-      console.error("Erreur sauvegarde programmation:", error);
     } finally {
       setSaving(false)
     }
   }
 
-  const handleDisable = async () => {
-    try {
-      setSaving(true)
-      setErrors({})
-      const response = await DeviceService.desactiverProgrammation(device.id || device.tuya_device_id)
-      
-      if (response.data.success) {
-        onSave() // Appeler la fonction de rappel pour fermer le modal et rafraîchir
-      } else {
-        setErrors({ general: response.data.error || 'Erreur lors de la désactivation' })
-      }
-    } catch (error) {
-      setErrors({ 
-        general: error.response?.data?.error || 'Erreur lors de la désactivation' 
-      })
-      console.error("Erreur désactivation programmation:", error);
-    } finally {
-      setSaving(false)
+const handleDisable = async () => {
+  try {
+    setSaving(true)
+    // Envoyer une requête POST à l'endpoint /programmation/config avec l'action 'disable'
+    const response = await DeviceService.configurerProgrammationHoraires(
+     device.tuya_device_id,
+      { action: 'disable' } // Envoyer un objet avec l'action 'disable'
+    )
+    
+    if (response.data.success) {
+      onSave()
+    } else {
+      setErrors({ general: response.data.error || 'Erreur lors de la désactivation' })
     }
+  } catch (error) {
+    setErrors({ 
+      general: error.response?.data?.error || 'Erreur lors de la désactivation' 
+    })
+     } finally {
+    setSaving(false)
   }
+}
+
 
   if (loading) {
     return (
       <div className="modal-overlay" onClick={onClose}>
         <div className="modal-content large" onClick={(e) => e.stopPropagation()}>
           <div className="modal-header">
-            <h3>Configuration Programmation</h3>
+            <h3>Programmation Horaires</h3>
             <button className="modal-close" onClick={onClose}>×</button>
           </div>
           <div className="modal-body">
             <div className="loading-container">
               <div className="loading-spinner"></div>
-              <p>Chargement de la configuration...</p>
+              <p>Chargement de la programmation...</p>
             </div>
           </div>
         </div>
@@ -208,7 +171,7 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content large" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3>⏰ Programmation Horaire - {device.nom_appareil}</h3>
+          <h3>⏰ Programmation Horaires - {device.nom_appareil}</h3>
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
 
@@ -225,161 +188,196 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
                 <input
                   type="checkbox"
                   id="schedule-enabled"
-                  checked={scheduleConfig.programmation_active} // Utilisez la clé du backend
+                  checked={scheduleConfig.enabled}
                   onChange={(e) => handleMainToggle(e.target.checked)}
                 />
                 <label htmlFor="schedule-enabled">
-                  Programmation {scheduleConfig.programmation_active ? 'activée' : 'désactivée'}
+                  Programmation {scheduleConfig.enabled ? 'activée' : 'désactivée'}
                 </label>
               </div>
             </div>
-          </div>
 
-          {scheduleConfig.programmation_active && (
-            <>
-              {/* Fuseau horaire */}
-              <div className="schedule-section">
-                <div className="section-header">
-                  <h4>🌍 Fuseau Horaire</h4>
-                </div>
-                <div className="schedule-config">
-                  <Input
-                    type="text"
-                    label="Fuseau Horaire (ex: Africa/Dakar)"
-                    value={scheduleConfig.timezone}
-                    onChange={(e) => setScheduleConfig(prev => ({ ...prev, timezone: e.target.value }))}
+            {scheduleConfig.enabled && (
+              <div className="general-options">
+                <div className="checkbox-group">
+                  <input
+                    type="checkbox"
+                    id="override-protection"
+                    checked={scheduleConfig.override_protection}
+                    onChange={(e) => handleConfigChange('', 'override_protection', e.target.checked)}
                   />
+                  <label htmlFor="override-protection">
+                    Ignorer la protection automatique lors des actions programmées
+                  </label>
                 </div>
               </div>
+            )}
+          </div>
 
-              {/* Option d'override protection (si applicable) */}
-              {/* <div className="schedule-section">
-                <div className="section-header">
-                  <h4>Override Protection</h4>
-                </div>
-                <div className="schedule-config">
-                  <div className="checkbox-group">
-                    <input
-                      type="checkbox"
-                      id="override-protection"
-                      checked={scheduleConfig.override_protection}
-                      onChange={(e) => setScheduleConfig(prev => ({ ...prev, override_protection: e.target.checked }))}
-                    />
-                    <label htmlFor="override-protection">
-                      Ignorer la protection automatique pendant la programmation
-                    </label>
-                  </div>
-                </div>
-              </div> */}
-
-              {/* Section Allumage */}
+          {scheduleConfig.enabled && (
+            <>
+              {/* Programmation allumage */}
               <div className="schedule-section">
                 <div className="section-header">
-                  <h4>💡 Allumage</h4>
+                  <h4>🌅 Allumage automatique</h4>
                   <div className="toggle-switch">
                     <input
                       type="checkbox"
                       id="allumage-enabled"
-                      checked={scheduleConfig.horaires_config.allumage.enabled}
+                      checked={scheduleConfig.allumage.enabled}
                       onChange={(e) => handleConfigChange('allumage', 'enabled', e.target.checked)}
                     />
                     <label htmlFor="allumage-enabled">Activé</label>
                   </div>
                 </div>
 
-                {scheduleConfig.horaires_config.allumage.enabled && (
+                {scheduleConfig.allumage.enabled && (
                   <div className="schedule-config">
-                    <Input
-                      type="time"
-                      label="Heure d'allumage"
-                      value={scheduleConfig.horaires_config.allumage.time}
-                      onChange={(e) => handleConfigChange('allumage', 'time', e.target.value)}
-                    />
-                    <div className="days-selector">
-                      {daysOfWeek.map(day => (
-                        <Button
-                          key={day.value}
-                          variant={scheduleConfig.horaires_config.allumage.days.includes(day.value) ? 'primary' : 'outline'}
-                          size="small"
-                          onClick={() => handleDayToggle('allumage', day.value)}
-                        >
-                          {day.label.substring(0, 3)}
-                        </Button>
-                      ))}
+                    <div className="time-config">
+                      <Input
+                        type="time"
+                        label="Heure d'allumage"
+                        value={scheduleConfig.allumage.time}
+                        onChange={(e) => handleConfigChange('allumage', 'time', e.target.value)}
+                      />
                     </div>
+
+                    <div className="days-config">
+                      <label className="input-label">Jours de la semaine</label>
+                      <div className="days-grid">
+                        {daysOfWeek.map(day => (
+                          <div key={day.value} className="day-checkbox">
+                            <input
+                              type="checkbox"
+                              id={`allumage-day-${day.value}`}
+                              checked={scheduleConfig.allumage.days.includes(day.value)}
+                              onChange={() => handleDayToggle('allumage', day.value)}
+                            />
+                            <label htmlFor={`allumage-day-${day.value}`}>
+                              {day.label}
+                            </label>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
                     <div className="checkbox-group">
                       <input
                         type="checkbox"
-                        id="allumage-force-on"
-                        checked={scheduleConfig.horaires_config.allumage.force_on}
+                        id="force-on"
+                        checked={scheduleConfig.allumage.force_on}
                         onChange={(e) => handleConfigChange('allumage', 'force_on', e.target.checked)}
                       />
-                      <label htmlFor="allumage-force-on">Forcer l'allumage (même si déjà ON)</label>
+                      <label htmlFor="force-on">
+                        Forcer l'allumage même si l'appareil est déjà allumé
+                      </label>
                     </div>
                   </div>
                 )}
               </div>
 
-              {/* Section Extinction */}
+              {/* Programmation extinction */}
               <div className="schedule-section">
                 <div className="section-header">
-                  <h4>🌑 Extinction</h4>
+                  <h4>🌙 Extinction automatique</h4>
                   <div className="toggle-switch">
                     <input
                       type="checkbox"
                       id="extinction-enabled"
-                      checked={scheduleConfig.horaires_config.extinction.enabled}
+                      checked={scheduleConfig.extinction.enabled}
                       onChange={(e) => handleConfigChange('extinction', 'enabled', e.target.checked)}
                     />
                     <label htmlFor="extinction-enabled">Activée</label>
                   </div>
                 </div>
 
-                {scheduleConfig.horaires_config.extinction.enabled && (
+                {scheduleConfig.extinction.enabled && (
                   <div className="schedule-config">
-                    <Input
-                      type="time"
-                      label="Heure d'extinction"
-                      value={scheduleConfig.horaires_config.extinction.time}
-                      onChange={(e) => handleConfigChange('extinction', 'time', e.target.value)}
-                    />
-                    <div className="days-selector">
-                      {daysOfWeek.map(day => (
-                        <Button
-                          key={day.value}
-                          variant={scheduleConfig.horaires_config.extinction.days.includes(day.value) ? 'primary' : 'outline'}
-                          size="small"
-                          onClick={() => handleDayToggle('extinction', day.value)}
-                        >
-                          {day.label.substring(0, 3)}
-                        </Button>
-                      ))}
+                    <div className="time-config">
+                      <Input
+                        type="time"
+                        label="Heure d'extinction"
+                        value={scheduleConfig.extinction.time}
+                        onChange={(e) => handleConfigChange('extinction', 'time', e.target.value)}
+                      />
                     </div>
+
+                    <div className="days-config">
+                      <label className="input-label">Jours de la semaine</label>
+                      <div className="days-grid">
+                        {daysOfWeek.map(day => (
+                          <div key={day.value} className="day-checkbox">
+                            <input
+                              type="checkbox"
+                              id={`extinction-day-${day.value}`}
+                              checked={scheduleConfig.extinction.days.includes(day.value)}
+                              onChange={() => handleDayToggle('extinction', day.value)}
+                            />
+                            <label htmlFor={`extinction-day-${day.value}`}>
+                              {day.label}
+                            </label>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
                     <div className="checkbox-group">
                       <input
                         type="checkbox"
-                        id="extinction-force-off"
-                        checked={scheduleConfig.horaires_config.extinction.force_off}
+                        id="force-off"
+                        checked={scheduleConfig.extinction.force_off}
                         onChange={(e) => handleConfigChange('extinction', 'force_off', e.target.checked)}
                       />
-                      <label htmlFor="extinction-force-off">Forcer l'extinction (même si déjà OFF)</label>
+                      <label htmlFor="force-off">
+                        Forcer l'extinction même si l'appareil est déjà éteint
+                      </label>
                     </div>
                   </div>
                 )}
               </div>
 
-              {/* Informations sur la prochaine action programmée */}
-              {scheduleStatus && scheduleStatus.prochaine_action && (
-                <div className="info-box">
-                  <strong>Prochaine action :</strong> {scheduleStatus.prochaine_action_type === 'turn_on' ? 'Allumage' : 'Extinction'} à {new Date(scheduleStatus.prochaine_action).toLocaleTimeString()}
-                  {scheduleStatus.temps_jusqu_execution && ` (dans ${scheduleStatus.temps_jusqu_execution})`}
+              {/* Statut actuel */}
+              {scheduleStatus && (
+                <div className="schedule-section">
+                  <h4>📊 Statut actuel</h4>
+                  <div className="status-info">
+                    <div className="status-grid">
+                      <div className="status-item">
+                        <label>Actions actives:</label>
+                        <span>{scheduleStatus.active_actions || 0}</span>
+                      </div>
+                      <div className="status-item">
+                        <label>Total actions:</label>
+                        <span>{scheduleStatus.total_actions || 0}</span>
+                      </div>
+                    </div>
+
+                    {scheduleStatus.next_actions && scheduleStatus.next_actions.length > 0 && (
+                      <div className="next-actions">
+                        <h5>Prochaines actions :</h5>
+                        <div className="actions-list">
+                          {scheduleStatus.next_actions.slice(0, 3).map((action, index) => (
+                            <div key={index} className="action-item">
+                              <span className="action-type">
+                                {action.action_type === 'turn_on' ? '🌅' : '🌙'} 
+                                {action.action_type === 'turn_on' ? 'Allumage' : 'Extinction'}
+                              </span>
+                              <span className="action-time">
+                                {new Date(action.scheduled_time).toLocaleString('fr-FR')}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
               <div className="info-box">
-                <strong>ℹ️ Information :</strong> La programmation horaire permet de définir des plages 
-                d'allumage et d'extinction automatiques pour cet appareil. Les actions seront exécutées 
-                selon le fuseau horaire configuré.
+                <strong>ℹ️ Information :</strong> La programmation horaires permet d'allumer et éteindre 
+                automatiquement l'appareil selon les créneaux configurés. Les actions sont exécutées 
+                même si l'appareil est en mode manuel, sauf si vous cochez l'option de forçage.
               </div>
             </>
           )}
@@ -393,15 +391,18 @@ const ScheduleModal = ({ device, onClose, onSave }) => {
           >
             Annuler
           </Button>
-          <Button
-            type="button"
-            variant="danger"
-            onClick={handleDisable}
-            loading={saving}
-            disabled={!scheduleConfig.programmation_active} // Désactiver si déjà inactif
-          >
-            Désactiver la programmation
-          </Button>
+          
+          {scheduleConfig.enabled && (
+            <Button
+              type="button"
+              variant="danger"
+              onClick={handleDisable}
+              loading={saving}
+            >
+              Désactiver tout
+            </Button>
+          )}
+          
           <Button
             type="button"
             variant="primary"
