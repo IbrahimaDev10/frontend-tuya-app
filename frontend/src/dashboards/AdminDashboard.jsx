@@ -1,8 +1,12 @@
 import React from 'react'
 import AdminLayout from '../layouts/AdminLayout'
+import AlertDashboard from '../components/Alerts/AlertDashboard'
+import { useAuth } from '../store/authContext'
 import './Dashboard.css'
 
 const AdminDashboard = () => {
+
+  const { user } = useAuth()
   return (
     <AdminLayout>
       <div className="dashboard">
@@ -15,7 +19,7 @@ const AdminDashboard = () => {
           <div className="welcome-card">
             <div className="welcome-icon">🛠️</div>
             <div className="welcome-text">
-              <h2>Bienvenue, Admin !</h2>
+              <h2>Bienvenue, {user?.nom_complet}</h2>
               <p>
                 Vous pouvez gérer les clients de votre structure, 
                 suivre l'inventaire des appareils et planifier la maintenance.
@@ -60,6 +64,10 @@ const AdminDashboard = () => {
               </div>
             </div>
           </div>
+                      <div className="dashboard-section">
+              <h2>Alertes Structure</h2>
+              <AlertDashboard clientId={user?.client_id} />
+            </div>
         </div>
       </div>
     </AdminLayout>

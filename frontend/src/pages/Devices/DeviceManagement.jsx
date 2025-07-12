@@ -14,6 +14,8 @@ import ConfirmModal from '../../components/ConfirmModal'
 import Toast from '../../components/Toast'
 import './DeviceManagement.css'
 import MultiChartView from '../DeviceCharts/MultiChartView'
+import AlertIndicator from '../../components/Alerts/AlertIndicator'
+import AlertPanel from '../../components/Alerts/AlertPanel'
 import { useNavigate } from 'react-router-dom';
 
 const DeviceManagement = () => {
@@ -35,6 +37,9 @@ const DeviceManagement = () => {
 
   const Layout = isSuperadmin() ? SuperAdminLayout : isAdmin() ? AdminLayout : ClientLayout
   const navigate = useNavigate(); // <-- ÉTAPE 1 : Initialiser useNavigate
+
+const [showAlertsPanel, setShowAlertsPanel] = useState(false)
+const [selectedDeviceForAlerts, setSelectedDeviceForAlerts] = useState(null)
 
   const [showChartsModal, setShowChartsModal] = useState(false)
   const [selectedDeviceForCharts, setSelectedDeviceForCharts] = useState(null)
@@ -87,6 +92,12 @@ const DeviceManagement = () => {
     setToast({ message, type })
     setTimeout(() => setToast(null), 4000)
   }
+
+
+  const handleShowAlerts = (device) => {
+  setSelectedDeviceForAlerts(device)
+  setShowAlertsPanel(true)
+}
 
   const handleSearch = async (term) => {
     if (term.length < 2) {
@@ -371,6 +382,7 @@ const handleShowCharts = (device) => {
                 showAssignActions={selectedTab === 'unassigned' || isSuperadmin()}
                 isSuperadmin={isSuperadmin()}
                 isClient={isClient()}
+                onShowAlerts={handleShowAlerts}
                 onGoToConfigPage={handleGoToConfigPage}
                 currentUserRole={currentUser?.role} // <-- NOUVEAU : Passez le rôle de l'utilisateur
               />
@@ -382,6 +394,16 @@ const handleShowCharts = (device) => {
             onSuccess={handleDeviceAssigned}
           />
         )}
+                  {showAlertsPanel && selectedDeviceForAlerts && (
+                    <AlertPanel
+                      device={selectedDeviceForAlerts}
+                      onClose={() => {
+                        setShowAlertsPanel(false)
+                        setSelectedDeviceForAlerts(null)
+                      }}
+                    />
+                  )}
+
 
               {showChartsModal && selectedDeviceForCharts && (
                 <div className="charts-modal-overlay">
@@ -437,6 +459,7 @@ const DevicesTable = ({
   showAssignActions,
   isSuperadmin,
   isClient,
+   onShowAlerts,
   onGoToConfigPage, // <-- NOUVEAU : Prop pour la navigation
   currentUserRole // <-- NOUVEAU : Récupérez le rôle ici
 }) => (
@@ -513,7 +536,17 @@ const DevicesTable = ({
                   >
                     {device.etat_actuel_tuya ? '⏸️ OFF'  : '▶️ ON'}
                   </Button>
-                  
+                )}
+                
+                {device.statut_assignation === 'assigne' && (
+                  <Button
+                    variant="outline"
+                    size="small"
+                    onClick={() => onShowAlerts(device)}
+                    title="Voir les alertes"
+                  >
+                    🔔
+                  </Button>
                 )}
 
                 {/* Bouton "Plus d'actions" avec menu déroulant */}

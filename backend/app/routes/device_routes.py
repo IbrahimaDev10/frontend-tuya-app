@@ -1369,13 +1369,16 @@ def get_graphique_metric(current_user, device_id, metric_type):
                 'start_time': int(start_dt.timestamp() * 1000),
                 'end_time': int(end_dt.timestamp() * 1000)
             },
-            'data': [
+            # MODIFICATION ICI : Renommez 'data' en 'donnees_bdd'
+            'donnees_bdd': [
                 {
                     'timestamp': d.horodatage.isoformat(),
                     'value': float(getattr(d, field_name)) if getattr(d, field_name) else None,
                     'horodatage': int(d.horodatage.timestamp() * 1000)
                 } for d in donnees_bdd
             ],
+            # Ajoutez une clé 'donnees_tuya' vide si vous ne la remplissez pas côté backend
+            'donnees_tuya': [], 
             'count': len(donnees_bdd),
             'from_cache': cache_hit
         }

@@ -133,16 +133,13 @@ const QuickStatsPanel = ({ device }) => {
                 <div className="stat-row">
                   <span className="stat-label">Actuelle:</span>
                   <span className="stat-value current">{stats.tension.current} {stats.tension.unit}</span>
-                </div>
-                <div className="stat-row">
-                  <span className="stat-label">Min:</span>
+                   <span className="stat-label">Min:</span>
                   <span className="stat-value">{stats.tension.min} {stats.tension.unit}</span>
-                </div>
+                  </div>
+
                 <div className="stat-row">
                   <span className="stat-label">Max:</span>
                   <span className="stat-value">{stats.tension.max} {stats.tension.unit}</span>
-                </div>
-                <div className="stat-row">
                   <span className="stat-label">Moyenne:</span>
                   <span className="stat-value">{stats.tension.avg} {stats.tension.unit}</span>
                 </div>
@@ -159,19 +156,17 @@ const QuickStatsPanel = ({ device }) => {
                 <div className="stat-row">
                   <span className="stat-label">Actuel:</span>
                   <span className="stat-value current">{stats.courant.current} {stats.courant.unit}</span>
-                </div>
-                <div className="stat-row">
-                  <span className="stat-label">Min:</span>
+                   <span className="stat-label">Min:</span>
                   <span className="stat-value">{stats.courant.min} {stats.courant.unit}</span>
                 </div>
+                
                 <div className="stat-row">
                   <span className="stat-label">Max:</span>
                   <span className="stat-value">{stats.courant.max} {stats.courant.unit}</span>
-                </div>
-                <div className="stat-row">
                   <span className="stat-label">Moyenne:</span>
                   <span className="stat-value">{stats.courant.avg} {stats.courant.unit}</span>
                 </div>
+                
               </div>
             </div>
 
@@ -185,17 +180,14 @@ const QuickStatsPanel = ({ device }) => {
                 <div className="stat-row">
                   <span className="stat-label">Actuelle:</span>
                   <span className="stat-value current">{stats.puissance.current} {stats.puissance.unit}</span>
-                </div>
-                <div className="stat-row">
-                  <span className="stat-label">Min:</span>
+                 <span className="stat-label">Min:</span>
                   <span className="stat-value">{stats.puissance.min} {stats.puissance.unit}</span>
                 </div>
+                
                 <div className="stat-row">
                   <span className="stat-label">Max:</span>
                   <span className="stat-value">{stats.puissance.max} {stats.puissance.unit}</span>
-                </div>
-                <div className="stat-row">
-                  <span className="stat-label">Moyenne:</span>
+                <span className="stat-label">Moyenne:</span>
                   <span className="stat-value">{stats.puissance.avg} {stats.puissance.unit}</span>
                 </div>
               </div>

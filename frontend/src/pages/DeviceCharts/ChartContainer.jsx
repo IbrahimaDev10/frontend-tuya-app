@@ -89,7 +89,7 @@ const ChartContainer = ({ device, chartType = 'tension', onClose }) => {
       switch (chartType) {
         case 'tension':
           response = await DeviceService.obtenirGraphiqueTension(
-            device.id || device.tuya_device_id,
+            device.tuya_device_id,
             startTime,
             endTime
           )

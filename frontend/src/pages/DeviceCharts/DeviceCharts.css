@@ -377,6 +377,21 @@
   justify-content: space-between;
   align-items: center;
 }
+/* Stat header */
+.quick-stats-panel .stat-card .stat-header{
+ transform:translatex(25px) translatey(-51px);
+}
+
+/* Stat values */
+.quick-stats-panel .stat-card .stat-values{
+ transform:translatex(-133px) translatey(24px);
+}
+
+/* Stat card */
+.quick-stats-panel .stats-grid .stat-card{
+ min-height:187px;
+}
+
 
 .stat-label {
   color: #666;
@@ -594,3 +609,5 @@
   height: 20px;
   border-width: 2px;
 }
+
+

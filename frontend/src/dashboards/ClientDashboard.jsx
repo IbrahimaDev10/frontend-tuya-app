@@ -2,7 +2,10 @@ import React from 'react'
 import ClientLayout from '../layouts/ClientLayout'
 import './Dashboard.css'
 
+import { useAuth } from '../store/authContext'
+
 const ClientDashboard = () => {
+  const { user } = useAuth()
   return (
     <ClientLayout>
       <div className="dashboard">
@@ -15,7 +18,7 @@ const ClientDashboard = () => {
           <div className="welcome-card">
             <div className="welcome-icon">📱</div>
             <div className="welcome-text">
-              <h2>Bienvenue, Client !</h2>
+              <h2>Bienvenue, {user?.nom_complet}</h2>
               <p>
                 Consultez l'état de vos appareils, suivez vos demandes de support 
                 et accédez à l'historique de vos interventions.

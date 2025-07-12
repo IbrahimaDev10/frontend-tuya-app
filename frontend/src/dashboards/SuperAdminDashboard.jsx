@@ -1,8 +1,11 @@
 import React from 'react'
 import SuperAdminLayout from '../layouts/SuperAdminLayout'
+import AlertDashboard from '../components/Alerts/AlertDashboard'
+import { useAuth } from '../store/authContext'
 import './Dashboard.css'
 
 const SuperAdminDashboard = () => {
+ const { user} = useAuth()
   return (
     <SuperAdminLayout>
       <div className="dashboard">
@@ -15,7 +18,7 @@ const SuperAdminDashboard = () => {
           <div className="welcome-card">
             <div className="welcome-icon">👑</div>
             <div className="welcome-text">
-              <h2>Bienvenue, SuperAdmin !</h2>
+              <h2>Bienvenue, {user?.nom_complet}</h2>
               <p>
                 Vous avez accès à toutes les fonctionnalités du système. 
                 Vous pouvez gérer les utilisateurs, les structures, tous les appareils 
@@ -52,15 +55,14 @@ const SuperAdminDashboard = () => {
               </div>
             </div>
 
-            <div className="stat-card">
-              <div className="stat-icon">⚡</div>
-              <div className="stat-content">
-                <h3>Activité</h3>
-                <div className="stat-number">--</div>
-                <p>Actions aujourd'hui</p>
-              </div>
-            </div>
+          
+
+           
           </div>
+                      <div className="dashboard-section">
+              <h2>Alertes Système</h2>
+              <AlertDashboard />
+            </div>
         </div>
       </div>
     </SuperAdminLayout>

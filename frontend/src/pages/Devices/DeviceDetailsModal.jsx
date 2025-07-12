@@ -5,6 +5,8 @@ import DeviceService from '../../services/deviceService'
 import Button from '../../components/Button'
 import ProtectionModal from '../../components/DeviceProtection/ProtectionModal'
 import ScheduleModal from '../../components/DeviceProtection/ScheduleModal'
+import AlertPanel from '../../components/Alerts/AlertPanel'
+import AlertIndicator from '../../components/Alerts/AlertIndicator'
 import './DeviceModal.css' // Assurez-vous que ce CSS est approprié pour ce modal aussi
 
 const DeviceDetailsModal = ({ device, onClose }) => {
@@ -18,6 +20,8 @@ const DeviceDetailsModal = ({ device, onClose }) => {
 
   const [showProtectionModal, setShowProtectionModal] = useState(false)
   const [showScheduleModal, setShowScheduleModal] = useState(false)
+
+  const [showAlerts, setShowAlerts] = useState(false)
 
   const [showCharts, setShowCharts] = useState(false)
 
@@ -188,6 +192,12 @@ const DeviceDetailsModal = ({ device, onClose }) => {
             >
               🛡️ Protection & Horaires
             </button>
+            <button
+                className={`modal-tab ${activeTab === 'alerts' ? 'active' : ''}`}
+                onClick={() => setActiveTab('alerts')}
+              >
+                🔔 Alertes
+              </button>
           <button
             className={`modal-tab ${activeTab === 'charts' ? 'active' : ''}`}
             onClick={() => setActiveTab('charts')}
@@ -513,6 +523,47 @@ const DeviceDetailsModal = ({ device, onClose }) => {
                 }}
               />
             )}
+
+                      {activeTab === 'alerts' && (
+                        <div className="alerts-content">
+                          {device?.statut_assignation === 'assigne' ? (
+                            <div className="alerts-section">
+                              <div className="alerts-header">
+                                <h4>🔔 Historique des alertes</h4>
+                                <Button
+                                  variant="primary"
+                                  size="small"
+                                  onClick={() => setShowAlerts(true)}
+                                >
+                                  📊 Panneau détaillé
+                                </Button>
+                              </div>
+                              
+                              <div className="alerts-preview">
+                                <AlertIndicator 
+                                  device={device} 
+                                  onClick={() => setShowAlerts(true)}
+                                />
+                                <p>Cliquez pour ouvrir le panneau détaillé des alertes</p>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="alerts-not-available">
+                              <div className="empty-icon">🔔</div>
+                              <h4>Alertes non disponibles</h4>
+                              <p>Les alertes ne sont disponibles que pour les appareils assignés.</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      
+                      {showAlerts && (
+                        <AlertPanel
+                          device={device}
+                          onClose={() => setShowAlerts(false)}
+                        />
+                      )}
 
           {/* Graphiques */}
           {activeTab === 'charts' && (
