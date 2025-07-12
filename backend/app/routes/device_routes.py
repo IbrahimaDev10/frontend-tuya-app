@@ -727,7 +727,6 @@ def manage_protection_config(current_user, device_id):
         if not device:
             return jsonify({'error': f'Appareil non trouvé: {device_id}'}), 404
         
-        # ✅ Vérifier si extension protection disponible
         if not (device_service and hasattr(device_service, '_protection_extension')):
             return jsonify({
                 'error': 'Extension protection non disponible',
@@ -735,10 +734,10 @@ def manage_protection_config(current_user, device_id):
             }), 501
         
         if request.method == 'GET':
+            # ... (votre code GET est déjà correct)
             if not device.peut_etre_vu_par_utilisateur(current_user):
                 return jsonify({'error': 'Accès interdit à cet appareil'}), 403
             
-            # Récupérer config protection
             protection_config = device.get_protection_config()
             
             return jsonify({
@@ -757,17 +756,36 @@ def manage_protection_config(current_user, device_id):
             if not data:
                 return jsonify({'error': 'Données JSON requises'}), 400
             
-            # Configurer protection via extension
+            # =================== DÉBUT DE LA CORRECTION ===================
+
+            # 1. Appeler le service pour configurer la protection
             config_result = device_service._protection_extension.configure_device_protection(
                 device.id, data
             )
             
-            return jsonify(config_result), 200 if config_result.get('success') else 400
+            # 2. Vérifier si l'opération a réussi
+            if config_result.get('success'):
+                # 3. ✅ POINT CLÉ : Récupérer la configuration fraîchement mise à jour
+                # db.session.refresh(device) est une bonne pratique pour s'assurer que l'objet est à jour
+                db.session.refresh(device)
+                updated_protection_config = device.get_protection_config()
+
+                # 4. Renvoyer une réponse de succès AVEC la nouvelle configuration
+                return jsonify({
+                    'success': True,
+                    'message': config_result.get('message', 'Protection configurée avec succès'),
+                    'device_id': device.id,
+                    'protection': updated_protection_config # <--- C'EST LA DONNÉE QUE LE FRONTEND UTILISERA
+                }), 200
+            else:
+                # Si l'opération a échoué, renvoyer l'erreur du service
+                return jsonify(config_result), 400
+
+            # =================== FIN DE LA CORRECTION ===================
         
     except Exception as e:
         print(f"Erreur protection config {device_id}: {str(e)}")
         return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
-
 
 @device_bp.route('/<device_identifier>/protection/disable', methods=['POST'])
 @admin_required

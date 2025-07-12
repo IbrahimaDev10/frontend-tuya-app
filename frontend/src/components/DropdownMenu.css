@@ -28,7 +28,7 @@
 .dropdown-menu {
   position: absolute;
   top: 100%; /* Juste en dessous du bouton */
-  right: 0; /* Aligner à droite */
+  right: 0; /* Aligner à droite par défaut */
   background-color: var(--color-background-card); /* Fond du menu */
   border: 1px solid var(--color-border);
   border-radius: var(--border-radius);
@@ -39,6 +39,23 @@
   display: flex;
   flex-direction: column;
   gap: 4px; /* Espacement entre les éléments du menu */
+  /* Empêcher le menu de sortir de l'écran */
+  max-height: 80vh; /* Limiter la hauteur à 80% de la hauteur de la fenêtre */
+  overflow-y: auto; /* Ajouter un défilement si nécessaire */
+  /* Animation d'apparition */
+  animation: fadeIn 0.2s ease-out;
+  transition: left 0.2s ease, right 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .dropdown-menu .button { /* Style pour les boutons à l'intérieur du menu */
@@ -61,4 +78,35 @@
 .dropdown-toggle.small {
   padding: 6px 10px;
   font-size: 12px;
+}
+
+/* Ajustements pour les appareils mobiles */
+@media (max-width: 768px) {
+  .dropdown-menu {
+    position: fixed;
+    top: auto;
+    bottom: 0;
+    left: 0 !important;
+    right: 0 !important;
+    width: 100%;
+    max-width: 100%;
+    border-radius: var(--border-radius) var(--border-radius) 0 0;
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+    animation: slideUp 0.3s ease-out;
+    max-height: 60vh;
+  }
+  
+  @keyframes slideUp {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+  
+  .dropdown-menu .button {
+    padding: 12px 16px;
+    font-size: 16px;
+  }
 }

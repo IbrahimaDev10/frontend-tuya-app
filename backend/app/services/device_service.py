@@ -727,165 +727,101 @@ class DeviceService:
             print(f"❌ Erreur statut appareil {tuya_device_id}: {e}")
             return {"success": False, "error": str(e)}
     
+    # Dans le fichier app/services/device_service.py
+    # Remplacez votre fonction control_device par celle-ci
+
     def control_device(self, tuya_device_id, command, value=None, invalidate_cache=True):
-        """Contrôler un appareil avec gestion protection/programmation"""
+        """
+        Contrôler un appareil en utilisant la méthode de toggle intelligente du TuyaClient.
+        """
         try:
+            # --- Étape 1 : Vérifications initiales (inchangées) ---
             device = Device.get_by_tuya_id(tuya_device_id)
             if not device:
                 return {"success": False, "error": "Appareil non trouvé"}
-            
+
             # Vérifier protection avant contrôle
             protection_check = self._check_protection_before_control(device, command, value)
             if not protection_check.get('allowed', True):
                 return {
-                    "success": False, 
+                    "success": False,
                     "error": protection_check.get('reason', 'Contrôle bloqué par protection')
                 }
-            
+
             # Gérer mode manuel si programmation active
             if device.programmation_active and not device.mode_manuel_actif:
-                # Activer mode manuel temporaire
                 device.enable_mode_manuel(duree_heures=2)
                 print(f"🔧 Mode manuel activé pour {device.nom_appareil}")
-            
+
             if not self.tuya_client.reconnect_if_needed():
                 return {"success": False, "error": "Connexion Tuya impossible"}
+
+            # --- Étape 2 : Délégation de la commande (la partie corrigée) ---
             
-            # --- Détermination de la commande Tuya et envoi ---
-            tuya_command_code = "switch_1" # Code par défaut pour le switch (ajustez si nécessaire)
-            tuya_command_value = value # La valeur à envoyer (True/False)
+            # On ne gère que les commandes de type switch/toggle ici.
+            # Pour d'autres commandes (ex: 'mode', 'countdown'), il faudrait une autre logique.
+            if command not in ["switch", "toggle"]:
+                 return {"success": False, "error": f"La commande '{command}' n'est pas supportée par cette fonction."}
+
+            print(f"🔧 Délégation de la commande '{command}' au toggle intelligent pour l'appareil {tuya_device_id}...")
             
-            if command == "toggle":
-                # Pour un toggle, si 'value' n'est pas spécifié, on inverse l'état actuel connu
-                if value is None:
-                    # Utiliser l'état connu en DB si disponible, sinon tenter de le récupérer
-                    current_switch_state = device.etat_actuel_tuya
-                    if current_switch_state is None:
-                        # Tenter de récupérer l'état actuel de Tuya si non connu
-                        current_status_result = self.get_device_status(tuya_device_id, use_cache=False)
-                        if current_status_result.get("success"):
-                            # Chercher 'switch_1' ou 'switch'
-                            if "switch_1" in current_status_result.get("values", {}):
-                                current_switch_state = current_status_result["values"]["switch_1"]
-                            elif "switch" in current_status_result.get("values", {}):
-                                current_switch_state = current_status_result["values"]["switch"]
-                    
-                    if current_switch_state is not None:
-                        tuya_command_value = not current_switch_state
-                    else:
-                        print(f"⚠️ Impossible de déterminer l'état actuel pour toggle {tuya_device_id}. Veuillez spécifier 'value'.")
-                        return {"success": False, "error": "Impossible de déterminer l'état actuel pour le toggle."}
-                # Si 'value' est spécifié pour un toggle, on l'utilise directement
-                
-            elif command == "switch":
-                # Pour un switch, 'value' doit être True ou False
-                if value is None or not isinstance(value, bool):
-                    return {"success": False, "error": "La commande 'switch' requiert une valeur booléenne (True/False)."}
-                tuya_command_value = value
-            
-            else: # Autres commandes (ex: 'countdown_1', 'mode', etc.)
-                tuya_command_code = command
-                tuya_command_value = value
-            
-            # Envoi de la commande à Tuya
-            commands_payload = {
-                "commands": [
-                    {
-                        "code": tuya_command_code,
-                        "value": tuya_command_value
-                    }
-                ]
-            }
-            
-            print(f"🔧 Envoi commande à {tuya_device_id}: {commands_payload}")
-            tuya_api_result = self.tuya_client.send_device_command(tuya_device_id, commands_payload)
-            
+            # On appelle directement la fonction toggle_device du client.
+            # Elle se chargera de trouver le bon code ('switch', 'switch_1', etc.)
+            # et de déterminer le nouvel état si 'value' est None.
+            tuya_api_result = self.tuya_client.toggle_device(tuya_device_id, value)
+
+            # --- Étape 3 : Traitement du résultat (simplifié) ---
+
             if tuya_api_result.get("success"):
-                print(f"✅ Commande envoyée à {tuya_device_id}")
+                print(f"✅ Commande toggle intelligente réussie pour {tuya_device_id}")
                 
-                # NOUVEAU : Tenter de récupérer le nouvel état réel de l'appareil après la commande
-                time.sleep(1.5) # Augmenté à 1.5 secondes pour plus de fiabilité
-                
-                new_status_from_tuya = None
-                try_count = 0
-                max_tries = 3
-                
-                while new_status_from_tuya is None and try_count < max_tries:
-                    try_count += 1
-                    print(f"🔍 Tentative {try_count}/{max_tries} de récupération du nouvel état pour {tuya_device_id}...")
-                    fetched_status_result = self.get_device_status(tuya_device_id, use_cache=False)
-                    
-                    if fetched_status_result.get("success"):
-                        # --- MODIFICATION CLÉ ICI ---
-                        # Chercher 'switch_1' en priorité, sinon 'switch'
-                        if "switch_1" in fetched_status_result.get("values", {}):
-                            new_status_from_tuya = fetched_status_result["values"]["switch_1"]
-                        elif "switch" in fetched_status_result.get("values", {}):
-                            new_status_from_tuya = fetched_status_result["values"]["switch"]
-                        # --- FIN MODIFICATION CLÉ ---
-                        
-                        if new_status_from_tuya is not None: # Si on a trouvé un état de switch
-                            print(f"✅ Nouvel état Tuya récupéré: {new_status_from_tuya}")
-                        else:
-                            print(f"⚠️ Récupération d'état échouée ou aucun code 'switch'/'switch_1' trouvé. Réponse: {fetched_status_result}")
-                            time.sleep(0.5 * try_count) # Délai croissant entre les tentatives
-                    else:
-                        print(f"⚠️ Récupération d'état échouée. Réponse: {fetched_status_result}")
-                        time.sleep(0.5 * try_count) # Délai croissant entre les tentatives
-                
+                new_state = tuya_api_result.get("new_state")
+
                 # Mettre à jour l'état dans la base de données locale
-                if new_status_from_tuya is not None:
-                    device.etat_actuel_tuya = new_status_from_tuya
+                if new_state is not None:
+                    device.etat_actuel_tuya = new_state
                     device.derniere_maj_etat_tuya = datetime.utcnow()
                     db.session.commit()
-                    print(f"✅ Appareil {device.nom_appareil} (Tuya ID: {tuya_device_id}) mis à jour en DB: etat_actuel_tuya={device.etat_actuel_tuya}")
-                else:
-                    print(f"❌ Échec de la récupération du nouvel état Tuya après {max_tries} tentatives pour {tuya_device_id}.")
-                    # Fallback: Si on n'a pas pu récupérer l'état réel, on utilise la valeur qu'on a tenté d'envoyer
-                    # C'est moins fiable mais permet une mise à jour immédiate du frontend.
-                    if tuya_command_code == "switch_1" and tuya_command_value is not None:
-                        device.etat_actuel_tuya = tuya_command_value
-                        device.derniere_maj_etat_tuya = datetime.utcnow()
-                        db.session.commit()
-                        print(f"⚠️ Fallback: État DB mis à jour avec la valeur envoyée ({tuya_command_value}) pour {tuya_device_id}.")
-                    
+                    print(f"✅ Appareil {device.nom_appareil} mis à jour en DB: etat_actuel_tuya={new_state}")
+
                 # Enregistrer l'action dans l'historique
                 try:
-                    # Assurez-vous que la méthode _log_device_action est correctement définie
-                    # et que DeviceActionLog est accessible (importé ou défini).
                     self._log_device_action(device, 'manual_control', {
                         'command': command,
                         'value': value,
                         'result': 'success',
-                        'new_state_reported': device.etat_actuel_tuya # Utiliser l'état mis à jour en DB
+                        'new_state_reported': new_state,
+                        'switch_code_used': tuya_api_result.get('switch_code_used') # Log du code utilisé
                     })
                 except Exception as log_err:
                     print(f"Erreur log action: {log_err}")
-                
-                # Invalider cache après contrôle
+
+                # Invalider le cache
                 if invalidate_cache:
                     self._invalidate_device_cache(tuya_device_id)
-                
-                # Retourner le résultat avec le nouvel état réel ou le meilleur état connu
+
+                # Retourner le résultat
                 return {
                     "success": True,
-                    "message": "Commande exécutée avec succès.",
-                    "new_state": device.etat_actuel_tuya, # L'état qui sera utilisé par le frontend
-                    "tuya_response": tuya_api_result # Pour le debug si besoin
+                    "message": tuya_api_result.get('message', "Commande exécutée avec succès."),
+                    "new_state": new_state,
+                    "tuya_response": tuya_api_result
                 }
             else:
-                print(f"❌ Échec de l'envoi de la commande à Tuya pour {tuya_device_id}. Réponse: {tuya_api_result}")
+                # L'appel à toggle_device a échoué
+                print(f"❌ Échec de la commande toggle intelligente pour {tuya_device_id}.")
                 return {
                     "success": False,
                     "error": tuya_api_result.get("error", "Échec de l'envoi de la commande à Tuya."),
                     "tuya_response": tuya_api_result
                 }
-                
+
         except Exception as e:
             print(f"❌ Erreur contrôle appareil {tuya_device_id}: {e}")
-            db.session.rollback() # Rollback en cas d'erreur
+            db.session.rollback()
             return {"success": False, "error": str(e)}
-    
+
+
     # =================== GESTION PROTECTION AUTOMATIQUE ===================
     
     def _check_protection_before_control(self, device, command, value):
