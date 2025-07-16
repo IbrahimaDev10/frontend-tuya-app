@@ -179,7 +179,71 @@ class DeviceService:
         except Exception as e:
             logging.error(f"Erreur récupération info sync: {e}")
             return None
-    
+
+# Dans la classe DeviceService, par exemple après get_device_status
+
+    def sync_device_state(self, tuya_device_id: str) -> Device:
+        """
+        Synchronise l'état d'un appareil (online/offline, on/off) avec Tuya et le met à jour en DB.
+        C'est la méthode clé pour garantir que l'état est toujours frais.
+
+        Args:
+            tuya_device_id: L'ID Tuya de l'appareil.
+
+        Returns:
+            L'objet Device mis à jour depuis la base de données, ou None si non trouvé.
+        """
+        device = Device.get_by_tuya_id(tuya_device_id)
+        if not device:
+            logging.warning(f"sync_device_state: Appareil avec Tuya ID {tuya_device_id} non trouvé.")
+            return None
+
+        try:
+            # 1. Forcer une récupération de statut sans utiliser le cache
+            status_response = self.get_device_status(tuya_device_id, use_cache=False)
+            
+            is_online = False
+            switch_state = None
+
+            if status_response and status_response.get("success"):
+                is_online = status_response.get("is_online", False)
+                values = status_response.get("values", {})
+                
+                # Trouver l'état du switch (peut être 'switch', 'switch_1', etc.)
+                # On utilise la même logique que votre `toggle_device`
+                switch_code = self.tuya_client.find_switch_code(values)
+                if switch_code:
+                    switch_state = values.get(switch_code)
+
+            # 2. Mettre à jour l'objet Device avec les nouvelles informations
+            device.en_ligne = is_online
+            if switch_state is not None:
+                device.etat_actuel_tuya = switch_state
+            
+            device.derniere_maj_etat_tuya = datetime.utcnow()
+            
+            # 3. Sauvegarder les changements dans la base de données
+            db.session.add(device)
+            db.session.commit()
+            
+            logging.info(f"État synchronisé pour {device.nom_appareil}: en_ligne={is_online}, etat_switch={switch_state}")
+
+            # 4. Rafraîchir l'objet depuis la session pour avoir la version la plus à jour
+            db.session.refresh(device)
+            return device
+
+        except Exception as e:
+            logging.error(f"Erreur lors de la synchronisation de l'état pour {tuya_device_id}: {e}")
+            # En cas d'erreur, on marque l'appareil comme hors ligne pour la sécurité
+            device.en_ligne = False
+            db.session.add(device)
+            db.session.commit()
+            db.session.refresh(device)
+            return device
+
+
+
+
     def _invalidate_device_cache(self, device_id):
         """Invalider le cache d'un appareil spécifique"""
         try:

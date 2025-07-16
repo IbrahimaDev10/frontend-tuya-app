@@ -440,49 +440,44 @@ def _fallback_lister_appareils_avec_site(current_user, site_id, inclure_non_assi
         return jsonify({'error': f'Erreur fallback: {str(e)}'}), 500
 
 
+# Dans app/routes/device_routes.py
+
 @device_bp.route('/<device_id>', methods=['GET'])
 @authenticated_user_required
 def obtenir_appareil(current_user, device_id):
-    """Obtenir les détails d'un appareil avec enrichissement"""
+    """Obtenir les détails d'un appareil, en s'assurant que l'état est à jour."""
     try:
-        device = find_device_by_id_or_tuya_id(device_id)
+        # La recherche initiale reste la même
+        device_initial = find_device_by_id_or_tuya_id(device_id)
         
-        if not device:
+        if not device_initial:
             return jsonify({'error': f'Appareil non trouvé: {device_id}'}), 404
         
-        if not device.peut_etre_vu_par_utilisateur(current_user):
+        if not device_initial.peut_etre_vu_par_utilisateur(current_user):
             return jsonify({'error': 'Accès interdit à cet appareil'}), 403
         
-        # ✅ NOUVEAU : Enrichir avec données temps réel et analyse
+        # --- DÉBUT DE LA MODIFICATION CLÉ ---
+        print(f"🔄 Synchronisation de l'état pour {device_initial.nom_appareil} avant de renvoyer les détails...")
+        
+        # On appelle notre nouvelle fonction pour rafraîchir l'état depuis Tuya et le sauvegarder en DB
+        device = device_service.sync_device_state(device_initial.tuya_device_id)
+        
+        if not device: # Si la synchro a échoué à retrouver l'appareil
+             return jsonify({'error': 'Erreur lors de la synchronisation de l\'appareil'}), 500
+        # --- FIN DE LA MODIFICATION CLÉ ---
+
+        # Le reste du code utilise maintenant l'objet 'device' qui est GARANTI d'être à jour
         device_dict = device.to_dict(
             include_stats=True, 
             include_tuya_info=True,
             include_protection=True,
-            include_programmation=True
+            include_programmation=True,
+            include_client_site=True # Assurez-vous que cette option est gérée
         )
         
-        # Ajouter données temps réel si service disponible
-        if device_service:
-            try:
-                real_time_result = safe_device_service_call(
-                    'get_device_real_time_data', device.tuya_device_id, True
-                )
-                if real_time_result.get('success'):
-                    device_dict['real_time_data'] = real_time_result
-            except:
-                pass
-            
-            # ✅ NOUVEAU : Ajouter résumé d'analyse si extension disponible
-            try:
-                if hasattr(device_service, '_analysis_extension'):
-                    analysis_summary = device_service._analysis_extension.get_device_analysis_summary(
-                        device.id, hours_back=6, use_cache=True
-                    )
-                    if analysis_summary.get('success'):
-                        device_dict['analysis_summary'] = analysis_summary
-            except:
-                pass
-        
+        # On peut même ajouter une information pour le debug côté front-end
+        device_dict['state_synced_at'] = device.derniere_maj_etat_tuya.isoformat()
+
         return jsonify({
             'success': True,
             'data': device_dict
