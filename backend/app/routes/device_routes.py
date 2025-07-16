@@ -176,7 +176,7 @@ def lister_appareils(current_user):
         # ✅ NOUVEAUX paramètres
         site_id = request.args.get('site_id')
         inclure_non_assignes = request.args.get('inclure_non_assignes', 'false').lower() == 'true'
-        refresh_status = request.args.get('refresh_status', 'true').lower() == 'true'
+        refresh_status = request.args.get('refresh_status', 'false').lower() == 'true'
         use_cache = request.args.get('use_cache', 'true').lower() == 'true'
         
         # Seul le superadmin peut inclure les non-assignés
@@ -862,76 +862,6 @@ def disable_device_protection(current_user, device_identifier):
         print(f"❌ Erreur désactivation programmation: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
-@device_bp.route('/<device_id>/programmation/config', methods=['GET', 'POST'])
-@admin_required
-def manage_programmation_config(current_user, device_id):
-    """Gérer la configuration de programmation horaire"""
-    try:
-        device = find_device_by_id_or_tuya_id(device_id)
-        
-        if not device:
-            return jsonify({'error': f'Appareil non trouvé: {device_id}'}), 404
-        
-        # ✅ CORRECTION 1 : Vérifier si extension disponible ET initialisée
-        if not (device_service and hasattr(device_service, '_protection_extension') 
-                and device_service._protection_extension is not None):
-            
-            # ✅ SOLUTION A : Initialiser l'extension si pas fait
-            try:
-                from app.services.device_service_protection_extension import DeviceServiceProtectionExtension
-                
-                if not hasattr(device_service, '_protection_extension'):
-                    print("🔧 Initialisation de l'extension protection...")
-                    device_service._protection_extension = DeviceServiceProtectionExtension(device_service)
-                    print("✅ Extension protection initialisée")
-                
-            except Exception as e:
-                print(f"❌ Erreur initialisation extension: {e}")
-                return jsonify({
-                    'error': 'Extension programmation non disponible',
-                    'message': f'Impossible d\'initialiser l\'extension: {str(e)}',
-                    'debug': 'Vérifiez que device_service_protection_extension.py est accessible'
-                }), 501
-        
-        if request.method == 'GET':
-            if not device.peut_etre_vu_par_utilisateur(current_user):
-                return jsonify({'error': 'Accès interdit à cet appareil'}), 403
-            
-            # ✅ CORRECTION 2 : Utiliser la méthode correcte
-            # Au lieu de : device_service._protection_extension.get_device_schedule_status(device.id)
-            # Utiliser : device_service._protection_extension.get_device_schedule_status(device_id)
-            
-            schedule_result = device_service._protection_extension.get_device_schedule_status(device_id)
-            
-            return jsonify(schedule_result), 200 if schedule_result.get('success') else 400
-        
-        else:  # POST
-            if not device.peut_etre_configure_par_utilisateur(current_user):
-                return jsonify({'error': 'Accès en configuration interdit pour cet appareil'}), 403
-            
-            data = request.get_json()
-            if not data:
-                return jsonify({'error': 'Données JSON requises'}), 400
-            
-            action = data.get('action', 'configure')
-            
-            if action == 'configure':
-                # ✅ CORRECTION 3 : Utiliser device_id au lieu de device.id
-                config_result = device_service._protection_extension.configure_device_schedule(
-                    device_id, data  # device_id au lieu de device.id
-                )
-            elif action == 'disable':
-                # ✅ CORRECTION 4 : Utiliser device_id au lieu de device.id
-                config_result = device_service._protection_extension.disable_device_schedule(device_id)
-            else:
-                return jsonify({'error': f'Action {action} non reconnue'}), 400
-            
-            return jsonify(config_result), 200 if config_result.get('success') else 400
-    
-    except Exception as e:
-        print(f"Erreur programmation config {device_id}: {str(e)}")
-        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
-    
 @device_bp.route('/<device_id>/programmation/details', methods=['GET'])
 @admin_required
 def get_programmation_details(current_user, device_id):
@@ -1646,10 +1576,11 @@ def import_appareils_tuya(current_user):
         print(f"Erreur import Tuya: {str(e)}")
         return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
     
+    
 @device_bp.route('/sync-tuya', methods=['POST'])
 @authenticated_user_required
 def synchroniser_tuya(current_user):
-    """Synchroniser les statuts avec Tuya avec options"""
+    """Synchroniser les statuts avec Tuya avec options + sync temps réel"""
     try:
         # ✅ SOLUTION DÉFINITIVE: Ignorer Content-Type comme import-tuya
         data = {}
@@ -1666,8 +1597,10 @@ def synchroniser_tuya(current_user):
         
         print(f"🔄 Sync Tuya - force_refresh: {force_refresh}, use_cache: {use_cache}")
         
-        # ✅ NOUVEAU : Sync avec force_refresh
-        if hasattr(device_service, 'sync_all_devices'):
+        # ✅ NOUVEAU : Utiliser force_sync_now si disponible
+        if device_service and hasattr(device_service, 'force_sync_now'):
+            resultat = device_service.force_sync_now()
+        elif hasattr(device_service, 'sync_all_devices'):
             resultat = device_service.sync_all_devices(force_refresh=force_refresh)
         else:
             resultat = safe_device_service_call('sync_all_devices')
@@ -1675,12 +1608,21 @@ def synchroniser_tuya(current_user):
         if not resultat.get('success'):
             return jsonify({'error': resultat.get('error', 'Erreur synchronisation')}), 400
         
+        # ✅ NOUVEAU : Informations sur la synchronisation temps réel
+        sync_info = {}
+        if device_service and hasattr(device_service, 'get_sync_status'):
+            try:
+                sync_info = device_service.get_sync_status()
+            except:
+                sync_info = {'sync_active': False, 'message': 'Info sync non disponible'}
+        
         return jsonify({
             'success': True,
-            'message': resultat['message'],
+            'message': resultat.get('message', 'Synchronisation terminée'),
             'statistiques': resultat.get('final_stats', {}),
             'scheduled_actions': resultat.get('scheduled_actions'),
             'import_stats': resultat.get('import_stats', {}),
+            'sync_info': sync_info,  # ✅ NOUVEAU
             'options_used': {
                 'force_refresh': force_refresh,
                 'use_cache': use_cache
@@ -1690,13 +1632,14 @@ def synchroniser_tuya(current_user):
     except Exception as e:
         print(f"❌ Erreur sync Tuya: {str(e)}")
         return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
-    
+
+
 @device_bp.route('/non-assignes', methods=['GET'])
 @superadmin_required
 def lister_non_assignes(current_user):
     """Lister les appareils non-assignés avec cache"""
     try:
-        refresh = request.args.get('refresh', 'true').lower() == 'true'
+        refresh = request.args.get('refresh', 'false').lower() == 'true'
         use_cache = request.args.get('use_cache', 'true').lower() == 'true'
         
         # ✅ NOUVEAU : Utiliser get_non_assigned_devices optimisé
@@ -2443,35 +2386,127 @@ def get_pending_scheduled_actions(current_user):
         print(f"Erreur actions programmées: {str(e)}")
         return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
 
-@device_bp.route('/execute-scheduled-actions', methods=['POST'])
+
+# =================== ROUTES DE SYNCHRONISATION TEMPS RÉEL ===================
+
+@device_bp.route('/sync/status', methods=['GET'])
 @admin_required
-def execute_scheduled_actions(current_user):
-    """Exécuter les actions programmées en attente"""
+def get_sync_status_route(current_user):
+    """Récupérer le statut de la synchronisation temps réel"""
+    try:
+        if device_service and hasattr(device_service, 'get_sync_status'):
+            status = device_service.get_sync_status()
+            return jsonify(status), 200
+        else:
+            return jsonify({
+                'sync_active': False,
+                'message': 'Service de synchronisation non disponible'
+            }), 501
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@device_bp.route('/sync/start', methods=['POST'])
+@admin_required
+def start_sync_route(current_user):
+    """Démarrer la synchronisation temps réel"""
     try:
         if not current_user.is_superadmin():
             return jsonify({'error': 'Accès superadmin requis'}), 403
         
-        data = request.get_json() or {}
-        max_actions = data.get('max_actions', 50)
-        
-        # ✅ NOUVEAU : Utiliser extension protection si disponible
-        if device_service and hasattr(device_service, '_protection_extension'):
-            execution_result = device_service._protection_extension.execute_scheduled_actions(max_actions)
+        if device_service and hasattr(device_service, 'start_real_time_sync'):
+            result = device_service.start_real_time_sync()
+            return jsonify(result), 200 if result.get('success') else 400
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Service de synchronisation non disponible'
+            }), 501
             
-            if execution_result.get('success'):
-                return jsonify(execution_result), 200
-            else:
-                return jsonify(execution_result), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@device_bp.route('/sync/stop', methods=['POST'])
+@admin_required
+def stop_sync_route(current_user):
+    """Arrêter la synchronisation temps réel"""
+    try:
+        if not current_user.is_superadmin():
+            return jsonify({'error': 'Accès superadmin requis'}), 403
         
-        return jsonify({
-            'success': False,
-            'error': 'Extension programmation non disponible',
-            'message': 'Fonctionnalité exécution actions non activée'
-        }), 501
+        if device_service and hasattr(device_service, 'stop_real_time_sync'):
+            result = device_service.stop_real_time_sync()
+            return jsonify(result), 200 if result.get('success') else 400
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Service de synchronisation non disponible'
+            }), 501
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@device_bp.route('/sync/force', methods=['POST'])
+@admin_required
+def force_sync_route(current_user):
+    """Forcer une synchronisation immédiate"""
+    try:
+        if device_service and hasattr(device_service, 'force_sync_now'):
+            result = device_service.force_sync_now()
+            return jsonify(result), 200 if result.get('success') else 400
+        else:
+            # Fallback vers sync_all_devices
+            result = device_service.sync_all_devices(force_refresh=True)
+            return jsonify(result), 200 if result.get('success') else 400
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@device_bp.route('/sync/<device_id>', methods=['POST'])
+@admin_required
+def sync_single_device_route(current_user, device_id):
+    """Synchroniser un appareil spécifique"""
+    try:
+        device = find_device_by_id_or_tuya_id(device_id)
+        
+        if not device:
+            return jsonify({'error': f'Appareil non trouvé: {device_id}'}), 404
+        
+        if not device.peut_etre_vu_par_utilisateur(current_user):
+            return jsonify({'error': 'Accès interdit à cet appareil'}), 403
+        
+        if device_service and hasattr(device_service, 'sync_single_device_realtime'):
+            result = device_service.sync_single_device_realtime(device.tuya_device_id)
+        else:
+            # Fallback vers get_device_status
+            result = device_service.get_device_status(device.tuya_device_id, use_cache=False)
+        
+        return jsonify(result), 200 if result.get('success') else 400
         
     except Exception as e:
-        print(f"Erreur exécution actions: {str(e)}")
-        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+        return jsonify({'error': str(e)}), 500
+
+@device_bp.route('/sync/devices/states', methods=['GET'])
+@admin_required
+def get_all_devices_states_route(current_user):
+    """Récupérer l'état de tous les appareils"""
+    try:
+        if device_service and hasattr(device_service, 'sync_extension') and device_service.sync_extension:
+            if hasattr(device_service.sync_extension, 'sync_service') and device_service.sync_extension.sync_service:
+                result = device_service.sync_extension.sync_service.get_devices_states()
+                return jsonify(result), 200 if result.get('success') else 400
+        
+        # Fallback vers get_all_devices
+        result = device_service.get_all_devices(
+            utilisateur=current_user,
+            refresh_status=False                                                        ,
+            use_cache=False
+        )
+        return jsonify(result), 200 if result.get('success') else 400
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+     
 
 # =================== ROUTES DE TEST ET DEBUG (améliorées) ===================
 
@@ -2577,3 +2612,377 @@ def not_found(error):
 @device_bp.errorhandler(500)
 def internal_error(error):
     return jsonify({'error': 'Erreur serveur interne'}), 500
+
+
+   
+# 1. REMPLACER votre méthode manage_programmation_config existante par celle-ci :
+
+@device_bp.route('/<device_id>/programmation/config', methods=['GET', 'POST'])
+@admin_required
+def manage_programmation_config(current_user, device_id):
+    """
+    Gérer la configuration de programmation horaire
+    ✅ VERSION AMÉLIORÉE avec support templates et exécution
+    """
+    try:
+        device = find_device_by_id_or_tuya_id(device_id)
+        
+        if not device:
+            return jsonify({'error': f'Appareil non trouvé: {device_id}'}), 404
+        
+        if request.method == 'GET':
+            # ✅ GET existant + ajout infos exécution
+            if not device.peut_etre_vu_par_utilisateur(current_user):
+                return jsonify({'error': 'Accès interdit à cet appareil'}), 403
+            
+            # Récupérer les actions programmées existantes
+            from app.models.scheduled_action import ScheduledAction
+            actions = ScheduledAction.get_actions_by_device(device.id)
+            
+            # ✅ NOUVEAU : Ajouter statut d'exécution
+            next_actions = []
+            for action in actions[:5]:  # Les 5 prochaines
+                if action.prochaine_execution and action.actif:
+                    time_until = action.prochaine_execution - datetime.utcnow()
+                    next_actions.append({
+                        'id': action.id,
+                        'type': action.action_type,
+                        'time': action.heure_execution.strftime('%H:%M'),
+                        'next_execution': action.prochaine_execution.isoformat(),
+                        'minutes_until': int(time_until.total_seconds() / 60) if time_until.total_seconds() > 0 else 0,
+                        'active': action.actif
+                    })
+            
+            return jsonify({
+                'success': True,
+                'device_id': device.id,
+                'device_name': device.nom_appareil,
+                'programmation_active': getattr(device, 'programmation_active', False),
+                'actions': [action.to_dict(include_stats=True) for action in actions],
+                'next_actions': next_actions,  # ✅ NOUVEAU
+                'total_actions': len(actions),
+                'active_actions': len([a for a in actions if a.actif]),
+                'execution_status': {  # ✅ NOUVEAU
+                    'last_execution_check': datetime.utcnow().isoformat(),
+                    'pending_actions': len(next_actions)
+                }
+            }), 200
+        
+        else:  # POST
+            if not device.peut_etre_configure_par_utilisateur(current_user):
+                return jsonify({'error': 'Accès en configuration interdit'}), 403
+            
+            data = request.get_json()
+            if not data:
+                return jsonify({'error': 'Données JSON requises'}), 400
+            
+            action = data.get('action', 'configure')
+            
+            if action == 'configure':
+                # ✅ CONFIGURATION EXISTANTE + Démarrage automatique
+                config_result = _configure_device_schedule_enhanced(device, data)
+                
+                # ✅ NOUVEAU : Démarrer l'exécution automatique si pas déjà fait
+                if config_result.get('success'):
+                    _ensure_schedule_execution_running()
+                
+                return jsonify(config_result), 200 if config_result.get('success') else 400
+                
+            elif action == 'quick_setup':
+                # ✅ NOUVEAU : Configuration rapide via route existante
+                return _handle_quick_setup(device, data, current_user)
+                
+            elif action == 'execute_now':
+                # ✅ NOUVEAU : Exécution immédiate via route existante
+                return _handle_execute_now(device, current_user)
+                
+            elif action == 'disable':
+                # ✅ EXISTING : Désactivation
+                config_result = _disable_device_schedule(device)
+                return jsonify(config_result), 200 if config_result.get('success') else 400
+                
+            else:
+                return jsonify({'error': f'Action {action} non reconnue'}), 400
+    
+    except Exception as e:
+        print(f"Erreur programmation config {device_id}: {str(e)}")
+        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
+
+# 2. REMPLACER votre méthode execute_scheduled_actions existante :
+
+@device_bp.route('/execute-scheduled-actions', methods=['POST'])
+@admin_required
+def execute_scheduled_actions(current_user):
+    """
+    ✅ AMÉLIORER votre route existante avec le service optimisé
+    """
+    try:
+        if not current_user.is_superadmin():
+            return jsonify({'error': 'Accès superadmin requis'}), 403
+        
+        data = request.get_json() or {}
+        
+        # ✅ NOUVEAU : Options avancées
+        device_filter = data.get('device_filter')  # Filtrer par appareil
+        max_actions = data.get('max_actions', 50)
+        force_execution = data.get('force_execution', False)
+        
+        # ✅ Utiliser le service optimisé
+        from app.services.schedule_executor_service import ScheduleExecutorService
+        
+        executor = ScheduleExecutorService()
+        
+        if device_filter:
+            # Exécuter pour un appareil spécifique
+            result = executor.execute_device_pending_actions(device_filter)
+        else:
+            # Exécution globale optimisée
+            result = executor.execute_pending_actions_optimized()
+        
+        return jsonify(result), 200 if result.get('success') else 400
+        
+    except Exception as e:
+        print(f"Erreur exécution actions: {str(e)}")
+        return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
+
+
+# 3. REMPLACER votre méthode get_next_actions existante :
+
+@device_bp.route('/next-actions', methods=['GET'])
+@authenticated_user_required
+def get_next_actions(current_user):
+    """
+    ✅ AMÉLIORER votre route existante avec optimisations
+    """
+    try:
+        limit = request.args.get('limit', 10, type=int)
+        hours_ahead = request.args.get('hours_ahead', 24, type=int)
+        device_filter = request.args.get('device_id')  # ✅ NOUVEAU : Filtrer par appareil
+        
+        # ✅ Utiliser le service optimisé
+        from app.services.schedule_executor_service import ScheduleExecutorService
+        
+        executor = ScheduleExecutorService()
+        
+        if device_filter:
+            # Actions pour un appareil spécifique
+            result = executor.get_device_next_actions(device_filter, limit)
+        else:
+            # Actions globales
+            result = executor.get_next_actions_fast(limit)
+        
+        # ✅ Filtrer par permissions utilisateur
+        if result.get('success') and not current_user.is_superadmin():
+            accessible_actions = []
+            
+            for action_data in result.get('upcoming_actions', []):
+                # Vérification rapide des permissions
+                if current_user.is_admin():
+                    accessible_actions.append(action_data)
+                elif current_user.role == 'user':
+                    # Pour user simple, vérifier le site si nécessaire
+                    device = Device.query.get(action_data.get('device_id'))
+                    if device and device.peut_etre_vu_par_utilisateur(current_user):
+                        accessible_actions.append(action_data)
+            
+            result['upcoming_actions'] = accessible_actions
+            result['count'] = len(accessible_actions)
+        
+        return jsonify(result), 200 if result.get('success') else 400
+        
+    except Exception as e:
+        print(f"Erreur prochaines actions: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# =================== MÉTHODES D'AIDE À AJOUTER DANS device_routes.py ===================
+# Ajoutez ces fonctions À LA FIN de votre fichier device_routes.py (avant les error handlers)
+
+def _configure_device_schedule_enhanced(device, data):
+    """Configuration améliorée avec templates"""
+    try:
+        from app.models.scheduled_action import ScheduledAction
+        from datetime import time
+        
+        # ✅ Support des templates rapides
+        if 'template' in data:
+            template = data['template']
+            if template == 'bureau':
+                data = {
+                    'enabled': True,
+                    'allumage': {'enabled': True, 'time': '08:00', 'days': [1,2,3,4,5]},
+                    'extinction': {'enabled': True, 'time': '18:00', 'days': [1,2,3,4,5]}
+                }
+            elif template == 'magasin':
+                data = {
+                    'enabled': True,
+                    'allumage': {'enabled': True, 'time': '09:00', 'days': [1,2,3,4,5,6]},
+                    'extinction': {'enabled': True, 'time': '19:00', 'days': [1,2,3,4,5,6]}
+                }
+            elif template == 'nuit':
+                data = {
+                    'enabled': True,
+                    'allumage': {'enabled': True, 'time': '18:00', 'days': [1,2,3,4,5,6,7]},
+                    'extinction': {'enabled': True, 'time': '06:00', 'days': [1,2,3,4,5,6,7]}
+                }
+        
+        # Supprimer anciennes actions
+        ScheduledAction.query.filter_by(appareil_id=device.id).delete()
+        
+        actions_creees = []
+        
+        # Créer action allumage
+        if data.get('allumage', {}).get('enabled'):
+            allumage_config = data['allumage']
+            time_str = allumage_config.get('time', '08:00')
+            hour, minute = map(int, time_str.split(':'))
+            
+            action_on = ScheduledAction(
+                appareil_id=device.id,
+                client_id=device.client_id,
+                action_type='turn_on',
+                heure_execution=time(hour, minute),
+                jours_semaine=','.join(map(str, allumage_config.get('days', [1,2,3,4,5]))),
+                nom_action=f"Allumage automatique - {device.nom_appareil}",
+                actif=True,
+                mode_execution='weekly',
+                priorite=5,
+                timezone="Africa/Dakar"
+            )
+            action_on.calculer_prochaine_execution()
+            db.session.add(action_on)
+            actions_creees.append(f"Allumage {time_str}")
+        
+        # Créer action extinction
+        if data.get('extinction', {}).get('enabled'):
+            extinction_config = data['extinction']
+            time_str = extinction_config.get('time', '18:00')
+            hour, minute = map(int, time_str.split(':'))
+            
+            action_off = ScheduledAction(
+                appareil_id=device.id,
+                client_id=device.client_id,
+                action_type='turn_off',
+                heure_execution=time(hour, minute),
+                jours_semaine=','.join(map(str, extinction_config.get('days', [1,2,3,4,5,6,7]))),
+                nom_action=f"Extinction automatique - {device.nom_appareil}",
+                actif=True,
+                mode_execution='weekly',
+                priorite=5,
+                timezone="Africa/Dakar"
+            )
+            action_off.calculer_prochaine_execution()
+            db.session.add(action_off)
+            actions_creees.append(f"Extinction {time_str}")
+        
+        # Activer programmation
+        device.programmation_active = data.get('enabled', True)
+        device.derniere_modification_horaires = datetime.utcnow()
+        
+        db.session.commit()
+        
+        return {
+            'success': True,
+            'message': f'Programmation configurée: {", ".join(actions_creees)}',
+            'device_id': device.id,
+            'actions_creees': actions_creees,
+            'programmation_active': device.programmation_active
+        }
+        
+    except Exception as e:
+        db.session.rollback()
+        return {'success': False, 'error': str(e)}
+
+def _handle_quick_setup(device, data, current_user):
+    """Gestion setup rapide via route existante"""
+    try:
+        schedule_type = data.get('schedule_type', 'bureau')
+        
+        # Templates prédéfinis
+        templates = {
+            'bureau': {'template': 'bureau'},
+            'magasin': {'template': 'magasin'}, 
+            'nuit': {'template': 'nuit'}
+        }
+        
+        if schedule_type not in templates:
+            return jsonify({'error': f'Type {schedule_type} non supporté'}), 400
+        
+        config_result = _configure_device_schedule_enhanced(device, templates[schedule_type])
+        
+        if config_result.get('success'):
+            return jsonify({
+                'success': True,
+                'message': f'Template {schedule_type} appliqué',
+                'device_id': device.id,
+                'config': config_result
+            }), 200
+        else:
+            return jsonify(config_result), 400
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+def _handle_execute_now(device, current_user):
+    """Exécution immédiate via route existante"""
+    try:
+        if not current_user.is_superadmin():
+            return jsonify({'error': 'Execution immédiate réservée aux superadmin'}), 403
+        
+        # Utiliser le service d'exécution
+        from app.services.schedule_executor_service import ScheduleExecutorService
+        
+        executor = ScheduleExecutorService()
+        # Exécuter seulement pour cet appareil
+        result = executor.execute_device_pending_actions(device.id)
+        
+        return jsonify(result), 200 if result.get('success') else 400
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+def _disable_device_schedule(device):
+    """Désactivation via route existante"""
+    try:
+        from app.models.scheduled_action import ScheduledAction
+        
+        # Désactiver toutes les actions
+        ScheduledAction.query.filter_by(appareil_id=device.id).update({'actif': False})
+        
+        # Désactiver programmation sur device
+        device.programmation_active = False
+        device.derniere_modification_horaires = datetime.utcnow()
+        
+        db.session.commit()
+        
+        return {
+            'success': True,
+            'message': 'Programmation désactivée',
+            'device_id': device.id,
+            'programmation_active': False
+        }
+        
+    except Exception as e:
+        db.session.rollback()
+        return {'success': False, 'error': str(e)}
+
+def _ensure_schedule_execution_running():
+    """S'assurer que l'exécution automatique fonctionne"""
+    try:
+        # Vérifier si le service d'exécution existe
+        from app.services.schedule_executor_service import ScheduleExecutorService
+        
+        # Démarrer un check rapide pour valider le système
+        executor = ScheduleExecutorService()
+        health_check = executor.get_execution_health()
+        
+        if not health_check.get('healthy'):
+            # Logger que le système d'exécution a besoin d'attention
+            logging.warning("Système d'exécution programmé nécessite une attention")
+        
+    except ImportError:
+        # Service pas encore créé
+        logging.info("Service d'exécution programmé pas encore configuré")
+    except Exception as e:
+        logging.error(f"Erreur vérification exécution programmée: {e}")

@@ -1,18 +1,23 @@
-from app import db, get_redis  # ✅ NOUVEAU : Import get_redis
+from app import db, get_redis  # ✅ GARDER get_redis pour compatibilité
 from app.models.user import User
 from app.models.client import Client
 from datetime import datetime, timedelta
 from typing import Optional, Tuple, List, Dict, Any
 from app.services.mail_service import MailService
+from app.utils.fast_cache import fast_cache
 import secrets
 import string
 import json
+import logging
 
 class UserService:
     def __init__(self):
-        # ✅ NOUVEAU : Redis d'abord, sinon ActivationTokenManager comme fallback
+        # ✅ CORRECTION : Ajouter attribut redis pour compatibilité
         self.redis = get_redis()
-    
+        
+        # FastCache d'abord, sinon ActivationTokenManager comme fallback
+        logging.info(f"UserService initialisé - FastCache: {'✅' if fast_cache.is_connected() else '❌'}")
+        
     # =================== GESTION DES CLIENTS ===================
     
     def creer_client(self, donnees_client: Dict[str, Any], utilisateur_createur: User) -> Tuple[Optional[Dict], Optional[str]]:
@@ -973,7 +978,7 @@ class UserService:
     # =================== MÉTHODES REDIS POUR TOKENS D'ACTIVATION ===================
     
     def _generate_activation_token(self, user_id: str, email: str, role: str, expires_in_seconds: int = 86400) -> str:
-        """Générer un token d'activation et le stocker dans Redis"""
+        """Générer un token d'activation et le stocker - VERSION OPTIMISÉE"""
         try:
             # Générer un token unique
             token = secrets.token_urlsafe(32)
@@ -992,20 +997,23 @@ class UserService:
                 'used': False
             }
             
-            # Stocker dans Redis avec TTL
+            # Stocker avec fast_cache
             redis_key = f"activation_token:{token}"
             
-            if self.redis:
-                self.redis.setex(redis_key, expires_in_seconds, json.dumps(token_data))
-                print(f"✅ Token stocké dans Redis: {redis_key}")
+            if fast_cache.is_connected():
+                success = fast_cache.quick_set(redis_key, token_data, expires_in_seconds)
+                if success:
+                    print(f"✅ Token stocké avec fast_cache: {redis_key}")
+                else:
+                    print(f"⚠️ Échec stockage token avec fast_cache")
             else:
-                # Fallback vers ActivationTokenManager si Redis indisponible
-                print(f"⚠️ Redis indisponible, utilisation du fallback ActivationTokenManager")
+                # Fallback vers ActivationTokenManager si fast_cache indisponible
+                print(f"⚠️ FastCache indisponible, utilisation du fallback ActivationTokenManager")
                 try:
                     from app.utils.token_manager import ActivationTokenManager
                     return ActivationTokenManager.generate_token(user_id, email, expires_in_seconds)
                 except ImportError:
-                    raise Exception("Redis indisponible et ActivationTokenManager non trouvé")
+                    raise Exception("FastCache indisponible et ActivationTokenManager non trouvé")
             
             return token
             
@@ -1014,19 +1022,16 @@ class UserService:
             raise
     
     def _validate_activation_token(self, token: str) -> Dict[str, Any]:
-        """Valider un token d'activation depuis Redis"""
+        """Valider un token d'activation - VERSION OPTIMISÉE"""
         try:
             redis_key = f"activation_token:{token}"
             
-            if self.redis:
-                # Récupérer depuis Redis
-                token_data_str = self.redis.get(redis_key)
+            if fast_cache.is_connected():
+                # Récupérer avec fast_cache
+                token_data = fast_cache.quick_get(redis_key)
                 
-                if not token_data_str:
+                if not token_data:
                     return {'valid': False, 'message': 'Token non trouvé ou expiré'}
-                
-                # Décoder les données
-                token_data = json.loads(token_data_str)
                 
                 # Vérifier si déjà utilisé
                 if token_data.get('used', False):
@@ -1036,7 +1041,7 @@ class UserService:
                 expires_at = datetime.fromisoformat(token_data['expires_at'])
                 if datetime.utcnow() > expires_at:
                     # Supprimer le token expiré
-                    self.redis.delete(redis_key)
+                    fast_cache.delete_pattern(redis_key)
                     return {'valid': False, 'message': 'Token expiré'}
                 
                 # Token valide
@@ -1051,7 +1056,7 @@ class UserService:
             
             else:
                 # Fallback vers ActivationTokenManager
-                print(f"⚠️ Redis indisponible, utilisation du fallback pour validation")
+                print(f"⚠️ FastCache indisponible, utilisation du fallback pour validation")
                 try:
                     from app.utils.token_manager import ActivationTokenManager
                     return ActivationTokenManager.validate_token(token)
@@ -1063,14 +1068,14 @@ class UserService:
             return {'valid': False, 'message': f'Erreur de validation: {str(e)}'}
     
     def _use_activation_token(self, token: str) -> bool:
-        """Marquer un token comme utilisé (ou le supprimer)"""
+        """Marquer un token comme utilisé - VERSION OPTIMISÉE"""
         try:
             redis_key = f"activation_token:{token}"
             
-            if self.redis:
-                # Supprimer le token de Redis (plus simple que de le marquer comme utilisé)
-                result = self.redis.delete(redis_key)
-                print(f"✅ Token supprimé de Redis: {redis_key} (résultat: {result})")
+            if fast_cache.is_connected():
+                # Supprimer le token avec fast_cache (plus simple que de le marquer comme utilisé)
+                result = fast_cache.delete_pattern(redis_key)
+                print(f"✅ Token supprimé avec fast_cache: {redis_key} (résultat: {result})")
                 return result > 0
             else:
                 # Fallback
@@ -1086,27 +1091,32 @@ class UserService:
             return False
     
     def _revoke_user_activation_tokens(self, user_id: str) -> int:
-        """Révoquer tous les tokens d'activation d'un utilisateur"""
+        """Révoquer tous les tokens d'activation d'un utilisateur - VERSION OPTIMISÉE"""
         try:
-            if self.redis:
-                # Chercher tous les tokens de ce user_id
-                pattern = "activation_token:*"
-                keys = self.redis.keys(pattern)
+            if fast_cache.is_connected():
+                # Utiliser fast_cache pour chercher et supprimer
+                # Note: fast_cache.delete_pattern ne peut pas chercher par contenu
+                # On va utiliser une approche différente
                 
-                tokens_supprimés = 0
-                for key in keys:
-                    try:
-                        token_data_str = self.redis.get(key)
-                        if token_data_str:
-                            token_data = json.loads(token_data_str)
-                            if token_data.get('user_id') == user_id:
-                                self.redis.delete(key)
+                # Chercher tous les tokens et filtrer par user_id
+                if hasattr(fast_cache, 'redis') and fast_cache.redis:
+                    pattern = "activation_token:*"
+                    keys = fast_cache.redis.keys(pattern)
+                    
+                    tokens_supprimés = 0
+                    for key in keys:
+                        try:
+                            token_data = fast_cache.quick_get(key.decode() if isinstance(key, bytes) else key)
+                            if token_data and token_data.get('user_id') == user_id:
+                                fast_cache.delete_pattern(key.decode() if isinstance(key, bytes) else key)
                                 tokens_supprimés += 1
-                    except:
-                        continue
-                
-                print(f"✅ {tokens_supprimés} tokens d'activation supprimés pour user {user_id}")
-                return tokens_supprimés
+                        except:
+                            continue
+                    
+                    print(f"✅ {tokens_supprimés} tokens d'activation supprimés pour user {user_id}")
+                    return tokens_supprimés
+                else:
+                    return 0
             else:
                 # Fallback
                 try:
@@ -1121,9 +1131,9 @@ class UserService:
             return 0
     
     def _invalidate_client_tokens(self, client_id: str) -> int:
-        """Invalider tous les tokens d'activation d'un client"""
+        """Invalider tous les tokens d'activation d'un client - VERSION OPTIMISÉE"""
         try:
-            if self.redis:
+            if fast_cache.is_connected():
                 # Chercher tous les utilisateurs de ce client
                 users = User.query.filter_by(client_id=client_id).all()
                 total_supprimés = 0
@@ -1141,75 +1151,75 @@ class UserService:
             return 0
     
     def _user_has_activation_token(self, user_id: str) -> bool:
-        """Vérifier si un utilisateur a un token d'activation actif"""
+        """Vérifier si un utilisateur a un token d'activation actif - VERSION OPTIMISÉE"""
         try:
-            if self.redis:
-                pattern = "activation_token:*"
-                keys = self.redis.keys(pattern)
-                
-                for key in keys:
-                    try:
-                        token_data_str = self.redis.get(key)
-                        if token_data_str:
-                            token_data = json.loads(token_data_str)
-                            if token_data.get('user_id') == user_id and not token_data.get('used', False):
+            if fast_cache.is_connected():
+                if hasattr(fast_cache, 'redis') and fast_cache.redis:
+                    pattern = "activation_token:*"
+                    keys = fast_cache.redis.keys(pattern)
+                    
+                    for key in keys:
+                        try:
+                            token_data = fast_cache.quick_get(key.decode() if isinstance(key, bytes) else key)
+                            if token_data and token_data.get('user_id') == user_id and not token_data.get('used', False):
                                 # Vérifier que le token n'est pas expiré
                                 expires_at = datetime.fromisoformat(token_data['expires_at'])
                                 if datetime.utcnow() <= expires_at:
                                     return True
-                    except:
-                        continue
+                        except:
+                            continue
                 
                 return False
             else:
-                return False  # Sans Redis, on ne peut pas vérifier facilement
+                return False  # Sans fast_cache, on ne peut pas vérifier facilement
             
         except Exception as e:
             print(f"❌ Erreur vérification token utilisateur: {e}")
             return False
     
     def _get_activation_tokens_stats(self) -> Dict[str, int]:
-        """Obtenir les statistiques des tokens d'activation"""
+        """Obtenir les statistiques des tokens d'activation - VERSION OPTIMISÉE"""
         try:
-            if self.redis:
-                pattern = "activation_token:*"
-                keys = self.redis.keys(pattern)
-                
-                stats = {
-                    'total_tokens': len(keys),
-                    'tokens_admin': 0,
-                    'tokens_user': 0,
-                    'tokens_superadmin': 0,
-                    'tokens_expires': 0
-                }
-                
-                now = datetime.utcnow()
-                
-                for key in keys:
-                    try:
-                        token_data_str = self.redis.get(key)
-                        if token_data_str:
-                            token_data = json.loads(token_data_str)
-                            
-                            # Compter par rôle
-                            role = token_data.get('role', 'user')
-                            if role == 'admin':
-                                stats['tokens_admin'] += 1
-                            elif role == 'superadmin':
-                                stats['tokens_superadmin'] += 1
-                            else:
-                                stats['tokens_user'] += 1
-                            
-                            # Compter les expirés
-                            expires_at = datetime.fromisoformat(token_data['expires_at'])
-                            if now > expires_at:
-                                stats['tokens_expires'] += 1
-                    except:
-                        continue
-                
-                return stats
+            if fast_cache.is_connected():
+                if hasattr(fast_cache, 'redis') and fast_cache.redis:
+                    pattern = "activation_token:*"
+                    keys = fast_cache.redis.keys(pattern)
+                    
+                    stats = {
+                        'total_tokens': len(keys),
+                        'tokens_admin': 0,
+                        'tokens_user': 0,
+                        'tokens_superadmin': 0,
+                        'tokens_expires': 0
+                    }
+                    
+                    now = datetime.utcnow()
+                    
+                    for key in keys:
+                        try:
+                            token_data = fast_cache.quick_get(key.decode() if isinstance(key, bytes) else key)
+                            if token_data:
+                                # Compter par rôle
+                                role = token_data.get('role', 'user')
+                                if role == 'admin':
+                                    stats['tokens_admin'] += 1
+                                elif role == 'superadmin':
+                                    stats['tokens_superadmin'] += 1
+                                else:
+                                    stats['tokens_user'] += 1
+                                
+                                # Compter les expirés
+                                expires_at = datetime.fromisoformat(token_data['expires_at'])
+                                if now > expires_at:
+                                    stats['tokens_expires'] += 1
+                        except:
+                            continue
+                    
+                    return stats
+                else:
+                    return {'total_tokens': 0, 'error': 'FastCache Redis indisponible'}
             else:
-                return {'total_tokens': 0, 'error': 'Redis indisponible'}
+                return {'total_tokens': 0, 'error': 'FastCache indisponible'}
             
         except Exception as e:
             return {'error': str(e)}
@@ -2015,35 +2025,59 @@ class UserService:
         return False
     
     def _count_user_activation_tokens(self, user_id: str) -> int:
-        """Compter le nombre de tokens d'activation actifs pour un utilisateur"""
+        """Compter le nombre de tokens d'activation actifs pour un utilisateur - VERSION OPTIMISÉE"""
         try:
-            if not self.redis:
+            if not fast_cache.is_connected():
                 return 0
             
-            pattern = "activation_token:*"
-            keys = self.redis.keys(pattern)
-            
-            count = 0
-            now = datetime.utcnow()
-            
-            for key in keys:
-                try:
-                    token_data_str = self.redis.get(key)
-                    if token_data_str:
-                        token_data = json.loads(token_data_str)
-                        
-                        if (token_data.get('user_id') == user_id and 
-                            not token_data.get('used', False)):
-                            
-                            # Vérifier que le token n'est pas expiré
-                            expires_at = datetime.fromisoformat(token_data['expires_at'])
-                            if now <= expires_at:
-                                count += 1
-                except Exception:
-                    continue
-            
-            return count
+            if hasattr(fast_cache, 'redis') and fast_cache.redis:
+                pattern = "activation_token:*"
+                keys = fast_cache.redis.keys(pattern)
+                
+                count = 0
+                now = datetime.utcnow()
+                
+                for key in keys:
+                    try:
+                        token_data = fast_cache.quick_get(key.decode() if isinstance(key, bytes) else key)
+                        if token_data:
+                            if (token_data.get('user_id') == user_id and 
+                                not token_data.get('used', False)):
+                                
+                                # Vérifier que le token n'est pas expiré
+                                expires_at = datetime.fromisoformat(token_data['expires_at'])
+                                if now <= expires_at:
+                                    count += 1
+                    except Exception:
+                        continue
+                
+                return count
+            else:
+                return 0
             
         except Exception as e:
             print(f"❌ Erreur comptage tokens utilisateur: {e}")
+            return 0
+
+    def _cleanup_client_activation_caches(self, client_id: str):
+        """Nettoyer les caches liés à l'activation d'un client - VERSION OPTIMISÉE"""
+        try:
+            if fast_cache.is_connected():
+                # Supprimer les caches spécifiques au client si ils existent
+                patterns = [
+                    f"client_activation:{client_id}",
+                    f"client_users:{client_id}",
+                    f"client_stats:{client_id}"
+                ]
+                
+                total_deleted = 0
+                for pattern in patterns:
+                    deleted = fast_cache.delete_pattern(pattern)
+                    total_deleted += deleted
+                
+                return total_deleted
+            else:
+                return 0
+        except Exception as e:
+            print(f"❌ Erreur nettoyage caches client: {e}")
             return 0

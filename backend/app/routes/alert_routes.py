@@ -11,13 +11,21 @@ from functools import wraps  # ✅ AJOUT CRITIQUE
 # Créer le blueprint
 alert_bp = Blueprint('alerts', __name__, url_prefix='/api/alerts')
 
-# Import conditionnel du DeviceService
-try:
-    from app.services.device_service import device_service
-    logging.info("✅ DeviceService importé dans alert_routes")
-except ImportError:
-    device_service = None
-    logging.warning("⚠️ DeviceService non disponible dans alert_routes")
+# ✅ FONCTION POUR RÉCUPÉRER DeviceService À LA DEMANDE
+def get_device_service():
+    """Récupérer DeviceService à la demande pour éviter imports circulaires"""
+    try:
+        from app.services.device_service import DeviceService
+        # Créer une instance si elle n'existe pas
+        if not hasattr(get_device_service, '_instance'):
+            get_device_service._instance = DeviceService()
+        return get_device_service._instance
+    except ImportError:
+        logging.warning("⚠️ DeviceService non disponible")
+        return None
+    except Exception as e:
+        logging.error(f"❌ Erreur récupération DeviceService: {e}")
+        return None
 
 # Import conditionnel des décorateurs
 try:
@@ -30,13 +38,7 @@ except ImportError:
     def admin_required(f):
         @wraps(f)  # ✅ CRITIQUE : Préserve le nom de fonction
         def admin_wrapper_func(*args, **kwargs):  # ✅ NOM UNIQUE
-            return f(*args, **kwargs)
-        return admin_wrapper_func
-    
-    def login_required(f):
-        @wraps(f)  # ✅ CRITIQUE : Préserve le nom de fonction
-        def login_wrapper_func(*args, **kwargs):  # ✅ NOM UNIQUE
-            # Simuler un utilisateur admin pour les tests
+            # ✅ CORRECTION : Créer MockUser et l'injecter comme premier argument
             class MockUser:
                 def __init__(self):
                     self.id = "test_user"
@@ -44,6 +46,22 @@ except ImportError:
                 def is_superadmin(self):
                     return True
             
+            # ✅ PASSER MockUser comme current_user (premier argument)
+            return f(MockUser(), *args, **kwargs)
+        return admin_wrapper_func
+    
+    def login_required(f):
+        @wraps(f)  # ✅ CRITIQUE : Préserve le nom de fonction
+        def login_wrapper_func(*args, **kwargs):  # ✅ NOM UNIQUE
+            # ✅ CORRECTION : Créer MockUser et l'injecter comme premier argument
+            class MockUser:
+                def __init__(self):
+                    self.id = "test_user"
+                    self.client_id = None
+                def is_superadmin(self):
+                    return True
+            
+            # ✅ PASSER MockUser comme current_user (premier argument)
             return f(MockUser(), *args, **kwargs)
         return login_wrapper_func
     
@@ -52,6 +70,7 @@ except ImportError:
             @wraps(f)  # ✅ CRITIQUE : Préserve le nom de fonction
             def validate_wrapper_func(*args, **kwargs):  # ✅ NOM UNIQUE
                 data = request.get_json() or {}
+                # ✅ CORRECTION : Passer data comme argument nommé
                 return f(*args, data=data, **kwargs)
             return validate_wrapper_func
         return decorator
@@ -64,6 +83,8 @@ def test_blueprint():
     🧪 TEST - Vérifier que le blueprint fonctionne
     GET /api/alerts/test
     """
+    device_service = get_device_service()
+    
     return jsonify({
         'success': True,
         'message': 'Blueprint AlertService fonctionne !',
@@ -86,6 +107,8 @@ def test_device_import():
     GET /api/alerts/test/device-import
     """
     try:
+        device_service = get_device_service()
+        
         # Test import Device
         device_count = Device.query.count()
         
@@ -172,6 +195,9 @@ def get_device_alerts(current_user, device_id):
         hours_back = request.args.get('hours_back', 24, type=int)
         limit = request.args.get('limit', 50, type=int)
         
+        # ✅ UTILISER DeviceService À LA DEMANDE
+        device_service = get_device_service()
+        
         # Utiliser AlertService si disponible
         if device_service and hasattr(device_service, '_alert_service') and device_service._alert_service:
             logging.info("🔧 Utilisation AlertService")
@@ -225,7 +251,7 @@ def get_device_alerts(current_user, device_id):
                 'id': device.id,
                 'tuya_device_id': device.tuya_device_id,
                 'nom_appareil': device.nom_appareil,
-                'en_ligne': device.en_ligne,
+                'en_ligne': getattr(device, 'en_ligne', False),
                 'search_method': search_method
             },
             'period_hours': hours_back,
@@ -263,6 +289,9 @@ def get_device_alerts_stats(current_user, device_id):
                 pass
         
         days = request.args.get('days', 7, type=int)
+        
+        # ✅ UTILISER DeviceService À LA DEMANDE
+        device_service = get_device_service()
         
         # Utiliser AlertService
         if device_service and hasattr(device_service, '_alert_service') and device_service._alert_service:
@@ -327,6 +356,9 @@ def get_device_active_alerts(current_user, device_id):
                     return jsonify({'error': 'Accès interdit'}), 403
             except:
                 pass
+        
+        # ✅ UTILISER DeviceService À LA DEMANDE
+        device_service = get_device_service()
         
         # Utiliser AlertService
         if device_service and hasattr(device_service, '_alert_service') and device_service._alert_service:
@@ -402,6 +434,9 @@ def resolve_alert(current_user, alert_id, data):
         
         commentaire = data.get('commentaire', '')
         
+        # ✅ UTILISER DeviceService À LA DEMANDE
+        device_service = get_device_service()
+        
         # Utiliser AlertService
         if device_service and hasattr(device_service, '_alert_service') and device_service._alert_service:
             result = device_service._alert_service.resoudre_alerte(
@@ -460,6 +495,9 @@ def mark_alert_seen(current_user, alert_id):
             except:
                 pass
         
+        # ✅ UTILISER DeviceService À LA DEMANDE
+        device_service = get_device_service()
+        
         # Utiliser AlertService
         if device_service and hasattr(device_service, '_alert_service') and device_service._alert_service:
             result = device_service._alert_service.marquer_alerte_vue(alert_id, utilisateur_id=current_user.id)
@@ -511,6 +549,9 @@ def analyze_client_alerts(current_user, client_id, data):
         
         use_cache = data.get('use_cache', True)
         
+        # ✅ UTILISER DeviceService À LA DEMANDE
+        device_service = get_device_service()
+        
         # Utiliser AlertService pour analyse complète
         if device_service and hasattr(device_service, '_alert_service') and device_service._alert_service:
             result = device_service._alert_service.analyser_client_complet(
@@ -545,6 +586,9 @@ def get_critical_alerts(current_user):
                 client_filter = None if current_user.is_superadmin() else current_user.client_id
             except:
                 pass
+        
+        # ✅ UTILISER DeviceService À LA DEMANDE
+        device_service = get_device_service()
         
         # Utiliser AlertService
         if device_service and hasattr(device_service, '_alert_service') and device_service._alert_service:
@@ -604,8 +648,6 @@ def get_critical_alerts(current_user):
         logging.error(f"Erreur alertes critiques: {e}")
         return jsonify({'error': f'Erreur alertes critiques: {str(e)}'}), 500
 
-# =================== ROUTE DE SANTÉ ===================
-
 @alert_bp.route('/health', methods=['GET'])
 def health_check():
     """
@@ -613,6 +655,8 @@ def health_check():
     GET /api/alerts/health
     """
     try:
+        device_service = get_device_service()
+        
         health_info = {
             'service': 'AlertService',
             'status': 'unknown',

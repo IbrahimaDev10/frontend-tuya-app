@@ -107,7 +107,7 @@ class ScheduledAction(db.Model):
     # =================== CALCUL PROCHAINE EXÉCUTION ===================
     
     def calculer_prochaine_execution(self):
-        """Calculer la prochaine date/heure d'exécution"""
+        """Calculer la prochaine date/heure d'exécution - VERSION CORRIGÉE"""
         if not self.actif or not self.heure_execution:
             self.prochaine_execution = None
             return
@@ -119,13 +119,9 @@ class ScheduledAction(db.Model):
             # Timezone
             try:
                 tz = pytz.timezone(self.timezone)
-                now = datetime.now(tz).replace(tzinfo=None)  # Convertir en naive datetime
+                now = datetime.now(tz)
             except:
                 now = datetime.utcnow()
-            
-            # Heure d'exécution aujourd'hui
-            today = now.date()
-            execution_time_today = datetime.combine(today, self.heure_execution)
             
             # Jours actifs
             jours_actifs = self.get_jours_semaine_list()
@@ -133,34 +129,45 @@ class ScheduledAction(db.Model):
                 self.prochaine_execution = None
                 return
             
-            # Chercher la prochaine occurrence
+            # ✅ CORRECTION : Chercher la prochaine occurrence
             for i in range(8):  # Chercher sur les 8 prochains jours
-                check_date = today + timedelta(days=i)
+                check_date = now.date() + timedelta(days=i)
                 check_datetime = datetime.combine(check_date, self.heure_execution)
                 
-                # Vérifier si c'est un jour actif
-                weekday = check_date.weekday() + 1  # 0=Lundi -> 1=Lundi
-                if weekday == 7:
-                    weekday = 7  # Dimanche reste 7
+                # ✅ CORRECTION : Conversion correcte du jour de la semaine
+                # Python weekday() : 0=Lundi, 6=Dimanche
+                # Votre format : 1=Lundi, 7=Dimanche
+                weekday_python = check_date.weekday()  # 0-6
+                weekday_votre_format = weekday_python + 1  # 1-7
+                if weekday_votre_format == 7:  # Dimanche
+                    weekday_votre_format = 7
+                
+                # Ajouter timezone si nécessaire
+                if hasattr(now, 'tzinfo') and now.tzinfo:
+                    check_datetime = tz.localize(check_datetime)
                 
                 # Vérifier les conditions
                 conditions = [
-                    weekday in jours_actifs,
+                    weekday_votre_format in jours_actifs,
                     check_datetime > now,
                     self._is_date_in_range(check_date)
                 ]
                 
                 if all(conditions):
+                    # ✅ CORRECTION : Retirer timezone pour stockage en DB
+                    if hasattr(check_datetime, 'tzinfo') and check_datetime.tzinfo:
+                        check_datetime = check_datetime.replace(tzinfo=None)
+                    
                     self.prochaine_execution = check_datetime
-                    db.session.commit()
+                    print(f"✅ Prochaine exécution calculée: {check_datetime} pour {self.nom_action}")
                     return
             
             # Aucune prochaine exécution trouvée
             self.prochaine_execution = None
-            db.session.commit()
+            print(f"⚠️ Aucune prochaine exécution trouvée pour {self.nom_action}")
             
         except Exception as e:
-            print(f"Erreur calcul prochaine exécution: {e}")
+            print(f"❌ Erreur calcul prochaine exécution: {e}")
             self.prochaine_execution = None
     
     def _is_date_in_range(self, check_date):

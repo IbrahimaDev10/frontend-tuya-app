@@ -36,27 +36,32 @@ class Config:
     TUYA_PASSWORD = os.getenv('PASSWORD')
     TUYA_COUNTRY_CODE = os.getenv('COUNTRY_CODE', '221')
     
-    # ==================== CONFIGURATION REDIS ====================
-    # ✅ NOUVEAU : Configuration Redis simple et efficace
+    # ==================== CONFIGURATION REDIS CORRIGÉE ====================
     REDIS_URL = os.getenv('REDIS_URL')
     REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
     REDIS_PORT = int(os.getenv('REDIS_PORT', 6379))
     REDIS_PASSWORD = os.getenv('REDIS_PASSWORD')
     REDIS_DB = int(os.getenv('REDIS_DB', 0))
     
-    # Configuration Redis avancée
-    REDIS_SOCKET_TIMEOUT = int(os.getenv('REDIS_SOCKET_TIMEOUT', 5))
-    REDIS_SOCKET_CONNECT_TIMEOUT = int(os.getenv('REDIS_SOCKET_CONNECT_TIMEOUT', 5))
-    REDIS_HEALTH_CHECK_INTERVAL = int(os.getenv('REDIS_HEALTH_CHECK_INTERVAL', 30))
+    # ✅ POOL DE CONNEXIONS CORRIGÉ - paramètres valides seulement
+    REDIS_CONNECTION_POOL = {
+        'max_connections': 15,              # Limite connexions simultanées
+        'retry_on_timeout': True,
+        'socket_keepalive': True,
+        'socket_timeout': 2,                # Plus rapide que vos 5s actuels
+        'socket_connect_timeout': 1,        # Plus rapide que vos 5s actuels
+        'health_check_interval': 30
+        # ❌ SUPPRIMÉ : 'connection_pool_class_kwargs' (cause l'erreur)
+    }
     
-    # TTL par défaut pour différents types de cache (en secondes)
+    # TTL optimisés pour rapidité
     REDIS_DEFAULT_TTL = {
-        'device_status': 30,        # Status des appareils IoT
-        'user_session': 3600,       # Sessions utilisateur (1h)
-        'auth_tokens': 86400,       # Tokens d'activation (24h)
-        'device_data': 300,         # Données device historiques (5min)
-        'api_cache': 60,            # Cache API générique (1min)
-        'alerts': 1800             # Cache des alertes (30min)
+        'device_status': 15,        # 15s (plus réactif que 30s)
+        'user_session': 1800,       # Inchangé
+        'auth_tokens': 3600,        # 1h au lieu de 24h (plus sécurisé et rapide)
+        'device_data': 120,         # 2min au lieu de 5min (plus frais)
+        'api_cache': 20,            # 20s au lieu de 60s (plus réactif)
+        'alerts': 300               # 5min au lieu de 30min (plus réactif)
     }
     
     # ==================== CONFIGURATION MAIL ====================
@@ -91,7 +96,7 @@ class Config:
     DAILY_REPORT_TIME = os.getenv('DAILY_REPORT_TIME', '08:00')  # Format HH:MM
     WEEKLY_REPORT_DAY = int(os.getenv('WEEKLY_REPORT_DAY', 1))  # 1=Lundi
     
-    # ✅ NOUVEAU : Méthodes Redis
+    # ✅ MÉTHODES REDIS CORRIGÉES
     @staticmethod
     def is_redis_configured():
         """Vérifie si Redis est configuré"""
@@ -122,16 +127,35 @@ class Config:
             return f"redis://{host}:{port}/{db}"
     
     @staticmethod
+    def get_redis_config_optimized():
+        """Configuration Redis pour performance maximale - VERSION CORRIGÉE"""
+        redis_url = Config.get_redis_url()
+        
+        # ✅ CONFIGURATION CORRIGÉE - seulement les paramètres valides
+        config = {
+            'url': redis_url,
+            'decode_responses': False,  # ✅ Important pour JSON
+            'retry_on_timeout': Config.REDIS_CONNECTION_POOL['retry_on_timeout'],
+            'socket_keepalive': Config.REDIS_CONNECTION_POOL['socket_keepalive'],
+            'socket_timeout': Config.REDIS_CONNECTION_POOL['socket_timeout'],
+            'socket_connect_timeout': Config.REDIS_CONNECTION_POOL['socket_connect_timeout'],
+            'health_check_interval': Config.REDIS_CONNECTION_POOL['health_check_interval'],
+            'max_connections': Config.REDIS_CONNECTION_POOL['max_connections']
+        }
+        
+        return config
+    
+    @staticmethod
     def get_redis_config():
-        """Retourner la configuration Redis complète pour le client"""
+        """Retourner la configuration Redis complète pour le client (ancienne méthode maintenue pour compatibilité)"""
         return {
             'url': Config.get_redis_url(),
-            'decode_responses': True,
-            'socket_timeout': Config.REDIS_SOCKET_TIMEOUT,
-            'socket_connect_timeout': Config.REDIS_SOCKET_CONNECT_TIMEOUT,
-            'health_check_interval': Config.REDIS_HEALTH_CHECK_INTERVAL,
+            'decode_responses': False,  # ✅ Important pour JSON
+            'socket_timeout': Config.REDIS_CONNECTION_POOL['socket_timeout'],
+            'socket_connect_timeout': Config.REDIS_CONNECTION_POOL['socket_connect_timeout'],
+            'health_check_interval': Config.REDIS_CONNECTION_POOL['health_check_interval'],
             'retry_on_timeout': True,
-            'retry_on_error': [ConnectionError, TimeoutError]
+            'max_connections': Config.REDIS_CONNECTION_POOL['max_connections']
         }
     
     @staticmethod
@@ -157,13 +181,14 @@ class Config:
             print(f"⚠️  Variables mail manquantes (optionnelles): {missing_mail}")
             print("   Les fonctionnalités email seront désactivées.")
         
-        # ✅ NOUVEAU : Validation Redis
+        # ✅ VALIDATION Redis optimisée
         if Config.is_redis_configured():
             print(f"✅ Configuration Redis détectée")
             redis_url = Config.get_redis_url()
             # Masquer le mot de passe dans les logs
             safe_url = redis_url.split('@')[1] if '@' in redis_url else redis_url
             print(f"   Redis URL: {safe_url}")
+            print(f"   Pool: {Config.REDIS_CONNECTION_POOL['max_connections']} connexions max")
         else:
             print(f"ℹ️  Redis non configuré - l'application fonctionnera sans cache")
         
@@ -185,15 +210,25 @@ class DevelopmentConfig(Config):
     # Logs plus détaillés en dev
     MAIL_DEBUG = True
     
-    # ✅ NOUVEAU : Redis en développement
-    # TTL plus courts pour le développement (refresh plus rapide)
+    # ✅ REDIS en développement - TTL encore plus courts pour réactivité max
     REDIS_DEFAULT_TTL = {
-        'device_status': 15,        # 15 secondes au lieu de 30
-        'user_session': 1800,       # 30 minutes au lieu d'1h
-        'auth_tokens': 3600,        # 1h au lieu de 24h
-        'device_data': 120,         # 2min au lieu de 5min
-        'api_cache': 30,            # 30s au lieu de 1min
-        'alerts': 300               # 5min au lieu de 30min
+        'device_status': 10,        # 10 secondes (très réactif)
+        'user_session': 1800,       # 30 minutes
+        'auth_tokens': 1800,        # 30 minutes au lieu d'1h
+        'device_data': 60,          # 1min au lieu de 2min (très frais)
+        'api_cache': 15,            # 15s (très réactif)
+        'alerts': 180               # 3min (très réactif)
+    }
+    
+    # ✅ POOL CORRIGÉ pour développement
+    REDIS_CONNECTION_POOL = {
+        'max_connections': 10,
+        'retry_on_timeout': True,
+        'socket_keepalive': True,
+        'socket_timeout': 1,        # Encore plus rapide
+        'socket_connect_timeout': 1,
+        'health_check_interval': 30
+        # ❌ SUPPRIMÉ : 'connection_pool_class_kwargs'
     }
 
 class ProductionConfig(Config):
@@ -207,21 +242,26 @@ class ProductionConfig(Config):
     # Limites plus strictes en production
     MAIL_MAX_EMAILS = int(os.getenv('MAIL_MAX_EMAILS', 50))
     
-    # ✅ NOUVEAU : Redis en production
-    # TTL plus longs pour la production (moins de charge)
+    # ✅ REDIS en production - TTL équilibrés performance/fraîcheur
     REDIS_DEFAULT_TTL = {
-        'device_status': 60,        # 1 minute
-        'user_session': 7200,       # 2 heures
-        'auth_tokens': 86400,       # 24 heures
-        'device_data': 600,         # 10 minutes
-        'api_cache': 300,           # 5 minutes
-        'alerts': 3600              # 1 heure
+        'device_status': 30,        # 30 secondes (équilibré)
+        'user_session': 3600,       # 1 heure
+        'auth_tokens': 7200,        # 2 heures
+        'device_data': 300,         # 5 minutes
+        'api_cache': 60,            # 1 minute
+        'alerts': 900               # 15 minutes
     }
     
-    # Configuration Redis production plus robuste
-    REDIS_SOCKET_TIMEOUT = 10
-    REDIS_SOCKET_CONNECT_TIMEOUT = 10
-    REDIS_HEALTH_CHECK_INTERVAL = 60
+    # ✅ POOL CORRIGÉ pour production
+    REDIS_CONNECTION_POOL = {
+        'max_connections': 25,      # Plus de connexions
+        'retry_on_timeout': True,
+        'socket_keepalive': True,
+        'socket_timeout': 3,        # Un peu plus de tolérance
+        'socket_connect_timeout': 2,
+        'health_check_interval': 60  # Check moins fréquent
+        # ❌ SUPPRIMÉ : 'connection_pool_class_kwargs'
+    }
     
     @staticmethod
     def validate_config():
@@ -232,7 +272,7 @@ class ProductionConfig(Config):
         if not Config.is_mail_configured():
             raise ValueError("Configuration mail complète requise en production!")
         
-        # ✅ NOUVEAU : Redis recommandé en production
+        # ✅ Redis fortement recommandé en production
         if not Config.is_redis_configured():
             print("⚠️  Redis non configuré - performances sous-optimales en production")
         
@@ -252,18 +292,27 @@ class TestingConfig(Config):
     # JWT plus court pour les tests
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=5)
     
-    # ✅ NOUVEAU : Redis pour les tests
-    # Utiliser une base Redis différente pour les tests
+    # ✅ REDIS pour les tests - TTL très courts
     REDIS_DB = 1  # Base 1 au lieu de 0
     
-    # TTL très courts pour les tests
     REDIS_DEFAULT_TTL = {
         'device_status': 5,         # 5 secondes
         'user_session': 300,        # 5 minutes
-        'auth_tokens': 600,         # 10 minutes
+        'auth_tokens': 300,         # 5 minutes
         'device_data': 30,          # 30 secondes
         'api_cache': 10,            # 10 secondes
         'alerts': 60                # 1 minute
+    }
+    
+    # ✅ POOL CORRIGÉ pour tests
+    REDIS_CONNECTION_POOL = {
+        'max_connections': 5,
+        'retry_on_timeout': True,
+        'socket_keepalive': True,
+        'socket_timeout': 1,
+        'socket_connect_timeout': 1,
+        'health_check_interval': 10
+        # ❌ SUPPRIMÉ : 'connection_pool_class_kwargs'
     }
 
 # Factory pour récupérer la config

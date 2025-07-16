@@ -1,6 +1,6 @@
-# alert_service.py - CORRIGÉ pour compatibilité DeviceService
+# alert_service.py - CORRECTION COMPLÈTE avec fast_cache
 # Compatible avec vos modèles Device, DeviceData, Alert existants
-# ✅ Détection automatique + Cache Redis + Intégration AnalyseurTriphaseService
+# ✅ Intégration fast_cache + Correction attributs manquants
 
 from app import db, get_redis
 from app.models.device import Device
@@ -10,45 +10,48 @@ from datetime import datetime, timedelta
 import json
 import logging
 from typing import List, Dict, Tuple, Optional, Any
+from app.utils.fast_cache import fast_cache
 
 class AlertService:
-    """Service centralisé pour gestion intelligente des alertes mono/triphasé"""
+    """Service centralisé pour gestion intelligente des alertes mono/triphasé avec fast_cache"""
     
-    def __init__(self, redis_client=None):  # ✅ CORRIGÉ: Accepter redis_client en paramètre
-        """
-        Initialiser AlertService
-        
-        Args:
-            redis_client: Client Redis optionnel (si fourni par DeviceService)
-        """
-        # ✅ Utiliser redis_client fourni ou récupérer depuis app
-        self.redis = redis_client if redis_client is not None else get_redis()
+    def __init__(self, redis_client=None):
         self.logger = logging.getLogger(__name__)
-        
-        # ✅ Lazy loading de l'analyseur triphasé
         self._analyseur_triphase = None
         
-        # Configuration cache pour déduplication
-        self.cache_config = {
-            'alert_dedup_ttl': 1800,      # 30 min - Déduplication alertes
-            'analysis_result_ttl': 300,    # 5 min - Résultats d'analyse
-            'device_status_ttl': 600,      # 10 min - Statut appareil
-            'threshold_cache_ttl': 3600    # 1h - Cache seuils
-        }
-        
-        # Préfixe Redis
+        # ✅ CORRECTION: Ajouter les attributs manquants
+        self.redis = redis_client or get_redis()
         self.redis_prefix = "alerts:"
         
-        # Configuration par défaut
+        # Configuration du cache avec fast_cache
+        self.cache_config = {
+            'analysis_result_ttl': 300,     # 5 minutes
+            'threshold_cache_ttl': 1800,    # 30 minutes
+            'alert_dedup_ttl': 1800,        # 30 minutes
+            'enabled': True
+        }
+        
+        # Configuration respectant votre logique
         self.default_config = {
             'auto_detection': True,
             'create_alerts_db': True,
-            'use_cache': True,
-            'enable_deduplication': True,
+            'use_cache': False,  # Désactivé selon votre logique
+            'enable_deduplication': False,  # Géré par DB uniquement
             'log_analysis_results': True
         }
         
-        self.logger.info(f"AlertService initialisé - Redis: {'✅' if self.redis else '❌'}")
+        # Log d'initialisation
+        self.logger.info(f"AlertService initialisé avec redis_prefix: {self.redis_prefix}")
+    
+    def _is_alert_recently_created(self, device_id, alert_type, minutes=30):
+        """Déduplication via DB uniquement"""
+        since = datetime.utcnow() - timedelta(minutes=minutes)
+        return Alert.query.filter(
+            Alert.appareil_id == device_id,
+            Alert.type_alerte == alert_type,
+            Alert.date_creation >= since,
+            Alert.statut.in_(['nouvelle', 'vue'])
+        ).first() is not None
     
     @property
     def analyseur_triphase(self):
@@ -68,22 +71,22 @@ class AlertService:
         return self._analyseur_triphase
     
     def _get_device_thresholds_cached(self, device: Device) -> Dict:
-        """Récupérer seuils appareil avec cache"""
-        if not self.redis:
-            return device.get_seuils_actifs()
-        
+        """Récupérer seuils appareil avec fast_cache"""
         try:
             cache_key = f"{self.redis_prefix}thresholds:{device.id}"
-            cached_thresholds = self.redis.get(cache_key)
+            
+            # ✅ Utiliser fast_cache pour performance
+            cached_thresholds = fast_cache.quick_get(cache_key)
             
             if cached_thresholds:
-                return json.loads(cached_thresholds)
+                return cached_thresholds
             
-            # Récupérer depuis DB et cacher
+            # Récupérer depuis DB et cacher avec fast_cache
             seuils = device.get_seuils_actifs()
             ttl = self.cache_config['threshold_cache_ttl']
             
-            self.redis.setex(cache_key, ttl, json.dumps(seuils))
+            # ✅ Utiliser fast_cache.quick_set
+            fast_cache.quick_set(cache_key, seuils, ttl)
             return seuils
             
         except Exception as e:
@@ -91,9 +94,17 @@ class AlertService:
             return device.get_seuils_actifs()
     
     def _alert_recently_created(self, alert_type: str, device_id: str, minutes: int = 30) -> bool:
-        """Vérifier déduplication alertes avec cache Redis"""
-        if not self.redis:
-            # Fallback DB si pas de Redis
+        """Vérifier déduplication alertes avec fast_cache"""
+        try:
+            dedup_key = f"{self.redis_prefix}dedup:{alert_type}:{device_id}"
+            
+            # ✅ Utiliser fast_cache pour vérification rapide
+            cached_dedup = fast_cache.quick_get(dedup_key)
+            
+            if cached_dedup:
+                return True
+            
+            # Fallback DB si pas de cache
             since = datetime.utcnow() - timedelta(minutes=minutes)
             return Alert.query.filter(
                 Alert.appareil_id == device_id,
@@ -101,20 +112,13 @@ class AlertService:
                 Alert.date_creation >= since,
                 Alert.statut.in_(['nouvelle', 'vue'])
             ).first() is not None
-        
-        try:
-            dedup_key = f"{self.redis_prefix}dedup:{alert_type}:{device_id}"
-            return bool(self.redis.exists(dedup_key))
             
         except Exception as e:
             self.logger.error(f"Erreur vérification déduplication: {e}")
             return False
     
     def _cache_alert_created(self, alert_type: str, device_id: str):
-        """Marquer alerte créée pour déduplication"""
-        if not self.redis:
-            return
-        
+        """Marquer alerte créée pour déduplication avec fast_cache"""
         try:
             dedup_key = f"{self.redis_prefix}dedup:{alert_type}:{device_id}"
             ttl = self.cache_config['alert_dedup_ttl']
@@ -125,16 +129,14 @@ class AlertService:
                 'created_at': datetime.utcnow().isoformat()
             }
             
-            self.redis.setex(dedup_key, ttl, json.dumps(cache_data))
+            # ✅ Utiliser fast_cache.quick_set
+            fast_cache.quick_set(dedup_key, cache_data, ttl)
             
         except Exception as e:
             self.logger.error(f"Erreur cache déduplication: {e}")
     
     def _invalidate_device_caches(self, device_id: str):
-        """Invalider tous les caches d'un appareil"""
-        if not self.redis:
-            return
-        
+        """Invalider tous les caches d'un appareil avec fast_cache"""
         try:
             patterns = [
                 f"{self.redis_prefix}analysis:*",
@@ -145,14 +147,54 @@ class AlertService:
             
             deleted_count = 0
             for pattern in patterns:
-                keys = self.redis.keys(pattern)
-                if keys:
-                    deleted_count += self.redis.delete(*keys)
+                # ✅ Utiliser fast_cache.delete_pattern
+                deleted = fast_cache.delete_pattern(pattern)
+                deleted_count += deleted
             
             self.logger.debug(f"Cache invalidé pour device {device_id}: {deleted_count} clés")
             
         except Exception as e:
             self.logger.error(f"Erreur invalidation cache device: {e}")
+    
+    # ✅ CORRECTION: Méthode get_recent_alerts avec fast_cache
+    def get_recent_alerts(self, device_id: str, limit: int = 50) -> List[Dict]:
+        """
+        Récupérer les alertes récentes pour un appareil avec fast_cache
+        
+        Args:
+            device_id: ID de l'appareil
+            limit: Nombre maximum d'alertes à retourner
+            
+        Returns:
+            Liste des alertes récentes
+        """
+        try:
+            # ✅ Utiliser fast_cache pour performance
+            cache_key = f"{self.redis_prefix}recent:{device_id}"
+            cached_alerts = fast_cache.quick_get(cache_key)
+            
+            if cached_alerts:
+                self.logger.debug(f"📦 Alertes récentes depuis fast_cache pour {device_id}")
+                return cached_alerts[:limit]  # Limiter si nécessaire
+            
+            # Récupérer depuis DB
+            since = datetime.utcnow() - timedelta(hours=24)
+            alertes = Alert.query.filter(
+                Alert.appareil_id == device_id,
+                Alert.date_creation >= since
+            ).order_by(Alert.date_creation.desc()).limit(limit).all()
+            
+            alerts_data = [alerte.to_dict() for alerte in alertes]
+            
+            # ✅ Mettre en cache avec fast_cache (5 minutes)
+            fast_cache.quick_set(cache_key, alerts_data, 300)
+            
+            self.logger.debug(f"📊 {len(alerts_data)} alertes récupérées pour {device_id}")
+            return alerts_data
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erreur récupération alertes récentes device {device_id}: {e}")
+            return []
     
     # =================== MÉTHODES UTILITAIRES ===================
     
@@ -317,7 +359,7 @@ class AlertService:
     # =================== DÉTECTION AUTOMATIQUE TYPE SYSTÈME ===================
     
     def _detecter_type_systeme_auto(self, device_data: DeviceData, device: Device) -> str:
-        """Détection automatique intelligente du type de système"""
+        """Détection automatique intelligente du type de système avec fast_cache"""
         try:
             # ✅ Vérifier données triphasées présentes
             has_triphase_data = all([
@@ -356,18 +398,17 @@ class AlertService:
                 detected_type = device_configured_type or 'monophase'
                 self.logger.debug(f"🔍 Données insuffisantes, type gardé: {detected_type}")
             
-            # ✅ Cache de la détection
-            if self.redis:
-                detection_cache = {
-                    'detected_type': detected_type,
-                    'has_triphase_data': has_triphase_data,
-                    'has_mono_data': has_mono_only,
-                    'device_configured': device_configured_type,
-                    'timestamp': datetime.utcnow().isoformat()
-                }
-                
-                cache_key = f"type_detection:{device.id}"
-                self.redis.setex(cache_key, 3600, json.dumps(detection_cache))  # 1h
+            # ✅ Cache de la détection avec fast_cache
+            detection_cache = {
+                'detected_type': detected_type,
+                'has_triphase_data': has_triphase_data,
+                'has_mono_data': has_mono_only,
+                'device_configured': device_configured_type,
+                'timestamp': datetime.utcnow().isoformat()
+            }
+            
+            cache_key = f"type_detection:{device.id}"
+            fast_cache.quick_set(cache_key, detection_cache, 3600)  # 1h
             
             return detected_type
             
@@ -393,8 +434,7 @@ class AlertService:
             db.session.commit()
             
             # ✅ Invalider caches liés
-            if self.redis:
-                self._invalidate_device_caches(device.id)
+            self._invalidate_device_caches(device.id)
             
             self.logger.info(f"🔄 Device {device.id} type mis à jour: {old_type} → {new_type}")
             
@@ -783,319 +823,55 @@ class AlertService:
         except Exception as e:
             self.logger.error(f"Erreur détection anomalie données: {e}")
             return False
-    
 
-
-# =================== ANALYSE COMPLÈTE CLIENT ===================
-    # Ajoutez cette méthode à votre classe AlertService
-
-    def analyser_client_complet(self, client_id: str, config: Optional[Dict] = None) -> Dict[str, Any]:
-        """
-        Analyser tous les appareils d'un client en une seule opération
-        
-        Args:
-            client_id: ID du client
-            config: Configuration d'analyse (use_cache, etc.)
-            
-        Returns:
-            Dict avec analyse complète du client
-        """
-        try:
-            config = {**self.default_config, **(config or {})}
-            
-            # Récupérer tous les appareils du client
-            from app.models.device import Device
-            devices = Device.query.filter_by(
-                client_id=client_id,
-                statut_assignation='assigne',
-                actif=True
-            ).all()
-            
-            if not devices:
+    def get_alertes_critiques_recentes(self, device_id: str = None, heures: int = 24) -> Dict[str, Any]:
+            """
+            Récupérer les alertes critiques récentes
+            """
+            try:
+                # Utiliser la méthode de classe existante
+                alertes_critiques = Alert.get_alertes_critiques(hours_back=heures)
+                
+                # Filtrer par device si spécifié
+                if device_id:
+                    alertes_critiques = [a for a in alertes_critiques if a.appareil_id == device_id]
+                
+                # Sérialiser
+                alertes_data = [alerte.to_dict(include_details=True) for alerte in alertes_critiques]
+                
+                return {
+                    'success': True,
+                    'device_id': device_id,
+                    'period_hours': heures,
+                    'total_critiques': len(alertes_data),
+                    'alertes': alertes_data,
+                    'period': {
+                        'start': (datetime.utcnow() - timedelta(hours=heures)).isoformat(),
+                        'end': datetime.utcnow().isoformat()
+                    },
+                    'retrieved_at': datetime.utcnow().isoformat()
+                }
+                
+            except Exception as e:
+                self.logger.error(f"❌ Erreur alertes critiques: {e}")
                 return {
                     'success': False,
-                    'error': 'Aucun appareil trouvé pour ce client',
-                    'client_id': client_id
+                    'error': str(e),
+                    'device_id': device_id
                 }
-            
-            # Résultat global
-            analyse_globale = {
-                'success': True,
-                'client_id': client_id,
-                'timestamp': datetime.utcnow().isoformat(),
-                'total_appareils': len(devices),
-                'appareils_analyses': 0,
-                'appareils_en_ligne': 0,
-                'appareils_hors_ligne': 0,
-                'total_alertes_creees': 0,
-                'alertes_critiques': 0,
-                'appareils_avec_problemes': 0,
-                'recommendations_globales': [],
-                'analyses_par_appareil': {},
-                'resume_par_type_systeme': {
-                    'monophase': {'count': 0, 'alertes': 0},
-                    'triphase': {'count': 0, 'alertes': 0}
-                },
-                'top_problemes': {},
-                'cache_used': config['use_cache']
-            }
-            
-            self.logger.info(f"🔍 Analyse complète client {client_id}: {len(devices)} appareils")
-            
-            # Analyser chaque appareil
-            for device in devices:
-                try:
-                    # Compter par type de système
-                    type_systeme = device.type_systeme or 'monophase'
-                    analyse_globale['resume_par_type_systeme'][type_systeme]['count'] += 1
-                    
-                    # Vérifier statut en ligne
-                    if device.en_ligne:
-                        analyse_globale['appareils_en_ligne'] += 1
-                    else:
-                        analyse_globale['appareils_hors_ligne'] += 1
-                        # Ajouter recommandation pour appareil hors ligne
-                        analyse_globale['recommendations_globales'].append({
-                            'type': 'connectivity',
-                            'appareil': device.nom_appareil,
-                            'message': f'Appareil {device.nom_appareil} hors ligne',
-                            'priority': 'medium'
-                        })
-                        continue
-                    
-                    # Récupérer dernière donnée
-                    from app.models.device_data import DeviceData
-                    derniere_donnee = DeviceData.query.filter_by(
-                        appareil_id=device.id
-                    ).order_by(DeviceData.horodatage.desc()).first()
-                    
-                    if not derniere_donnee:
-                        self.logger.warning(f"Aucune donnée pour appareil {device.id}")
-                        continue
-                    
-                    # Analyser avec AlertService
-                    analyse_appareil = self.analyser_et_creer_alertes(
-                        derniere_donnee, device, config
-                    )
-                    
-                    if analyse_appareil.get('success', True):
-                        analyse_globale['appareils_analyses'] += 1
-                        
-                        # Comptabiliser alertes
-                        nb_alertes = analyse_appareil.get('nb_alertes', 0)
-                        nb_critiques = analyse_appareil.get('nb_alertes_critiques', 0)
-                        
-                        analyse_globale['total_alertes_creees'] += nb_alertes
-                        analyse_globale['alertes_critiques'] += nb_critiques
-                        analyse_globale['resume_par_type_systeme'][type_systeme]['alertes'] += nb_alertes
-                        
-                        if nb_alertes > 0:
-                            analyse_globale['appareils_avec_problemes'] += 1
-                        
-                        # Stocker analyse individuelle
-                        analyse_globale['analyses_par_appareil'][device.id] = {
-                            'nom_appareil': device.nom_appareil,
-                            'type_systeme': type_systeme,
-                            'nb_alertes': nb_alertes,
-                            'nb_critiques': nb_critiques,
-                            'analyse_complete': analyse_appareil,
-                            'recommendations': self._generer_recommendations_appareil(device, analyse_appareil)
-                        }
-                        
-                        # Collecter types de problèmes pour statistiques
-                        for alerte_data in analyse_appareil.get('alertes_creees', []):
-                            type_alerte = alerte_data.get('type_alerte', 'unknown')
-                            if type_alerte not in analyse_globale['top_problemes']:
-                                analyse_globale['top_problemes'][type_alerte] = 0
-                            analyse_globale['top_problemes'][type_alerte] += 1
-                    
-                except Exception as e:
-                    self.logger.error(f"Erreur analyse appareil {device.id}: {e}")
-                    continue
-            
-            # Générer recommandations globales
-            analyse_globale['recommendations_globales'].extend(
-                self._generer_recommendations_globales_client(analyse_globale)
-            )
-            
-            # Trier top problèmes
-            analyse_globale['top_problemes'] = dict(
-                sorted(analyse_globale['top_problemes'].items(), 
-                      key=lambda x: x[1], reverse=True)
-            )
-            
-            # Calculs de santé globale
-            analyse_globale['sante_globale'] = self._calculer_sante_globale_client(analyse_globale)
-            
-            self.logger.info(f"✅ Analyse client terminée: {analyse_globale['appareils_analyses']} appareils analysés, {analyse_globale['total_alertes_creees']} alertes créées")
-            
-            return analyse_globale
-            
-        except Exception as e:
-            self.logger.error(f"❌ Erreur analyse complète client {client_id}: {e}")
-            return {
-                'success': False,
-                'error': str(e),
-                'client_id': client_id,
-                'timestamp': datetime.utcnow().isoformat()
-            }
-    
-    def _generer_recommendations_appareil(self, device, analyse_result: Dict) -> List[Dict]:
-        """Générer des recommandations spécifiques à un appareil"""
-        recommendations = []
-        
-        try:
-            nb_alertes = analyse_result.get('nb_alertes', 0)
-            nb_critiques = analyse_result.get('nb_alertes_critiques', 0)
-            
-            # Recommandations basées sur le nombre d'alertes
-            if nb_critiques > 0:
-                recommendations.append({
-                    'type': 'urgent',
-                    'message': f'Intervention urgente requise - {nb_critiques} alerte(s) critique(s)',
-                    'priority': 'high',
-                    'action': 'Vérifier immédiatement l\'installation'
-                })
-            
-            elif nb_alertes > 3:
-                recommendations.append({
-                    'type': 'maintenance',
-                    'message': f'Maintenance préventive recommandée - {nb_alertes} alerte(s) détectée(s)',
-                    'priority': 'medium',
-                    'action': 'Planifier une inspection'
-                })
-            
-            # Recommandations spécifiques au type de système
-            if device.is_triphase():
-                recommendations.append({
-                    'type': 'monitoring',
-                    'message': 'Surveillance continue recommandée pour système triphasé',
-                    'priority': 'low',
-                    'action': 'Configurer alertes déséquilibre'
-                })
-            
-            # Recommandations protection
-            if not device.protection_automatique_active:
-                recommendations.append({
-                    'type': 'security',
-                    'message': 'Protection automatique non activée',
-                    'priority': 'medium',
-                    'action': 'Configurer la protection automatique'
-                })
-            
-            return recommendations
-            
-        except Exception as e:
-            self.logger.error(f"Erreur génération recommandations appareil: {e}")
-            return []
-    
-    def _generer_recommendations_globales_client(self, analyse_globale: Dict) -> List[Dict]:
-        """Générer des recommandations globales pour le client"""
-        recommendations = []
-        
-        try:
-            total_appareils = analyse_globale['total_appareils']
-            appareils_problemes = analyse_globale['appareils_avec_problemes']
-            hors_ligne = analyse_globale['appareils_hors_ligne']
-            
-            # Pourcentage d'appareils avec problèmes
-            if total_appareils > 0:
-                pct_problemes = (appareils_problemes / total_appareils) * 100
-                pct_hors_ligne = (hors_ligne / total_appareils) * 100
-                
-                if pct_problemes > 30:
-                    recommendations.append({
-                        'type': 'infrastructure',
-                        'message': f'{pct_problemes:.1f}% des appareils ont des problèmes',
-                        'priority': 'high',
-                        'action': 'Audit complet de l\'installation électrique recommandé'
-                    })
-                
-                if pct_hors_ligne > 20:
-                    recommendations.append({
-                        'type': 'connectivity',
-                        'message': f'{pct_hors_ligne:.1f}% des appareils sont hors ligne',
-                        'priority': 'medium',
-                        'action': 'Vérifier la connectivité réseau et WiFi'
-                    })
-                
-                # Recommandations sur les types de problèmes
-                top_problemes = analyse_globale.get('top_problemes', {})
-                if 'desequilibre_tension' in top_problemes and top_problemes['desequilibre_tension'] > 1:
-                    recommendations.append({
-                        'type': 'electrical',
-                        'message': 'Déséquilibres de tension détectés sur plusieurs appareils',
-                        'priority': 'high',
-                        'action': 'Faire appel à un électricien pour vérifier la répartition des phases'
-                    })
-            
-            return recommendations
-            
-        except Exception as e:
-            self.logger.error(f"Erreur génération recommandations globales: {e}")
-            return []
-    
-    def _calculer_sante_globale_client(self, analyse_globale: Dict) -> Dict[str, Any]:
-        """Calculer un score de santé globale pour le client"""
-        try:
-            total = analyse_globale['total_appareils']
-            if total == 0:
-                return {'score': 0, 'status': 'unknown'}
-            
-            # Facteurs de calcul
-            en_ligne = analyse_globale['appareils_en_ligne']
-            avec_problemes = analyse_globale['appareils_avec_problemes']
-            critiques = analyse_globale['alertes_critiques']
-            
-            # Score base sur disponibilité (0-40 points)
-            score_disponibilite = (en_ligne / total) * 40
-            
-            # Score basé sur absence de problèmes (0-40 points)
-            appareils_sains = total - avec_problemes
-            score_sante = (appareils_sains / total) * 40
-            
-            # Pénalité pour alertes critiques (0-20 points perdus)
-            penalite_critique = min(critiques * 5, 20)
-            
-            # Score final
-            score_final = max(0, score_disponibilite + score_sante - penalite_critique)
-            
-            # Déterminer statut
-            if score_final >= 80:
-                status = 'excellent'
-            elif score_final >= 60:
-                status = 'good'
-            elif score_final >= 40:
-                status = 'warning'
-            else:
-                status = 'critical'
-            
-            return {
-                'score': round(score_final, 1),
-                'status': status,
-                'details': {
-                    'disponibilite': round(score_disponibilite, 1),
-                    'sante': round(score_sante, 1),
-                    'penalite_critique': round(penalite_critique, 1)
-                }
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Erreur calcul santé globale: {e}")
-            return {'score': 0, 'status': 'error'}
 
 
-
+    
+    
     # =================== MÉTHODES MANQUANTES POUR ALERT SERVICE ===================
-    # Ajoutez ces méthodes à la fin de votre classe AlertService
-
+    
     def get_alertes_recentes(self, device_id: str, hours_back: int = 24, limit: int = 50, heures: int = None) -> Dict[str, Any]:
         """
-        Récupérer les alertes récentes pour un appareil
+        Récupérer les alertes récentes pour un appareil avec fast_cache
         
         Args:
             device_id: ID de l'appareil
-            hours_back: Nombre d'heures à regarder en arrière (défaut: 24h) - nom pour compatibilité
+            hours_back: Nombre d'heures à regarder en arrière (défaut: 24h)
             heures: Alias pour hours_back (pour rétrocompatibilité)
             limit: Nombre maximum d'alertes à retourner (défaut: 50)
             
@@ -1106,14 +882,13 @@ class AlertService:
             # Gérer les deux noms de paramètres pour compatibilité
             heures_actual = heures if heures is not None else hours_back
             
-            # Vérifier cache d'abord
+            # ✅ Utiliser fast_cache pour performance
             cache_key = f"{self.redis_prefix}recent_alerts:{device_id}:{heures_actual}h"
+            cached_alerts = fast_cache.quick_get(cache_key)
             
-            if self.redis:
-                cached_alerts = self.redis.get(cache_key)
-                if cached_alerts:
-                    self.logger.debug(f"📦 Alertes récentes depuis cache pour device {device_id}")
-                    return json.loads(cached_alerts)
+            if cached_alerts:
+                self.logger.debug(f"📦 Alertes récentes depuis fast_cache pour device {device_id}")
+                return cached_alerts
             
             # Calculer la date de début
             start_time = datetime.utcnow() - timedelta(hours=heures_actual)
@@ -1160,9 +935,8 @@ class AlertService:
                 'retrieved_at': datetime.utcnow().isoformat()
             }
             
-            # Mettre en cache (5 minutes)
-            if self.redis:
-                self.redis.setex(cache_key, 300, json.dumps(result))
+            # ✅ Mettre en cache avec fast_cache (5 minutes)
+            fast_cache.quick_set(cache_key, result, 300)
             
             self.logger.debug(f"✅ {total_alertes} alertes récentes récupérées pour device {device_id}")
             return result
@@ -1175,11 +949,9 @@ class AlertService:
                 'device_id': device_id,
                 'retrieved_at': datetime.utcnow().isoformat()
             }
-
+    
     def get_alertes_non_resolues(self, device_id: str, limit: int = 20) -> Dict[str, Any]:
-        """
-        Récupérer les alertes non résolues pour un appareil
-        """
+        """Récupérer les alertes non résolues pour un appareil"""
         try:
             # Récupérer alertes avec statut 'nouvelle' ou 'vue'
             alertes = Alert.query.filter(
@@ -1193,7 +965,7 @@ class AlertService:
                 alert_dict = alerte.to_dict(include_details=True)
                 alertes_data.append(alert_dict)
             
-            # Compter par priorité en utilisant les valeurs directes des alertes
+            # Compter par priorité
             priorites = {
                 'urgent': len([a for a in alertes if a.priorite >= 8]),
                 'elevee': len([a for a in alertes if 5 <= a.priorite < 8]),
@@ -1216,93 +988,9 @@ class AlertService:
                 'error': str(e),
                 'device_id': device_id
             }
-
-    def get_statistiques_alertes(self, device_id: str, jours: int = 7) -> Dict[str, Any]:
-        """
-        Récupérer les statistiques d'alertes pour un appareil
-        """
-        try:
-            start_date = datetime.utcnow() - timedelta(days=jours)
-            
-            # Récupérer toutes les alertes de la période
-            alertes = Alert.query.filter(
-                Alert.appareil_id == device_id,
-                Alert.date_creation >= start_date
-            ).all()
-            
-            # Statistiques détaillées
-            stats = {
-                'total': len(alertes),
-                'par_gravite': {'info': 0, 'warning': 0, 'critique': 0},
-                'par_type_systeme': {'monophase': 0, 'triphase': 0},
-                'par_statut': {'nouvelle': 0, 'vue': 0, 'resolue': 0},
-                'par_priorite': {'urgent': 0, 'elevee': 0, 'normale': 0},
-                'types_plus_frequents': {},
-                'alertes_triphase_specifiques': 0,
-                'phases_les_plus_problematiques': {'L1': 0, 'L2': 0, 'L3': 0}
-            }
-            
-            for alerte in alertes:
-                # Par gravité
-                stats['par_gravite'][alerte.gravite] += 1
-                
-                # Par type de système
-                stats['par_type_systeme'][alerte.type_systeme] += 1
-                
-                # Par statut
-                stats['par_statut'][alerte.statut] += 1
-                
-                # Par priorité
-                if alerte.priorite >= 8:
-                    stats['par_priorite']['urgent'] += 1
-                elif alerte.priorite >= 5:
-                    stats['par_priorite']['elevee'] += 1
-                else:
-                    stats['par_priorite']['normale'] += 1
-                
-                # Types les plus fréquents
-                if alerte.type_alerte not in stats['types_plus_frequents']:
-                    stats['types_plus_frequents'][alerte.type_alerte] = 0
-                stats['types_plus_frequents'][alerte.type_alerte] += 1
-                
-                # Alertes spécifiques triphasé
-                if alerte.is_alerte_triphase():
-                    stats['alertes_triphase_specifiques'] += 1
-                
-                # Phases problématiques
-                if alerte.phase_concernee and alerte.phase_concernee in ['L1', 'L2', 'L3']:
-                    stats['phases_les_plus_problematiques'][alerte.phase_concernee] += 1
-            
-            # Trier les types par fréquence
-            stats['types_plus_frequents'] = dict(
-                sorted(stats['types_plus_frequents'].items(), 
-                      key=lambda x: x[1], reverse=True)
-            )
-            
-            return {
-                'success': True,
-                'device_id': device_id,
-                'period_days': jours,
-                'period': {
-                    'start': start_date.isoformat(),
-                    'end': datetime.utcnow().isoformat()
-                },
-                'stats': stats,
-                'generated_at': datetime.utcnow().isoformat()
-            }
-            
-        except Exception as e:
-            self.logger.error(f"❌ Erreur stats alertes device {device_id}: {e}")
-            return {
-                'success': False,
-                'error': str(e),
-                'device_id': device_id
-            }
-
+    
     def resoudre_alerte(self, alerte_id: str, utilisateur_id: str = None, commentaire: str = None) -> Dict[str, Any]:
-        """
-        Marquer une alerte comme résolue
-        """
+        """Marquer une alerte comme résolue"""
         try:
             alerte = Alert.query.get(alerte_id)
             if not alerte:
@@ -1323,12 +1011,9 @@ class AlertService:
             ancien_statut = alerte.statut
             alerte.resolve(user_id=utilisateur_id)
             
-            # Invalider cache des alertes récentes
-            if self.redis:
-                pattern = f"{self.redis_prefix}recent_alerts:{alerte.appareil_id}:*"
-                keys = self.redis.keys(pattern)
-                if keys:
-                    self.redis.delete(*keys)
+            # ✅ Invalider cache des alertes récentes avec fast_cache
+            pattern = f"{self.redis_prefix}recent_alerts:{alerte.appareil_id}:*"
+            fast_cache.delete_pattern(pattern)
             
             self.logger.info(f"✅ Alerte {alerte_id} marquée comme résolue")
             
@@ -1351,11 +1036,9 @@ class AlertService:
                 'error': str(e),
                 'alerte_id': alerte_id
             }
-
+    
     def marquer_alerte_vue(self, alerte_id: str, utilisateur_id: str = None) -> Dict[str, Any]:
-        """
-        Marquer une alerte comme vue
-        """
+        """Marquer une alerte comme vue"""
         try:
             alerte = Alert.query.get(alerte_id)
             if not alerte:
@@ -1397,366 +1080,41 @@ class AlertService:
                 'error': str(e),
                 'alerte_id': alerte_id
             }
-
-    def get_alertes_par_device_batch(self, device_ids: List[str], heures: int = 24) -> Dict[str, Any]:
-        """
-        Récupérer les alertes pour plusieurs appareils en batch
-        """
-        try:
-            if not device_ids:
-                return {
-                    'success': False,
-                    'error': 'Liste d\'IDs d\'appareils requise'
-                }
-            
-            start_time = datetime.utcnow() - timedelta(hours=heures)
-            
-            # Récupérer toutes les alertes en une seule requête
-            alertes = Alert.query.filter(
-                Alert.appareil_id.in_(device_ids),
-                Alert.date_creation >= start_time
-            ).order_by(Alert.date_creation.desc()).all()
-            
-            # Grouper par appareil
-            alertes_par_device = {}
-            total_alertes = 0
-            total_critiques = 0
-            total_triphase = 0
-            
-            for device_id in device_ids:
-                device_alertes = [alerte for alerte in alertes if alerte.appareil_id == device_id]
-                device_alertes_data = [alerte.to_dict(include_details=True) for alerte in device_alertes]
-                
-                critiques_count = len([a for a in device_alertes if a.gravite == 'critique'])
-                warnings_count = len([a for a in device_alertes if a.gravite == 'warning'])
-                triphase_count = len([a for a in device_alertes if a.is_alerte_triphase()])
-                
-                alertes_par_device[device_id] = {
-                    'device_id': device_id,
-                    'total_alertes': len(device_alertes_data),
-                    'alertes_critiques': critiques_count,
-                    'alertes_warnings': warnings_count,
-                    'alertes_triphase': triphase_count,
-                    'alertes': device_alertes_data
-                }
-                
-                total_alertes += len(device_alertes_data)
-                total_critiques += critiques_count
-                total_triphase += triphase_count
-            
-            return {
-                'success': True,
-                'period_hours': heures,
-                'devices_count': len(device_ids),
-                'total_alertes': total_alertes,
-                'total_critiques': total_critiques,
-                'total_triphase': total_triphase,
-                'alertes_par_device': alertes_par_device,
-                'period': {
-                    'start': start_time.isoformat(),
-                    'end': datetime.utcnow().isoformat()
-                },
-                'retrieved_at': datetime.utcnow().isoformat()
-            }
-            
-        except Exception as e:
-            self.logger.error(f"❌ Erreur alertes batch: {e}")
-            return {
-                'success': False,
-                'error': str(e),
-                'devices_requested': len(device_ids) if device_ids else 0
-            }
-
-    def get_alertes_actives_pour_device(self, device_id: str) -> Dict[str, Any]:
-        """
-        Récupérer les alertes actives pour un appareil (utilise la méthode du modèle)
-        """
-        try:
-            # Utiliser la méthode de classe existante
-            alertes_actives = Alert.get_alertes_actives(appareil_id=device_id)
-            
-            # Sérialiser
-            alertes_data = [alerte.to_dict(include_details=True) for alerte in alertes_actives]
-            
-            # Compter par priorité
-            priorites = {
-                'urgent': len([a for a in alertes_actives if a.priorite >= 8]),
-                'elevee': len([a for a in alertes_actives if 5 <= a.priorite < 8]),
-                'normale': len([a for a in alertes_actives if a.priorite < 5])
-            }
-            
-            return {
-                'success': True,
-                'device_id': device_id,
-                'total_actives': len(alertes_data),
-                'priorites': priorites,
-                'alertes': alertes_data,
-                'retrieved_at': datetime.utcnow().isoformat()
-            }
-            
-        except Exception as e:
-            self.logger.error(f"❌ Erreur alertes actives device {device_id}: {e}")
-            return {
-                'success': False,
-                'error': str(e),
-                'device_id': device_id
-            }
-
-    def get_alertes_critiques_recentes(self, device_id: str = None, heures: int = 24) -> Dict[str, Any]:
-        """
-        Récupérer les alertes critiques récentes
-        """
-        try:
-            # Utiliser la méthode de classe existante
-            alertes_critiques = Alert.get_alertes_critiques(hours_back=heures)
-            
-            # Filtrer par device si spécifié
-            if device_id:
-                alertes_critiques = [a for a in alertes_critiques if a.appareil_id == device_id]
-            
-            # Sérialiser
-            alertes_data = [alerte.to_dict(include_details=True) for alerte in alertes_critiques]
-            
-            return {
-                'success': True,
-                'device_id': device_id,
-                'period_hours': heures,
-                'total_critiques': len(alertes_data),
-                'alertes': alertes_data,
-                'period': {
-                    'start': (datetime.utcnow() - timedelta(hours=heures)).isoformat(),
-                    'end': datetime.utcnow().isoformat()
-                },
-                'retrieved_at': datetime.utcnow().isoformat()
-            }
-            
-        except Exception as e:
-            self.logger.error(f"❌ Erreur alertes critiques: {e}")
-            return {
-                'success': False,
-                'error': str(e),
-                'device_id': device_id
-            }
-
-
-    # =================== GESTION CACHE REDIS ===================
+    
+    # =================== GESTION CACHE AVEC FAST_CACHE ===================
     
     def _get_cached_analysis(self, cache_key: str) -> Optional[Dict]:
-        """Récupérer analyse depuis cache"""
-        if not self.redis:
-            return None
-        
+        """Récupérer analyse depuis cache avec fast_cache"""
         try:
             full_key = f"{self.redis_prefix}analysis:{cache_key}"
-            cached_data = self.redis.get(full_key)
-            
-            if cached_data:
-                return json.loads(cached_data)
-            
-            return None
+            cached_data = fast_cache.quick_get(full_key)
+            return cached_data
             
         except Exception as e:
             self.logger.error(f"Erreur récupération cache analyse: {e}")
             return None
     
     def _cache_analysis_result(self, cache_key: str, result: Dict):
-        """Mettre en cache résultat d'analyse"""
-        if not self.redis:
-            return
-        
+        """Mettre en cache résultat d'analyse avec fast_cache"""
         try:
             full_key = f"{self.redis_prefix}analysis:{cache_key}"
             ttl = self.cache_config['analysis_result_ttl']
             
-            # Préparer données pour cache (sérialiser)
+            # Préparer données pour cache
             cache_data = {
                 **result,
                 'cached_at': datetime.utcnow().isoformat()
             }
             
-            self.redis.setex(full_key, ttl, json.dumps(cache_data))
-            self.logger.debug(f"Cache analysis SET: {full_key} (TTL: {ttl}s)")
+            # ✅ Utiliser fast_cache.quick_set pour performance
+            fast_cache.quick_set(full_key, cache_data, ttl)
+            self.logger.debug(f"Cache analysis SET avec fast_cache: {full_key} (TTL: {ttl}s)")
             
         except Exception as e:
             self.logger.error(f"Erreur cache analyse: {e}")
     
-    # =================== MÉTHODES D'ADMINISTRATION ===================
-    
-    def analyser_device_batch(self, device_ids: List[str], config: Optional[Dict] = None) -> Dict[str, Any]:
-        """Analyser plusieurs appareils en batch"""
-        try:
-            config = {**self.default_config, **(config or {})}
-            
-            resultats = []
-            total_alertes = 0
-            devices_analysed = 0
-            
-            self.logger.info(f"🔍 Analyse batch: {len(device_ids)} appareils")
-            
-            for device_id in device_ids:
-                try:
-                    # Récupérer appareil et dernière donnée
-                    device = Device.query.get(device_id)
-                    if not device or not device.actif:
-                        continue
-                    
-                    derniere_donnee = DeviceData.query.filter_by(
-                        appareil_id=device_id
-                    ).order_by(DeviceData.horodatage.desc()).first()
-                    
-                    if not derniere_donnee:
-                        resultats.append({
-                            'device_id': device_id,
-                            'device_name': device.nom_appareil,
-                            'statut': 'pas_de_donnees',
-                            'alertes_creees': 0
-                        })
-                        continue
-                    
-                    # Analyser avec AlertService
-                    analyse_result = self.analyser_et_creer_alertes(
-                        derniere_donnee, device, config
-                    )
-                    
-                    if analyse_result.get('success', True):  # Par défaut success
-                        nb_alertes = analyse_result.get('nb_alertes', 0)
-                        total_alertes += nb_alertes
-                        devices_analysed += 1
-                        
-                        resultats.append({
-                            'device_id': device_id,
-                            'device_name': device.nom_appareil,
-                            'statut': 'analysé',
-                            'type_systeme': analyse_result.get('type_systeme_detecte'),
-                            'alertes_creees': nb_alertes,
-                            'alertes_critiques': analyse_result.get('nb_alertes_critiques', 0),
-                            'from_cache': analyse_result.get('from_cache', False)
-                        })
-                    else:
-                        resultats.append({
-                            'device_id': device_id,
-                            'device_name': device.nom_appareil,
-                            'statut': 'erreur',
-                            'erreur': analyse_result.get('error', 'Erreur inconnue')
-                        })
-                        
-                except Exception as e:
-                    self.logger.error(f"Erreur analyse device {device_id}: {e}")
-                    resultats.append({
-                        'device_id': device_id,
-                        'statut': 'erreur',
-                        'erreur': str(e)
-                    })
-            
-            return {
-                'success': True,
-                'timestamp': datetime.utcnow().isoformat(),
-                'devices_requested': len(device_ids),
-                'devices_analysed': devices_analysed,
-                'total_alertes': total_alertes,
-                'cache_used': config['use_cache'],
-                'resultats': resultats
-            }
-            
-        except Exception as e:
-            self.logger.error(f"❌ Erreur analyse batch: {e}")
-            return {
-                'success': False,
-                'error': str(e),
-                'timestamp': datetime.utcnow().isoformat()
-            }
-    
-    def get_cache_statistics(self) -> Dict[str, Any]:
-        """Statistiques du cache AlertService"""
-        try:
-            if not self.redis:
-                return {
-                    'success': False,
-                    'error': 'Redis non disponible',
-                    'cache_enabled': False
-                }
-            
-            # Compter les clés par type
-            cache_types = ['analysis', 'thresholds', 'dedup']
-            cache_stats = {}
-            total_keys = 0
-            
-            for cache_type in cache_types:
-                pattern = f"{self.redis_prefix}{cache_type}:*"
-                keys = self.redis.keys(pattern)
-                count = len(keys)
-                cache_stats[cache_type] = count
-                total_keys += count
-            
-            # Compter aussi type_detection
-            detection_keys = self.redis.keys("type_detection:*")
-            cache_stats['type_detection'] = len(detection_keys)
-            total_keys += len(detection_keys)
-            
-            return {
-                'success': True,
-                'service': 'AlertService',
-                'cache_enabled': True,
-                'total_keys': total_keys,
-                'keys_by_type': cache_stats,
-                'cache_config': self.cache_config,
-                'redis_prefix': self.redis_prefix,
-                'timestamp': datetime.utcnow().isoformat()
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Erreur stats cache AlertService: {e}")
-            return {'success': False, 'error': str(e)}
-    
-    def cleanup_cache(self, cache_type: Optional[str] = None) -> Dict[str, Any]:
-        """Nettoyer cache AlertService"""
-        try:
-            if not self.redis:
-                return {'success': False, 'error': 'Redis non disponible'}
-            
-            deleted_count = 0
-            
-            if cache_type:
-                # Nettoyage par type
-                if cache_type == 'type_detection':
-                    pattern = "type_detection:*"
-                else:
-                    pattern = f"{self.redis_prefix}{cache_type}:*"
-                
-                keys = self.redis.keys(pattern)
-                if keys:
-                    deleted_count = self.redis.delete(*keys)
-                
-                message = f"Cache {cache_type} nettoyé"
-            else:
-                # Nettoyage complet
-                patterns = [
-                    f"{self.redis_prefix}*",
-                    "type_detection:*"
-                ]
-                
-                for pattern in patterns:
-                    keys = self.redis.keys(pattern)
-                    if keys:
-                        deleted_count += self.redis.delete(*keys)
-                
-                message = "Cache AlertService nettoyé complètement"
-            
-            self.logger.info(f"Cache cleanup AlertService: {deleted_count} clés supprimées")
-            
-            return {
-                'success': True,
-                'message': message,
-                'deleted_keys': deleted_count,
-                'timestamp': datetime.utcnow().isoformat()
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Erreur nettoyage cache AlertService: {e}")
-            return {'success': False, 'error': str(e)}
-    
     def get_service_health(self) -> Dict[str, Any]:
-        """Vérification santé du service"""
+        """Vérification santé du service avec fast_cache"""
         try:
             health = {
                 'service': 'AlertService',
@@ -1765,19 +1123,17 @@ class AlertService:
                 'components': {}
             }
             
-            # Test Redis
-            if self.redis:
-                try:
-                    self.redis.ping()
-                    health['components']['redis'] = {
-                        'status': 'healthy',
-                        'cache_enabled': True
-                    }
-                except Exception as e:
-                    health['components']['redis'] = {
-                        'status': 'error',
-                        'error': str(e)
-                    }
+            # Test Redis avec fast_cache
+            redis_connected = fast_cache.is_connected()
+            if redis_connected:
+                # ✅ Utiliser fast_cache pour tester les performances
+                perf_stats = fast_cache.get_performance_stats()
+                health['components']['redis'] = {
+                    'status': 'healthy',
+                    'cache_enabled': True,
+                    'redis_prefix': self.redis_prefix,
+                    'performance': perf_stats
+                }
             else:
                 health['components']['redis'] = {
                     'status': 'disabled',
@@ -1829,3 +1185,91 @@ class AlertService:
                     'timestamp': datetime.utcnow().isoformat()
                 }
             }
+    
+    def get_cache_statistics(self) -> Dict[str, Any]:
+        """Statistiques du cache AlertService avec fast_cache"""
+        try:
+            if not fast_cache.is_connected():
+                return {
+                    'success': False,
+                    'error': 'Redis non disponible',
+                    'cache_enabled': False
+                }
+            
+            # ✅ Utiliser fast_cache pour les statistiques
+            perf_stats = fast_cache.get_performance_stats()
+            
+            return {
+                'success': True,
+                'service': 'AlertService',
+                'cache_enabled': True,
+                'cache_config': self.cache_config,
+                'redis_prefix': self.redis_prefix,
+                'performance': perf_stats,
+                'cache_method': 'fast_cache',
+                'timestamp': datetime.utcnow().isoformat()
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Erreur stats cache AlertService: {e}")
+            return {'success': False, 'error': str(e)}
+    
+    def cleanup_cache(self, cache_type: Optional[str] = None) -> Dict[str, Any]:
+        """Nettoyer cache AlertService avec fast_cache"""
+        try:
+            if not fast_cache.is_connected():
+                return {'success': False, 'error': 'Redis non disponible'}
+            
+            deleted_count = 0
+            
+            if cache_type:
+                # Nettoyage par type
+                if cache_type == 'type_detection':
+                    pattern = "type_detection:*"
+                else:
+                    pattern = f"{self.redis_prefix}{cache_type}:*"
+                
+                # ✅ Utiliser fast_cache.delete_pattern
+                deleted_count = fast_cache.delete_pattern(pattern)
+                message = f"Cache {cache_type} nettoyé avec fast_cache"
+            else:
+                # Nettoyage complet
+                patterns = [
+                    f"{self.redis_prefix}*",
+                    "type_detection:*"
+                ]
+                
+                for pattern in patterns:
+                    deleted_count += fast_cache.delete_pattern(pattern)
+                
+                message = "Cache AlertService nettoyé complètement avec fast_cache"
+            
+            self.logger.info(f"Cache cleanup AlertService: {deleted_count} clés supprimées")
+            
+            return {
+                'success': True,
+                'message': message,
+                'deleted_keys': deleted_count,
+                'cache_method': 'fast_cache',
+                'timestamp': datetime.utcnow().isoformat()
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Erreur nettoyage cache AlertService: {e}")
+            return {'success': False, 'error': str(e)}
+
+
+
+    def get_alertes_actives_pour_device(self, device_id):
+        """⚠️ À implémenter - Récupère les alertes actives d’un appareil"""
+        # return Alert.query.filter(...).all() ou lecture depuis Redis
+        return []
+
+    def get_statistiques_alertes(self, device_id, days=7):
+        """⚠️ À implémenter - Renvoie les stats d’alertes d’un appareil"""
+        return {
+            "total": 0,
+            "critiques": 0,
+            "non_critiques": 0,
+            "par_jour": []  # liste de {jour, total, critiques}
+        }

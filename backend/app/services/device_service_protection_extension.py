@@ -591,28 +591,28 @@ class DeviceServiceProtectionExtension:
             return {"success": False, "error": str(e)}
     
     def execute_scheduled_actions(self, max_actions: int = 50) -> Dict:
-        """
-        Exécuter actions programmées en attente - UTILISE VOS VRAIES MÉTHODES
-        """
+        """Exécuter actions programmées en attente - VERSION CORRIGÉE"""
         try:
-            # ✅ UTILISER VOS VRAIES MÉTHODES
+            now = datetime.utcnow()
+            
+            # ✅ CORRECTION : Utiliser VOS vraies méthodes
             pending_actions = ScheduledAction.get_actions_dues(tolerance_minutes=2)
             
-            # Filtrer pour exclure les restarts automatiques (déjà gérés ailleurs)
+            if not pending_actions:
+                return {
+                    "success": True,
+                    "message": "Aucune action en attente",
+                    "executed_count": 0
+                }
+            
+            # Filtrer pour les actions normales (pas auto-restart)
             schedule_actions = []
             for action in pending_actions:
                 if not (action.custom_command and 
                         action.custom_command.get('trigger_type') == 'protection_auto_restart'):
                     schedule_actions.append(action)
             
-            if not schedule_actions:
-                return {
-                    "success": True,
-                    "message": "Aucune action programmée en attente",
-                    "executed_count": 0
-                }
-            
-            # Limiter le nombre d'actions à traiter
+            # Limiter le nombre d'actions
             schedule_actions = schedule_actions[:max_actions]
             
             self.logger.info(f"📅 Exécution de {len(schedule_actions)} actions programmées")
@@ -629,50 +629,73 @@ class DeviceServiceProtectionExtension:
                         failed_count += 1
                         continue
                     
-                    # Vérifier si programmation toujours active
-                    programmation_active = getattr(device, 'programmation_active', True)
-                    if not programmation_active:
+                    # ✅ CORRECTION : Vérifier programmation active
+                    if not getattr(device, 'programmation_active', True):
                         action.marquer_execution(success=False, error_message="Programmation désactivée")
                         continue
                     
-                    # Vérifier mode manuel
-                    if self.is_manual_mode_active(device.id):
+                    # ✅ CORRECTION : Vérifier mode manuel
+                    if getattr(device, 'mode_manuel_actif', False):
                         action.marquer_execution(success=False, error_message="Mode manuel actif")
                         continue
                     
-                    # Déterminer commande et valeur
-                    if action.custom_command:
+                    # ✅ CORRECTION : Déterminer la commande
+                    if action.action_type == 'turn_on':
+                        command = 'switch'
+                        value = True
+                    elif action.action_type == 'turn_off':
+                        command = 'switch'
+                        value = False
+                    elif action.custom_command:
                         command = action.custom_command.get('command', 'switch')
-                        value = action.custom_command.get('value', True if action.action_type == 'turn_on' else False)
+                        value = action.custom_command.get('value')
                     else:
                         command = 'switch'
                         value = True if action.action_type == 'turn_on' else False
                     
-                    # Exécuter action
-                    control_result = self.device_service.control_device(
-                        device.tuya_device_id,
-                        command,
-                        value,
-                        invalidate_cache=True
-                    )
+                    # ✅ CORRECTION : Exécuter via TuyaClient
+                    print(f"🔧 Exécution {action.action_type} sur {device.nom_appareil}")
+                    
+                    # Utiliser la méthode toggle_device du TuyaClient
+                    if hasattr(self.device_service.tuya_client, 'toggle_device'):
+                        control_result = self.device_service.tuya_client.toggle_device(
+                            device.tuya_device_id, value
+                        )
+                    else:
+                        # Fallback vers send_device_command
+                        control_result = self.device_service.tuya_client.send_device_command(
+                            device.tuya_device_id, 
+                            {"commands": [{"code": command, "value": value}]}
+                        )
                     
                     if control_result.get("success"):
+                        # ✅ SUCCÈS
                         action.marquer_execution(success=True)
                         executed_count += 1
                         
-                        # Logger événement
-                        self._log_scheduled_event(device, action, command, value)
+                        # Mettre à jour l'état dans la DB
+                        device.etat_actuel_tuya = value
+                        device.derniere_maj_etat_tuya = datetime.utcnow()
+                        
+                        # Invalider cache
+                        if hasattr(self.device_service, '_invalidate_device_cache'):
+                            self.device_service._invalidate_device_cache(device.tuya_device_id)
                         
                         results.append({
                             "action_id": action.id,
                             "device_id": device.id,
-                            "device_name": getattr(device, 'nom_appareil', device.id),
+                            "device_name": device.nom_appareil,
                             "action_type": action.action_type,
                             "status": "success",
                             "command": command,
-                            "value": value
+                            "value": value,
+                            "executed_at": datetime.utcnow().isoformat()
                         })
+                        
+                        print(f"✅ {action.action_type} exécuté sur {device.nom_appareil}")
+                        
                     else:
+                        # ✅ ÉCHEC
                         error_msg = control_result.get('error', 'Erreur contrôle Tuya')
                         action.marquer_execution(success=False, error_message=error_msg)
                         failed_count += 1
@@ -680,12 +703,16 @@ class DeviceServiceProtectionExtension:
                         results.append({
                             "action_id": action.id,
                             "device_id": device.id,
+                            "device_name": device.nom_appareil,
+                            "action_type": action.action_type,
                             "status": "failed",
                             "error": error_msg
                         })
+                        
+                        print(f"❌ Échec {action.action_type} sur {device.nom_appareil}: {error_msg}")
                     
                 except Exception as e:
-                    self.logger.error(f"Erreur exécution action programmée {action.id}: {e}")
+                    self.logger.error(f"Erreur exécution action {action.id}: {e}")
                     try:
                         action.marquer_execution(success=False, error_message=str(e))
                     except:
@@ -699,6 +726,13 @@ class DeviceServiceProtectionExtension:
                         "error": str(e)
                     })
             
+            # ✅ COMMIT des changements
+            try:
+                db.session.commit()
+            except Exception as e:
+                db.session.rollback()
+                self.logger.error(f"Erreur commit actions: {e}")
+            
             return {
                 "success": True,
                 "message": f"Actions exécutées: {executed_count} réussies, {failed_count} échouées",
@@ -711,7 +745,8 @@ class DeviceServiceProtectionExtension:
         except Exception as e:
             self.logger.error(f"❌ Erreur exécution actions programmées: {e}")
             return {"success": False, "error": str(e)}
-    
+        
+        
     def get_device_schedule_status(self, device_id: str) -> Dict:
         """
         Récupérer statut programmation d'un appareil - UTILISE VOS VRAIES MÉTHODES
