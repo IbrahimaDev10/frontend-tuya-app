@@ -56,38 +56,43 @@ class RealTimeSyncService:
         self.logger.info("🛑 Synchronisation automatique arrêtée")
     
     def _sync_loop(self):
-        """Boucle principale de synchronisation"""
+        """Boucle principale de synchronisation avec contexte Flask"""
         self.logger.info("🔄 Début de la boucle de synchronisation")
+        
+        # ✅ CORRECTION : Importer l'application Flask
+        from app import app
         
         while self.is_running:
             try:
-                sync_start = datetime.utcnow()
-                
-                # Effectuer la synchronisation
-                result = self._sync_all_devices()
-                
-                # Mettre à jour les statistiques
-                self.stats['total_syncs'] += 1
-                self.stats['last_sync'] = sync_start.isoformat()
-                
-                if result.get('success'):
-                    self.stats['successful_syncs'] += 1
-                    self.stats['devices_updated'] = result.get('updated_count', 0)
-                    self.stats['last_error'] = None
-                else:
-                    self.stats['failed_syncs'] += 1
-                    self.stats['last_error'] = result.get('error', 'Erreur inconnue')
-                
-                # Calculer temps d'attente
-                sync_duration = (datetime.utcnow() - sync_start).total_seconds()
-                wait_time = max(0, self.sync_interval - sync_duration)
-                
-                self.logger.debug(f"Sync terminée en {sync_duration:.1f}s, attente {wait_time:.1f}s")
-                
-                # Attendre avant la prochaine synchronisation
-                if self.is_running and wait_time > 0:
-                    time.sleep(wait_time)
+                # ✅ CORRECTION : Utiliser le contexte application
+                with app.app_context():
+                    sync_start = datetime.utcnow()
                     
+                    # Effectuer la synchronisation
+                    result = self._sync_all_devices()
+                    
+                    # Mettre à jour les statistiques
+                    self.stats['total_syncs'] += 1
+                    self.stats['last_sync'] = sync_start.isoformat()
+                    
+                    if result.get('success'):
+                        self.stats['successful_syncs'] += 1
+                        self.stats['devices_updated'] = result.get('updated_count', 0)
+                        self.stats['last_error'] = None
+                    else:
+                        self.stats['failed_syncs'] += 1
+                        self.stats['last_error'] = result.get('error', 'Erreur inconnue')
+                    
+                    # Calculer temps d'attente
+                    sync_duration = (datetime.utcnow() - sync_start).total_seconds()
+                    wait_time = max(0, self.sync_interval - sync_duration)
+                    
+                    self.logger.debug(f"Sync terminée en {sync_duration:.1f}s, attente {wait_time:.1f}s")
+                    
+                    # Attendre avant la prochaine synchronisation
+                    if self.is_running and wait_time > 0:
+                        time.sleep(wait_time)
+                        
             except Exception as e:
                 self.logger.error(f"❌ Erreur dans sync loop: {e}")
                 self.stats['failed_syncs'] += 1
@@ -100,8 +105,12 @@ class RealTimeSyncService:
         self.logger.info("🏁 Fin de la boucle de synchronisation")
     
     def _sync_all_devices(self):
-        """Synchroniser tous les appareils assignés"""
+        """Synchroniser tous les appareils assignés avec contexte DB"""
         try:
+            # Importer ici pour éviter les imports circulaires
+            from app.models.device import Device
+            from app import db
+            
             # Récupérer tous les appareils assignés et actifs
             devices = Device.query.filter_by(
                 statut_assignation='assigne',
@@ -158,6 +167,8 @@ class RealTimeSyncService:
             
         except Exception as e:
             self.logger.error(f"❌ Erreur sync globale: {e}")
+            # Importer ici pour éviter les imports circulaires
+            from app import db
             db.session.rollback()
             return {
                 'success': False,

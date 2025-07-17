@@ -60,7 +60,7 @@ def create_app():
 
 
     # ✅ NOUVEAU : Initialize le service de synchronisation temps réel
-    setup_real_time_sync(app)
+    # setup_real_time_sync(app)
     
     # Vérifier et afficher le statut de la configuration mail
     if config.is_mail_configured():
@@ -308,53 +308,53 @@ def setup_schedule_system(app):
         app.logger.error(f"❌ Erreur configuration système programmation: {e}")
 
 
-def setup_real_time_sync(app):
-    """Setup du service de synchronisation temps réel"""
-    try:
-        app.logger.info("🔄 Initialisation du service de synchronisation temps réel...")
+# def setup_real_time_sync(app):
+#     """Setup du service de synchronisation temps réel"""
+#     try:
+#         app.logger.info("🔄 Initialisation du service de synchronisation temps réel...")
         
-        # Variable globale pour le service
-        app.device_service = None
+#         # Variable globale pour le service
+#         app.device_service = None
         
-        def start_sync_service():
-            """Démarrer le service de synchronisation"""
-            try:
-                from app.services.device_service import DeviceService
+#         def start_sync_service():
+#             """Démarrer le service de synchronisation"""
+#             try:
+#                 from app.services.device_service import DeviceService
                 
-                # Créer le service
-                app.device_service = DeviceService()
+#                 # Créer le service
+#                 app.device_service = DeviceService()
                 
-                # Démarrer la synchronisation automatique
-                result = app.device_service.start_real_time_sync()
+#                 # Démarrer la synchronisation automatique
+#                 result = app.device_service.start_real_time_sync()
                 
-                if result.get('success'):
-                    app.logger.info("✅ Synchronisation temps réel démarrée automatiquement")
-                else:
-                    app.logger.error(f"❌ Erreur sync temps réel: {result.get('error')}")
+#                 if result.get('success'):
+#                     app.logger.info("✅ Synchronisation temps réel démarrée automatiquement")
+#                 else:
+#                     app.logger.error(f"❌ Erreur sync temps réel: {result.get('error')}")
                     
-            except Exception as e:
-                app.logger.error(f"❌ Erreur démarrage sync service: {e}")
+#             except Exception as e:
+#                 app.logger.error(f"❌ Erreur démarrage sync service: {e}")
         
-        # Démarrer à la première requête
-        @app.before_request
-        def auto_start_sync():
-            if not hasattr(app, 'sync_started'):
-                start_sync_service()
-                app.sync_started = True
+#         # Démarrer à la première requête
+#         @app.before_request
+#         def auto_start_sync():
+#             if not hasattr(app, 'sync_started'):
+#                 start_sync_service()
+#                 app.sync_started = True
         
-        # Arrêt propre
-        @app.teardown_appcontext
-        def cleanup_sync_service(exception):
-            if hasattr(app, 'device_service') and app.device_service:
-                try:
-                    app.device_service.stop_real_time_sync()
-                except:
-                    pass
+#         # Arrêt propre
+#         @app.teardown_appcontext
+#         def cleanup_sync_service(exception):
+#             if hasattr(app, 'device_service') and app.device_service:
+#                 try:
+#                     app.device_service.stop_real_time_sync()
+#                 except:
+#                     pass
         
-        app.logger.info("✅ Service de synchronisation temps réel configuré")
+#         app.logger.info("✅ Service de synchronisation temps réel configuré")
         
-    except Exception as e:
-        app.logger.error(f"❌ Erreur configuration sync temps réel: {e}")
+#     except Exception as e:
+#         app.logger.error(f"❌ Erreur configuration sync temps réel: {e}")
 
 def get_redis():
     """Client Redis optimisé avec pool"""
@@ -840,87 +840,87 @@ def register_blueprints(app):
 
 
     # ✅ NOUVEAU : Routes de debug pour la synchronisation
-    @app.route('/debug/sync')
-    def debug_sync():
-        """Route pour vérifier l'état de la synchronisation"""
-        try:
-            if hasattr(app, 'device_service') and app.device_service:
-                status = app.device_service.get_sync_status()
-                return {
-                    'sync_service': 'available',
-                    'status': status,
-                    'timestamp': datetime.utcnow().isoformat()
-                }
-            else:
-                return {
-                    'sync_service': 'not_initialized',
-                    'message': 'Service de synchronisation non initialisé'
-                }
-        except Exception as e:
-            return {
-                'sync_service': 'error',
-                'error': str(e)
-            }, 500
+    # @app.route('/debug/sync')
+    # def debug_sync():
+    #     """Route pour vérifier l'état de la synchronisation"""
+    #     try:
+    #         if hasattr(app, 'device_service') and app.device_service:
+    #             status = app.device_service.get_sync_status()
+    #             return {
+    #                 'sync_service': 'available',
+    #                 'status': status,
+    #                 'timestamp': datetime.utcnow().isoformat()
+    #             }
+    #         else:
+    #             return {
+    #                 'sync_service': 'not_initialized',
+    #                 'message': 'Service de synchronisation non initialisé'
+    #             }
+    #     except Exception as e:
+    #         return {
+    #             'sync_service': 'error',
+    #             'error': str(e)
+    #         }, 500
     
-    @app.route('/debug/sync/force')
-    def debug_force_sync():
-        """Forcer une synchronisation immédiate"""
-        try:
-            if hasattr(app, 'device_service') and app.device_service:
-                result = app.device_service.force_sync_now()
-                return {
-                    'sync_forced': True,
-                    'result': result,
-                    'timestamp': datetime.utcnow().isoformat()
-                }
-            else:
-                return {
-                    'sync_forced': False,
-                    'error': 'Service non initialisé'
-                }, 500
-        except Exception as e:
-            return {
-                'sync_forced': False,
-                'error': str(e)
-            }, 500
+    # @app.route('/debug/sync/force')
+    # def debug_force_sync():
+    #     """Forcer une synchronisation immédiate"""
+    #     try:
+    #         if hasattr(app, 'device_service') and app.device_service:
+    #             result = app.device_service.force_sync_now()
+    #             return {
+    #                 'sync_forced': True,
+    #                 'result': result,
+    #                 'timestamp': datetime.utcnow().isoformat()
+    #             }
+    #         else:
+    #             return {
+    #                 'sync_forced': False,
+    #                 'error': 'Service non initialisé'
+    #             }, 500
+    #     except Exception as e:
+    #         return {
+    #             'sync_forced': False,
+    #             'error': str(e)
+    #         }, 500
     
-    @app.route('/debug/sync/control/<action>')
-    def debug_control_sync(action):
-        """Contrôler la synchronisation (start/stop/restart)"""
-        try:
-            if not hasattr(app, 'device_service') or not app.device_service:
-                return {
-                    'error': 'Service de synchronisation non initialisé'
-                }, 500
+    # @app.route('/debug/sync/control/<action>')
+    # def debug_control_sync(action):
+    #     """Contrôler la synchronisation (start/stop/restart)"""
+    #     try:
+    #         if not hasattr(app, 'device_service') or not app.device_service:
+    #             return {
+    #                 'error': 'Service de synchronisation non initialisé'
+    #             }, 500
             
-            if action == 'start':
-                result = app.device_service.start_real_time_sync()
-                return {'action': 'start', 'result': result}
+    #         if action == 'start':
+    #             result = app.device_service.start_real_time_sync()
+    #             return {'action': 'start', 'result': result}
             
-            elif action == 'stop':
-                result = app.device_service.stop_real_time_sync()
-                return {'action': 'stop', 'result': result}
+    #         elif action == 'stop':
+    #             result = app.device_service.stop_real_time_sync()
+    #             return {'action': 'stop', 'result': result}
             
-            elif action == 'restart':
-                stop_result = app.device_service.stop_real_time_sync()
-                start_result = app.device_service.start_real_time_sync()
-                return {
-                    'action': 'restart',
-                    'stop_result': stop_result,
-                    'start_result': start_result
-                }
+    #         elif action == 'restart':
+    #             stop_result = app.device_service.stop_real_time_sync()
+    #             start_result = app.device_service.start_real_time_sync()
+    #             return {
+    #                 'action': 'restart',
+    #                 'stop_result': stop_result,
+    #                 'start_result': start_result
+    #             }
             
-            elif action == 'status':
-                status = app.device_service.get_sync_status()
-                return {'action': 'status', 'status': status}
+    #         elif action == 'status':
+    #             status = app.device_service.get_sync_status()
+    #             return {'action': 'status', 'status': status}
             
-            else:
-                return {
-                    'error': f'Action inconnue: {action}. Utilisez start/stop/restart/status'
-                }, 400
+    #         else:
+    #             return {
+    #                 'error': f'Action inconnue: {action}. Utilisez start/stop/restart/status'
+    #             }, 400
                 
-        except Exception as e:
-            return {'error': str(e)}, 500
+    #     except Exception as e:
+    #         return {'error': str(e)}, 500
     
     @app.route('/certif')
     def health_check():
@@ -976,7 +976,7 @@ def register_blueprints(app):
                 'mail': mail_status,
                 'redis': redis_status,
                 'scheduler': scheduler_status,
-                'sync': sync_status  # ✅ NOUVEAU
+                # 'sync': sync_status  # ✅ NOUVEAU
             }
         }, 200
     

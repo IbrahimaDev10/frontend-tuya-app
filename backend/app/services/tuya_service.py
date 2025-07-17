@@ -348,14 +348,14 @@ class TuyaClient:
             return {"success": False, "result": [], "error": str(e)}
     
     def get_device_status(self, device_id):
-        """Récupérer le statut d'un appareil avec structure corrigée"""
+        """Récupérer le statut d'un appareil - VERSION CORRIGÉE SANS NORMALISATION"""
         if not self.ensure_token():
-            return {"success": False, "result": {}, "error": "Token invalide"}
+            return {"success": False, "result": [], "error": "Token invalide"}
         
         try:
             # Vérifier la reconnexion
             if not self.reconnect_if_needed():
-                return {"success": False, "result": {}, "error": "Impossible de se reconnecter"}
+                return {"success": False, "result": [], "error": "Impossible de se reconnecter"}
             
             response = make_tuya_request_fixed(
                 self.endpoint,
@@ -368,39 +368,28 @@ class TuyaClient:
                 self.access_token
             )
 
-            # ✅ ✅ ✅ CORRECTION PRINCIPALE ICI : normaliser le format
-            if response.get('success'):
-                raw_result = response.get('result')
-                
-                if isinstance(raw_result, list):
-                    # Normaliser sous forme d’objet attendu
-                    normalized_result = {
-                        "status": raw_result,
-                        "online": True  # valeur par défaut (ou appeler un autre endpoint si besoin)
-                    }
-                    return {
-                        "success": True,
-                        "result": normalized_result
-                    }
-                
-                # Si déjà sous bon format
-                return response
+            # ✅ CORRECTION PRINCIPALE : RETOURNER DIRECTEMENT LA RÉPONSE TUYA
+            # L'API Tuya retourne {"success": true, "result": [...]}
+            # On ne doit PAS modifier cette structure !
             
+            if response.get('success'):
+                # Retourner directement la réponse Tuya sans modification
+                return response
             else:
                 return {
                     "success": False,
-                    "result": {},
+                    "result": [],
                     "error": response.get('msg', 'Erreur inconnue')
                 }
         
         except Exception as e:
             return {
                 "success": False,
-                "result": {},
+                "result": [],
                 "error": str(e)
             }
 
-    
+
     def send_device_command(self, device_id, commands):
         """Envoyer une commande à un appareil"""
         if not self.ensure_token():
@@ -436,11 +425,22 @@ class TuyaClient:
 
     # ✅ AJOUTÉ: Méthode manquante get_device_current_values - VERSION AMÉLIORÉE
     def get_device_current_values(self, device_id):
-        """Récupérer les valeurs actuelles d'un appareil avec mapping intelligent"""
+        """Récupérer les valeurs actuelles d'un appareil avec mapping intelligent et VRAI statut en ligne"""
         try:
             print(f"🔍 Récupération valeurs actuelles pour {device_id}")
             
-            # Utiliser get_device_status qui existe déjà
+            # ✅ CORRECTION 1: D'abord récupérer le VRAI statut en ligne
+            device_info_response = self.get_device_info(device_id)
+            real_online_status = False
+            
+            if device_info_response.get('success'):
+                device_info = device_info_response.get('result', {})
+                real_online_status = device_info.get('online', False)  # Vrai statut Tuya
+                print(f"🌐 Statut réel en ligne depuis Tuya: {real_online_status}")
+            else:
+                print(f"⚠️ Impossible de récupérer le statut en ligne, utilisation de fallback")
+            
+            # ✅ CORRECTION 2: Récupérer les données de statut
             status_response = self.get_device_status(device_id)
             
             if not status_response.get('success'):
@@ -452,8 +452,24 @@ class TuyaClient:
                     "error": status_response.get('error', 'Erreur inconnue')
                 }
             
-            # Traiter les données de statut
-            status_data = status_response.get('result', {}).get("status", [])
+            # L'API Tuya retourne TOUJOURS une liste dans result
+            status_data = status_response.get('result', [])
+            
+            # Vérification de sécurité
+            if not isinstance(status_data, list):
+                print(f"⚠️ Format de réponse inattendu: {type(status_data)} - {status_data}")
+                if isinstance(status_data, dict) and "status" in status_data:
+                    status_data = status_data["status"]
+                else:
+                    status_data = []
+            
+            print(f"📊 Status data reçu: {len(status_data)} éléments")
+            print(f"🔍 Données brutes: {status_data}")
+            
+            # ✅ CORRECTION 3: Si pas de statut réel récupéré, utiliser une heuristique intelligente
+            if device_info_response.get('success') == False:
+                real_online_status = self._detect_online_from_values(status_data)
+                print(f"🔍 Statut détecté par heuristique: {real_online_status}")
             
             # ✅ MAPPING INTELLIGENT des valeurs Tuya
             values = {}
@@ -461,36 +477,82 @@ class TuyaClient:
                 if isinstance(item, dict):
                     code = item.get('code', '')
                     value = item.get('value')
+                    
+                    print(f"   🔍 Processing: {code} = {value}")
 
-                    # 🧠 Mapping des champs courants
-                    match code:
-                        case "cur_voltage":
-                            values["tension"] = value / 100 if value is not None else None
-                        case "cur_current":
-                            values["courant"] = value / 1000 if value is not None else None
-                        case "cur_power":
-                            values["puissance"] = value / 10 if value is not None else None
-                        case "add_ele":
-                            values["energie"] = value / 1000 if value is not None else None
-                        case "switch" | "switch_1":
-                            values["etat_switch"] = bool(value) if value is not None else None
-                        case "temp_current":
-                            values["temperature"] = value / 10 if value is not None else None
-                        case "humidity":
-                            values["humidite"] = value if value is not None else None
-                        case _:
-                            # Conserver les autres codes bruts
-                            values[code] = value
+                    # 🧠 Mapping des champs courants avec gestion des valeurs null/0
+                    if code == "cur_voltage":
+                        # Tension en centièmes de volts -> Volts
+                        values["tension"] = value / 100 if value is not None and value != 0 else None
+                    elif code == "cur_current":
+                        # Courant en millièmes d'ampères -> Ampères  
+                        values["courant"] = value / 1000 if value is not None and value != 0 else None
+                    elif code == "cur_power":
+                        # Puissance en dixièmes de watts -> Watts
+                        values["puissance"] = value / 10 if value is not None and value != 0 else None
+                    elif code == "add_ele":
+                        # Énergie en millièmes de kWh -> kWh
+                        values["energie"] = value / 1000 if value is not None else None
+                    elif code in ["switch", "switch_1", "switch_led"]:
+                        # État du switch
+                        values["etat_switch"] = bool(value) if value is not None else None
+                    elif code == "temp_current":
+                        # Température en dixièmes de degrés -> Degrés
+                        values["temperature"] = value / 10 if value is not None else None
+                    elif code == "humidity":
+                        # Humidité en pourcentage
+                        values["humidite"] = value if value is not None else None
+                    
+                    # ✅ AJOUT: Gestion des appareils triphasés
+                    elif code == "phase_a":
+                        values["phase_a"] = value  # Données encodées en base64
+                    elif code == "phase_b":
+                        values["phase_b"] = value  # Données encodées en base64
+                    elif code == "phase_c":
+                        values["phase_c"] = value  # Données encodées en base64
+                    elif code == "total_forward_energy":
+                        values["energie_totale"] = value  # Énergie totale consommée
+                    elif code == "forward_energy_total":
+                        values["energie_totale"] = value  # Autre nom pour l'énergie totale
+                    elif code == "supply_frequency":
+                        values["frequence"] = value  # Fréquence du réseau (50Hz)
+                    elif code == "fault":
+                        values["defaut"] = value  # Code de défaut
+                    elif code == "leakage_current":
+                        values["courant_fuite"] = value  # Courant de fuite
+                    elif code == "switch_prepayment":
+                        values["prepaiement"] = bool(value) if value is not None else None
+                    
+                    # ✅ AJOUT: Gestion des thermostats
+                    elif code == "temp_set":
+                        values["temperature_consigne"] = value
+                    elif code == "mode":
+                        values["mode"] = value  # manuel, auto, etc.
+                    elif code == "eco":
+                        values["mode_eco"] = bool(value) if value is not None else None
+                    elif code == "child_lock":
+                        values["verrouillage_enfant"] = bool(value) if value is not None else None
+                    
+                    # ✅ AJOUT: Autres codes courants
+                    elif code == "countdown_1":
+                        values["minuterie"] = value  # Minuterie en secondes
+                    elif code == "relay_status":
+                        values["etat_relais"] = value  # État du relais
+                    elif code == "light_mode":
+                        values["mode_eclairage"] = value  # Mode éclairage
+                    
+                    else:
+                        # Conserver tous les autres codes bruts pour debug et compatibilité future
+                        values[code] = value
             
             print(f"✅ Valeurs actuelles récupérées: {len(values)} paramètres")
+            print(f"🔍 Valeurs mappées: {values}")
+            print(f"🌐 Statut final en ligne: {real_online_status}")
             
-            # Déterminer si l'appareil est en ligne
-            is_online = status_response.get('result', {}).get("online", False)
-
             return {
                 "success": True,
                 "values": values,
-                "is_online": is_online,
+                "is_online": real_online_status,  # ✅ VRAI STATUT EN LIGNE
                 "device_id": device_id,
                 "raw_status": status_data,
                 "timestamp": datetime.utcnow().isoformat()
@@ -498,17 +560,18 @@ class TuyaClient:
 
         except Exception as e:
             print(f"❌ Erreur get_device_current_values {device_id}: {e}")
+            import traceback
+            print(f"🔍 Traceback: {traceback.format_exc()}")
             return {
                 "success": False, 
                 "values": {}, 
                 "is_online": False,
                 "error": str(e)
             }
-
     
     # ✅ AJOUTÉ: Méthode toggle_device COMPLÈTE et ROBUSTE
     def toggle_device(self, device_id, state=None):
-        """Allumer/éteindre un appareil avec détection automatique du code switch"""
+        """Allumer/éteindre un appareil avec détection automatique du code switch - VERSION CORRIGÉE"""
         try:
             print(f"🔧 Toggle appareil {device_id} - state: {state}")
             
@@ -518,69 +581,85 @@ class TuyaClient:
             if not self.reconnect_if_needed():
                 return {"success": False, "error": "Impossible de se reconnecter"}
             
-            # 1. Récupérer l'état actuel pour détecter le bon code switch
+            # 1. Récupérer l'état actuel avec la fonction corrigée
             print(f"🔍 Récupération valeurs actuelles {device_id}...")
-            status_response = self.get_device_status(device_id)
+            values_response = self.get_device_current_values(device_id)
             
-            if not status_response.get("success"):
-                return {"success": False, "error": "Impossible de récupérer le statut de l'appareil"}
+            if not values_response.get("success"):
+                return {
+                    "success": False, 
+                    "error": f"Impossible de récupérer le statut: {values_response.get('error')}"
+                }
             
-            status_data = status_response.get("result", [])
-            print(f"📊 Status data: {len(status_data)} éléments")
+            current_values = values_response.get("values", {})
+            raw_status = values_response.get("raw_status", [])
             
-            # 2. ✅ DÉTECTER LE BON CODE SWITCH automatiquement
+            print(f"✅ Valeurs disponibles: {list(current_values.keys())}")
+            print(f"📊 Raw status: {raw_status}")
+            
+            # 2. ✅ DÉTECTER LE BON CODE SWITCH dans les données brutes ET mappées
             switch_code = None
             current_state = None
             
-            # Mapper tous les codes disponibles
-            current_values = {}
-            for item in status_data:
-                if isinstance(item, dict):
-                    code = item.get("code", "")
-                    value = item.get("value")
-                    current_values[code] = value
+            # Chercher dans les valeurs mappées d'abord
+            if "etat_switch" in current_values:
+                current_state = current_values["etat_switch"]
+                # Retrouver le code original dans raw_status
+                for item in raw_status:
+                    if isinstance(item, dict) and item.get('code') in ['switch', 'switch_1', 'switch_led']:
+                        switch_code = item.get('code')
+                        break
             
-            print(f"✅ Valeurs disponibles: {list(current_values.keys())}")
-            
-            # Chercher le bon code de switch dans l'ordre de priorité
-            switch_candidates = ['switch_1', 'switch', 'switch_led', 'power', 'switch_2']
-            
-            for candidate in switch_candidates:
-                if candidate in current_values:
-                    switch_code = candidate
-                    current_state = current_values[candidate]
-                    print(f"🔍 Code switch détecté: {switch_code} = {current_state}")
-                    break
+            # Si pas trouvé, chercher directement dans raw_status
+            if switch_code is None:
+                switch_candidates = ['switch_1', 'switch', 'switch_led', 'power', 'switch_2']
+                
+                for item in raw_status:
+                    if isinstance(item, dict):
+                        code = item.get('code', '')
+                        if code in switch_candidates:
+                            switch_code = code
+                            current_state = item.get('value')
+                            print(f"🔍 Code switch détecté dans raw: {switch_code} = {current_state}")
+                            break
             
             if switch_code is None:
-                available_codes = list(current_values.keys())
+                # Debug complet
+                all_codes = []
+                for item in raw_status:
+                    if isinstance(item, dict):
+                        all_codes.append(item.get('code'))
+                
                 return {
                     "success": False, 
-                    "error": f"Aucun switch trouvé. Codes disponibles: {available_codes}"
+                    "error": f"Aucun switch trouvé. Codes disponibles: {all_codes}",
+                    "debug_raw_status": raw_status,
+                    "debug_mapped_values": current_values
                 }
+            
+            print(f"✅ Switch trouvé: {switch_code} = {current_state}")
             
             # 3. Calculer le nouvel état
             if state is None:
-                # Mode toggle : inverser l'état actuel
                 new_state = not current_state
                 action = "Basculé"
-                print(f"🔄 Toggle: {current_state} -> {new_state}")
             else:
                 new_state = bool(state)
                 action = "Allumé" if new_state else "Éteint"
-                print(f"🔧 État forcé: {new_state}")
             
-            # 4. ✅ Envoyer la commande avec le BON CODE détecté
+            print(f"🔄 {action}: {current_state} -> {new_state}")
+            
+            # 4. Envoyer la commande
             commands = {
                 "commands": [
                     {
-                        "code": switch_code,  # ← CORRECTION: utilise le code détecté
+                        "code": switch_code,
                         "value": new_state
                     }
                 ]
             }
             
-            print(f"🔧 Envoi commande à {device_id}: {commands}")
+            print(f"🔧 Envoi commande: {commands}")
             
             response = self.send_device_command(device_id, commands)
             
@@ -591,7 +670,7 @@ class TuyaClient:
                     "previous_state": current_state,
                     "action": action.lower(),
                     "message": f"Appareil {action.lower()} avec succès",
-                    "switch_code_used": switch_code,  # Info debug
+                    "switch_code_used": switch_code,
                     "device_id": device_id
                 }
             else:
