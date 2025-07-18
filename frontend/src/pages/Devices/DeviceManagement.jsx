@@ -488,8 +488,8 @@ const DevicesTable = ({
               </div>
             </td>
             <td>
-              <span className={`type-badge type-${device.type_appareil?.replace('_', '-')}`}>
-                {device.type_appareil || 'N/A'}
+              <span className={`type-badge type-${device.type_systeme?.replace('_', '-')}`}>
+                {device.type_systeme || 'N/A'}
               </span>
             </td>
             <td>

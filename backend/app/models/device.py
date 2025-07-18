@@ -138,8 +138,20 @@ class Device(db.Model):
         return self.statut_assignation == 'assigne' and self.client_id is not None
     
     def is_triphase(self) -> bool:
-        """Vérifier si l'appareil est triphasé"""
-        return self.type_systeme == 'triphase'
+        """Détection automatique du triphasé si type_systeme inconnu ou mal défini"""
+        if self.type_systeme == 'triphase':
+            return True
+        
+        # Fallback : détection à partir des données
+        try:
+            last_data = self.donnees.order_by(DeviceData.horodatage.desc()).first()
+            if last_data and last_data.is_triphase():
+                return True
+        except:
+            pass
+        
+        return False
+
     
     def is_monophase(self) -> bool:
         """Vérifier si l'appareil est monophasé"""

@@ -105,9 +105,13 @@ class DeviceData(db.Model):
         """Vérifier si les données sont monophasées"""
         return self.type_systeme == 'monophase'
     
-    def is_triphase(self):
-        """Vérifier si les données sont triphasées"""
-        return self.type_systeme == 'triphase'
+    def is_triphase(self) -> bool:
+        return all([
+            self.tension_l1 and self.tension_l1 > 50,
+            self.tension_l2 and self.tension_l2 > 50,
+            self.tension_l3 and self.tension_l3 > 50
+        ])
+
     
     def get_tension_moyenne(self):
         """Calculer la tension moyenne selon le type"""
