@@ -161,21 +161,23 @@ const ChartContainer = ({ device, chartType = 'tension', onClose }) => {
           data: bddData,
           borderColor: config.color,
           backgroundColor: config.backgroundColor,
-          tension: 0.1,
+          tension: 0.4,
           pointRadius: 2,
           pointHoverRadius: 4,
-          borderWidth: 2
+          borderWidth: 2,
+          cubicInterpolationMode: 'monotone'
         },
         ...(tuyaData.length > 0 ? [{
           label: `${config.label} (Tuya)`,
           data: tuyaData,
           borderColor: config.secondaryColor,
           backgroundColor: config.secondaryBackgroundColor,
-          tension: 0.1,
+          tension: 0.4,
           pointRadius: 2,
           pointHoverRadius: 4,
           borderWidth: 2,
-          borderDash: [5, 5]
+          borderDash: [5, 5],
+          cubicInterpolationMode: 'monotone'
         }] : [])
       ]
     }
@@ -259,7 +261,8 @@ const ChartContainer = ({ device, chartType = 'tension', onClose }) => {
           display: true,
           text: `${getChartConfig(chartType).label} (${getChartConfig(chartType).unit})`
         },
-        beginAtZero: false
+        beginAtZero: true,
+        suggestedMin: 0
       }
     },
     interaction: {
@@ -282,9 +285,7 @@ const ChartContainer = ({ device, chartType = 'tension', onClose }) => {
         <h3>
           {getChartConfig(chartType).label} - {device.nom_appareil}
         </h3>
-        <Button variant="outline" size="small" onClick={onClose}>
-          ✕ Fermer
-        </Button>
+        
       </div>
 
       <div className="chart-controls">

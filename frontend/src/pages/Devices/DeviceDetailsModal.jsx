@@ -135,7 +135,7 @@ const DeviceDetailsModal = ({ device, onClose }) => {
       </div>
     )
   }
-
+  const isTriphase = deviceFullDetails?.type_systeme === 'triphase';
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content extra-large" onClick={(e) => e.stopPropagation()}>
@@ -268,101 +268,91 @@ const DeviceDetailsModal = ({ device, onClose }) => {
 
               {/* Mesures actuelles */}
               {/* MODIFICATION 16: Utiliser deviceFullDetails.real_time_status.data pour les mesures */}
-              {deviceFullDetails?.real_time_status?.data && ( 
+               {deviceFullDetails?.real_time_status?.data && ( 
                 <div className="measurements-section">
                   <h4>Mesures actuelles</h4>
-                  <div className="measurements-grid">
-                    <div className="measurement-card">
-                      <div className="measurement-icon">⚡</div>
-                      <div className="measurement-content">
-                        <h5>Tension</h5>
-                        <div className="measurement-value">
-                          {formatValue(deviceFullDetails.real_time_status.data?.tension, 'V')}
-                        </div>
-                      </div>
+                  {isTriphase ? (
+                    // --- VUE POUR APPAREIL TRIPHASÉ ---
+                    <div className="measurements-grid triphase">
+                      <div className="measurement-card phase"><div className="measurement-content"><h5>Tension L1</h5><div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.tension_l1, 'V')}</div></div></div>
+                      <div className="measurement-card phase"><div className="measurement-content"><h5>Tension L2</h5><div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.tension_l2, 'V')}</div></div></div>
+                      <div className="measurement-card phase"><div className="measurement-content"><h5>Tension L3</h5><div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.tension_l3, 'V')}</div></div></div>
+                      <div className="measurement-card phase"><div className="measurement-content"><h5>Courant L1</h5><div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.courant_l1, 'A')}</div></div></div>
+                      <div className="measurement-card phase"><div className="measurement-content"><h5>Courant L2</h5><div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.courant_l2, 'A')}</div></div></div>
+                      <div className="measurement-card phase"><div className="measurement-content"><h5>Courant L3</h5><div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.courant_l3, 'A')}</div></div></div>
+                      <div className="measurement-card total"><div className="measurement-content"><h5>Puissance Totale</h5><div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.puissance_totale, 'W')}</div></div></div>
                     </div>
-                    <div className="measurement-card">
-                      <div className="measurement-icon">🔌</div>
-                      <div className="measurement-content">
-                        <h5>Courant</h5>
-                        <div className="measurement-value">
-                          {formatValue(deviceFullDetails.real_time_status.data?.courant, 'A')}
-                        </div>
-                      </div>
+                  ) : (
+                    // --- VUE POUR APPAREIL MONOPHASÉ (code original) ---
+                    <div className="measurements-grid">
+                      <div className="measurement-card"><div className="measurement-icon">⚡</div><div className="measurement-content"><h5>Tension</h5><div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.tension, 'V')}</div></div></div>
+                      <div className="measurement-card"><div className="measurement-icon">🔌</div><div className="measurement-content"><h5>Courant</h5><div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.courant, 'A')}</div></div></div>
+                      <div className="measurement-card"><div className="measurement-icon">💡</div><div className="measurement-content"><h5>Puissance</h5><div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.puissance, 'W')}</div></div></div>
+                      <div className="measurement-card"><div className="measurement-icon">📊</div><div className="measurement-content"><h5>Énergie</h5><div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.energie, 'kWh')}</div></div></div>
                     </div>
-                    <div className="measurement-card">
-                      <div className="measurement-icon">💡</div>
-                      <div className="measurement-content">
-                        <h5>Puissance</h5>
-                        <div className="measurement-value">
-                          {formatValue(deviceFullDetails.real_time_status.data?.puissance, 'W')}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="measurement-card">
-                      <div className="measurement-icon">📊</div>
-                      <div className="measurement-content">
-                        <h5>Énergie</h5>
-                        <div className="measurement-value">
-                          {formatValue(deviceFullDetails.real_time_status.data?.energie, 'kWh')}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                  )}
                 </div>
               )}
             </div>
           )}
 
           {/* Données */}
-          {activeTab === 'data' && (
+         {activeTab === 'data' && (
             <div className="data-content">
               <div className="data-header">
                 <h4>Historique des données (50 dernières)</h4>
-                <Button
-                  variant="outline"
-                  size="small"
-                  onClick={() => loadDeviceData()}
-                >
-                  🔄 Actualiser
-                </Button>
+                <Button variant="outline" size="small" onClick={() => loadDeviceData()}>🔄 Actualiser</Button>
               </div>
               
               {deviceData.length > 0 ? (
                 <div className="data-table-container">
                   <table className="data-table compact">
                     <thead>
-                      <tr>
-                        <th>Date/Heure</th>
-                        <th>Tension (V)</th>
-                        <th>Courant (A)</th>
-                        <th>Puissance (W)</th>
-                        <th>État</th>
-                      </tr>
+                      {/* MODIFICATION TRIPHASÉ 3: Entêtes de tableau conditionnelles */}
+                      {isTriphase ? (
+                        <tr>
+                          <th>Date/Heure</th>
+                          <th>Tension (L1/L2/L3) V</th>
+                          <th>Courant (L1/L2/L3) A</th>
+                          <th>Puissance Totale (W)</th>
+                          <th>État</th>
+                        </tr>
+                      ) : (
+                        <tr>
+                          <th>Date/Heure</th>
+                          <th>Tension (V)</th>
+                          <th>Courant (A)</th>
+                          <th>Puissance (W)</th>
+                          <th>État</th>
+                        </tr>
+                      )}
                     </thead>
                     <tbody>
                       {deviceData.map((data, index) => (
                         <tr key={index}>
                           <td>{formatDate(data.horodatage)}</td>
-                          <td>{formatValue(data.tension)}</td>
-                          <td>{formatValue(data.courant)}</td>
-                          <td>{formatValue(data.puissance)}</td>
-                          <td>
-                            {/* MODIFICATION 17: Utiliser data.etat_actuel_tuya si disponible dans les données historiques */}
-                            {/* Sinon, utiliser deviceFullDetails.etat_actuel_tuya comme fallback ou laisser vide */}
-                            <span className={`state-badge ${data.etat_actuel_tuya ? 'on' : 'off'}`}>
-                              {data.etat_actuel_tuya ? 'ON' : 'OFF'}
-                            </span>
-                          </td>
+                          {/* MODIFICATION TRIPHASÉ 4: Cellules de tableau conditionnelles */}
+                          {isTriphase ? (
+                            <>
+                              <td>{`${formatValue(data.tension_l1)} / ${formatValue(data.tension_l2)} / ${formatValue(data.tension_l3)}`}</td>
+                              <td>{`${formatValue(data.courant_l1)} / ${formatValue(data.courant_l2)} / ${formatValue(data.courant_l3)}`}</td>
+                              <td>{formatValue(data.puissance_totale)}</td>
+                            </>
+                          ) : (
+                            <>
+                              <td>{formatValue(data.tension)}</td>
+                              <td>{formatValue(data.courant)}</td>
+                              <td>{formatValue(data.puissance)}</td>
+                            </>
+                          )}
+                          <td><span className={`state-badge ${data.etat_actuel_tuya ? 'on' : 'off'}`}>{data.etat_actuel_tuya ? 'ON' : 'OFF'}</span></td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
               ) : (
-                <div className="empty-state">
-                  <p>Aucune donnée disponible</p>
-                </div>
+                <div className="empty-state"><p>Aucune donnée disponible</p></div>
               )}
             </div>
           )}
@@ -374,67 +364,27 @@ const DeviceDetailsModal = ({ device, onClose }) => {
               <div className="info-section">
                 <h4>Informations Tuya</h4>
                 <div className="info-grid">
-                  <div className="info-item">
-                    <label>Device ID:</label>
-                    <span>{deviceFullDetails?.tuya_device_id}</span>
-                  </div>
-                  <div className="info-item">
-                    <label>Nom original:</label>
-                    <span>{deviceFullDetails?.tuya_nom_original}</span>
-                  </div>
-                  <div className="info-item">
-                    <label>Modèle:</label>
-                    <span>{deviceFullDetails?.tuya_modele}</span>
-                  </div>
-                  <div className="info-item">
-                    <label>Firmware:</label>
-                    <span>{deviceFullDetails?.tuya_version_firmware || 'N/A'}</span>
-                  </div>
-                  <div className="info-item">
-                    <label>Catégorie:</label>
-                    {/* MODIFICATION 18: tuya_categorie n'est pas dans le modèle Device, utilisez type_appareil si c'est ce que vous voulez */}
-                    <span>{deviceFullDetails?.type_appareil || 'N/A'}</span> 
-                  </div>
-                  <div className="info-item">
-                    <label>UUID (BDD):</label>
-                    <span>{deviceFullDetails?.id}</span>
-                  </div>
+                  <div className="info-item"><label>Device ID:</label><span>{deviceFullDetails?.tuya_device_id}</span></div>
+                  <div className="info-item"><label>Nom original:</label><span>{deviceFullDetails?.tuya_nom_original}</span></div>
+                  <div className="info-item"><label>Modèle:</label><span>{deviceFullDetails?.tuya_modele}</span></div>
+                  <div className="info-item"><label>Firmware:</label><span>{deviceFullDetails?.tuya_version_firmware || 'N/A'}</span></div>
+                  <div className="info-item"><label>Catégorie:</label><span>{deviceFullDetails?.type_appareil || 'N/A'}</span></div>
+                  <div className="info-item"><label>UUID (BDD):</label><span>{deviceFullDetails?.id}</span></div>
                 </div>
               </div>
-
-              {/* Seuils configurés */}
               <div className="info-section">
                 <h4>Seuils configurés</h4>
                 <div className="info-grid">
-                <div className="info-item">
-                  <label>Tension min:</label>
-                  {/* MODIFICATION 19: Utiliser deviceFullDetails pour les seuils */}
-                  <span>{formatValue(deviceFullDetails?.seuil_tension_min, 'V')}</span> 
-                </div>
-                <div className="info-item">
-                  <label>Tension max:</label>
-                  <span>{formatValue(deviceFullDetails?.seuil_tension_max, 'V')}</span>
-                </div>
-                <div className="info-item">
-                  <label>Courant max:</label>
-                  <span>{formatValue(deviceFullDetails?.seuil_courant_max, 'A')}</span>
-                </div>
-                <div className="info-item">
-                  <label>Puissance max:</label>
-                  <span>{formatValue(deviceFullDetails?.seuil_puissance_max, 'W')}</span>
-                </div>
-
+                  <div className="info-item"><label>Tension min:</label><span>{formatValue(deviceFullDetails?.seuil_tension_min, 'V')}</span></div>
+                  <div className="info-item"><label>Tension max:</label><span>{formatValue(deviceFullDetails?.seuil_tension_max, 'V')}</span></div>
+                  <div className="info-item"><label>Courant max:</label><span>{formatValue(deviceFullDetails?.seuil_courant_max, 'A')}</span></div>
+                  <div className="info-item"><label>Puissance max:</label><span>{formatValue(deviceFullDetails?.seuil_puissance_max, 'W')}</span></div>
                 </div>
               </div>
-
-              {/* Données brutes */}
-              {/* MODIFICATION 20: Utiliser deviceFullDetails.real_time_status.data pour les données brutes */}
               {deviceFullDetails?.real_time_status?.data && ( 
                 <div className="info-section">
                   <h4>Données brutes Tuya</h4>
-                  <pre className="json-display">
-                    {JSON.stringify(deviceFullDetails.real_time_status.data, null, 2)}
-                  </pre>
+                  <pre className="json-display">{JSON.stringify(deviceFullDetails.real_time_status.data, null, 2)}</pre>
                 </div>
               )}
             </div>
