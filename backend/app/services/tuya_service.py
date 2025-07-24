@@ -222,85 +222,82 @@ class TuyaClient:
         return self.get_access_token()
     
     def get_devices(self):
-        """Récupérer la liste des appareils - VERSION OPTIMISÉE"""
+        """Récupérer la liste des appareils - VERSION DÉFINITIVE AVEC DÉTECTION DE DOUBLONS"""
         if not self.ensure_token():
             return {"success": False, "result": [], "error": "Token invalide"}
         
         try:
-            print("🔍 Récupération liste appareils...")
+            print("🔍 Récupération de la liste des appareils...")
             
-            # ✅ UTILISER LA PAGINATION CORRIGÉE
             all_devices = []
-            page_no = 1
-            max_pages = 50
-            page_size = 20  # Taille de page qui fonctionne
+            # ✅ AJOUT : Garder une trace des IDs pour détecter les boucles de l'API
+            seen_device_ids = set()
             
-            while page_no <= max_pages:
-                print(f"📄 Récupération page {page_no}...")
+            page_no = 1
+            max_pages_to_fetch = 50 
+            
+            while page_no <= max_pages_to_fetch:
+                print(f"📄 Récupération de la page {page_no}...")
                 
-                # Construire query pour pagination
-                query = {
-                    "page_size": page_size,
-                    "page_no": page_no
-                }
+                query = {"page_no": page_no, "page_size": 20}
                 
                 response = make_tuya_request_fixed(
-                    self.endpoint,
-                    self.access_id,
-                    self.access_secret,
-                    "GET",
-                    "/v2.0/cloud/thing/device",
-                    query,
-                    "",
-                    self.access_token
+                    self.endpoint, self.access_id, self.access_secret, "GET",
+                    "/v2.0/cloud/thing/device", query, "", self.access_token
                 )
                 
                 if not response.get('success'):
                     error_msg = response.get('msg', 'Erreur inconnue')
-                    print(f"❌ Erreur page {page_no}: {error_msg}")
-                    
-                    if page_no == 1:
-                        return {"success": False, "result": [], "error": f"Erreur page 1: {error_msg}"}
-                    else:
-                        print(f"⚠️ Arrêt à la page {page_no}")
-                        break
+                    print(f"❌ Erreur lors de la récupération de la page {page_no}: {error_msg}")
+                    if page_no == 1: return {"success": False, "result": [], "error": error_msg}
+                    break
+
+                result_data = response.get('result')
+                devices_list = []
+                has_more = False
+
+                if isinstance(result_data, dict):
+                    devices_list = result_data.get('list', [])
+                    has_more = result_data.get('has_more', False)
+                elif isinstance(result_data, list):
+                    devices_list = result_data
+                    has_more = len(devices_list) == query["page_size"]
                 
-                # Extraire les appareils
-                page_devices = response.get('result', [])
+                if not devices_list:
+                    print("   ℹ️ Aucun appareil trouvé sur cette page. Fin de la pagination.")
+                    break
+
+                # ✅ LOGIQUE ANTI-DOUBLONS
+                new_devices_found = False
+                for device in devices_list:
+                    device_id = device.get('id')
+                    if device_id not in seen_device_ids:
+                        all_devices.append(device)
+                        seen_device_ids.add(device_id)
+                        new_devices_found = True
                 
-                if isinstance(page_devices, dict):
-                    devices_list = page_devices.get('list', page_devices.get('devices', []))
-                    has_more = page_devices.get('has_more', False)
-                else:
-                    devices_list = page_devices if isinstance(page_devices, list) else []
-                    has_more = len(devices_list) == page_size
-                
-                if devices_list:
-                    all_devices.extend(devices_list)
-                    print(f"   ✅ Page {page_no}: {len(devices_list)} appareils (total: {len(all_devices)})")
-                else:
-                    print(f"   ℹ️ Page {page_no}: Aucun appareil, fin")
+                print(f"   ✅ {len(devices_list)} appareils reçus, {len(all_devices)} uniques au total.")
+
+                # Si la page ne contenait que des doublons, c'est que l'API boucle. On arrête.
+                if not new_devices_found and page_no > 1:
+                    print("   ⚠️ L'API renvoie des doublons. Arrêt de la pagination pour éviter une boucle.")
                     break
                 
-                # Conditions d'arrêt
-                if len(devices_list) < page_size:
-                    print(f"   🏁 Page incomplète, fin de pagination")
-                    break
-                
-                if isinstance(page_devices, dict) and not has_more:
-                    print(f"   🏁 API indique fin des données")
+                if not has_more:
+                    print("   🏁 Fin de la liste détectée. Pagination terminée.")
                     break
                 
                 page_no += 1
-                time.sleep(0.1)  # Pause pour éviter rate limiting
-            
-            print(f"✅ Total: {len(all_devices)} appareils récupérés")
+                time.sleep(0.2)
+
+            print(f"✅ Total final : {len(all_devices)} appareils uniques récupérés.")
             return {"success": True, "result": all_devices}
             
         except Exception as e:
-            print(f"❌ Erreur get_devices: {e}")
+            print(f"❌ Erreur critique dans get_devices: {e}")
+            import traceback
+            traceback.print_exc()
             return {"success": False, "result": [], "error": str(e)}
-    
     def get_all_devices_with_details(self):
         """Récupérer tous les appareils avec détails complets"""
         try:

@@ -137,9 +137,9 @@ const DeviceDetailsModal = ({ device, onClose }) => {
   }
   const isTriphase = deviceFullDetails?.type_systeme === 'triphase';
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content extra-large" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
+    <div className="fullscreen-modal-overlay">
+      <div className="fullscreen-modal-content">
+        <div className="fullscreen-modal-header">
           {/* MODIFICATION 10: Utiliser deviceFullDetails pour le nom */}
           <h3>{deviceFullDetails?.nom_appareil || deviceFullDetails?.tuya_nom_original}</h3> 
           <div className="header-actions">
@@ -161,6 +161,7 @@ const DeviceDetailsModal = ({ device, onClose }) => {
                 {/* MODIFICATION 12: Utiliser deviceFullDetails.etat_actuel_tuya pour l'affichage du bouton */}
                 {deviceFullDetails?.etat_actuel_tuya ? '⏸️ OFF' : '▶️ ON'} 
               </Button>
+              
             )}
             <button className="modal-close" onClick={onClose}>×</button>
           </div>
@@ -206,7 +207,7 @@ const DeviceDetailsModal = ({ device, onClose }) => {
           </button>
         </div>
 
-        <div className="modal-body">
+        <div className="fullscreen-modal-body">
           {/* Vue d'ensemble */}
           {activeTab === 'overview' && (
             <div className="overview-content">
@@ -274,13 +275,60 @@ const DeviceDetailsModal = ({ device, onClose }) => {
                   {isTriphase ? (
                     // --- VUE POUR APPAREIL TRIPHASÉ ---
                     <div className="measurements-grid triphase">
-                      <div className="measurement-card phase"><div className="measurement-content"><h5>Tension L1</h5><div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.tension_l1, 'V')}</div></div></div>
-                      <div className="measurement-card phase"><div className="measurement-content"><h5>Tension L2</h5><div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.tension_l2, 'V')}</div></div></div>
-                      <div className="measurement-card phase"><div className="measurement-content"><h5>Tension L3</h5><div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.tension_l3, 'V')}</div></div></div>
-                      <div className="measurement-card phase"><div className="measurement-content"><h5>Courant L1</h5><div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.courant_l1, 'A')}</div></div></div>
-                      <div className="measurement-card phase"><div className="measurement-content"><h5>Courant L2</h5><div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.courant_l2, 'A')}</div></div></div>
-                      <div className="measurement-card phase"><div className="measurement-content"><h5>Courant L3</h5><div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.courant_l3, 'A')}</div></div></div>
-                      <div className="measurement-card total"><div className="measurement-content"><h5>Puissance Totale</h5><div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.puissance_totale, 'W')}</div></div></div>
+                      <div className="phase-group">
+                        <h5>Phase L1</h5>
+                        <div className="measurement-card phase">
+                          <div className="measurement-content">
+                            <h6>Tension</h6>
+                            <div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.tension_l1, 'V')}</div>
+                          </div>
+                        </div>
+                        <div className="measurement-card phase">
+                          <div className="measurement-content">
+                            <h6>Courant</h6>
+                            <div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.courant_l1, 'A')}</div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="phase-group">
+                        <h5>Phase L2</h5>
+                        <div className="measurement-card phase">
+                          <div className="measurement-content">
+                            <h6>Tension</h6>
+                            <div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.tension_l2, 'V')}</div>
+                          </div>
+                        </div>
+                        <div className="measurement-card phase">
+                          <div className="measurement-content">
+                            <h6>Courant</h6>
+                            <div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.courant_l2, 'A')}</div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="phase-group">
+                        <h5>Phase L3</h5>
+                        <div className="measurement-card phase">
+                          <div className="measurement-content">
+                            <h6>Tension</h6>
+                            <div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.tension_l3, 'V')}</div>
+                          </div>
+                        </div>
+                        <div className="measurement-card phase">
+                          <div className="measurement-content">
+                            <h6>Courant</h6>
+                            <div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.courant_l3, 'A')}</div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="measurement-card total">
+                        <div className="measurement-content">
+                          <h5>Puissance Totale</h5>
+                          <div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.puissance_totale, 'W')}</div>
+                        </div>
+                      </div>
                     </div>
                   ) : (
                     // --- VUE POUR APPAREIL MONOPHASÉ (code original) ---
@@ -308,12 +356,15 @@ const DeviceDetailsModal = ({ device, onClose }) => {
                 <div className="data-table-container">
                   <table className="data-table compact">
                     <thead>
-                      {/* MODIFICATION TRIPHASÉ 3: Entêtes de tableau conditionnelles */}
                       {isTriphase ? (
                         <tr>
                           <th>Date/Heure</th>
-                          <th>Tension (L1/L2/L3) V</th>
-                          <th>Courant (L1/L2/L3) A</th>
+                          <th>Tension L1 (V)</th>
+                          <th>Tension L2 (V)</th>
+                          <th>Tension L3 (V)</th>
+                          <th>Courant L1 (A)</th>
+                          <th>Courant L2 (A)</th>
+                          <th>Courant L3 (A)</th>
                           <th>Puissance Totale (W)</th>
                           <th>État</th>
                         </tr>
@@ -331,11 +382,14 @@ const DeviceDetailsModal = ({ device, onClose }) => {
                       {deviceData.map((data, index) => (
                         <tr key={index}>
                           <td>{formatDate(data.horodatage)}</td>
-                          {/* MODIFICATION TRIPHASÉ 4: Cellules de tableau conditionnelles */}
                           {isTriphase ? (
                             <>
-                              <td>{`${formatValue(data.tension_l1)} / ${formatValue(data.tension_l2)} / ${formatValue(data.tension_l3)}`}</td>
-                              <td>{`${formatValue(data.courant_l1)} / ${formatValue(data.courant_l2)} / ${formatValue(data.courant_l3)}`}</td>
+                              <td>{formatValue(data.tension_l1)}</td>
+                              <td>{formatValue(data.tension_l2)}</td>
+                              <td>{formatValue(data.tension_l3)}</td>
+                              <td>{formatValue(data.courant_l1)}</td>
+                              <td>{formatValue(data.courant_l2)}</td>
+                              <td>{formatValue(data.courant_l3)}</td>
                               <td>{formatValue(data.puissance_totale)}</td>
                             </>
                           ) : (
@@ -356,7 +410,6 @@ const DeviceDetailsModal = ({ device, onClose }) => {
               )}
             </div>
           )}
-
 
              {/* Technique */}
           {activeTab === 'technical' && (
@@ -567,7 +620,7 @@ const DeviceDetailsModal = ({ device, onClose }) => {
                       )}
         </div>
 
-        <div className="modal-footer">
+        <div className="fullscreen-modal-footer">
           <Button
             type="button"
             variant="secondary"

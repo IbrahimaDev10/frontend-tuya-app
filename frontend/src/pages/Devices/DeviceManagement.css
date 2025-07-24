@@ -61,26 +61,16 @@
     white-space: nowrap;
   }
   
-  .type-prise-connectee {
+  .type-monophase {
     background: #e3f2fd;
     color: #1976d2;
   }
   
-  .type-atorch-compteur-energie {
-    background: #f3e5f5;
-    color: #7b1fa2;
-  }
   
-  .type-interrupteur {
-    background: #e8f5e8;
-    color: #388e3c;
+  .type-triphase {
+    background: #b0beb0;
+    color: #242a29;
   }
-  
-  .type-appareil-generique {
-    background: #f5f5f5;
-    color: #666;
-  }
-  
   .status-badge.assigned {
     background: #c8e6c9;
     color: #2e7d32;

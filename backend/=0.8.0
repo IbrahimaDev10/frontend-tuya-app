@@ -1,0 +1,67 @@
+Collecting tuya-iot-py-sdk
+  Downloading tuya_iot_py_sdk-0.6.6-py3-none-any.whl.metadata (4.6 kB)
+Collecting paho-mqtt (from tuya-iot-py-sdk)
+  Downloading paho_mqtt-2.1.0-py3-none-any.whl.metadata (23 kB)
+Collecting requests (from tuya-iot-py-sdk)
+  Downloading requests-2.32.4-py3-none-any.whl.metadata (4.9 kB)
+Collecting pycryptodome (from tuya-iot-py-sdk)
+  Downloading pycryptodome-3.23.0-cp37-abi3-win_amd64.whl.metadata (3.5 kB)
+Collecting websocket-client (from tuya-iot-py-sdk)
+  Downloading websocket_client-1.8.0-py3-none-any.whl.metadata (8.0 kB)
+Collecting charset_normalizer<4,>=2 (from requests->tuya-iot-py-sdk)
+  Downloading charset_normalizer-3.4.2-cp313-cp313-win_amd64.whl.metadata (36 kB)
+Collecting idna<4,>=2.5 (from requests->tuya-iot-py-sdk)
+  Downloading idna-3.10-py3-none-any.whl.metadata (10 kB)
+Collecting urllib3<3,>=1.21.1 (from requests->tuya-iot-py-sdk)
+  Downloading urllib3-2.5.0-py3-none-any.whl.metadata (6.5 kB)
+Collecting certifi>=2017.4.17 (from requests->tuya-iot-py-sdk)
+  Downloading certifi-2025.7.14-py3-none-any.whl.metadata (2.4 kB)
+Downloading tuya_iot_py_sdk-0.6.6-py3-none-any.whl (17 kB)
+Downloading paho_mqtt-2.1.0-py3-none-any.whl (67 kB)
+Downloading pycryptodome-3.23.0-cp37-abi3-win_amd64.whl (1.8 MB)
+   -------------------- 1.8/1.8 MB 1.9 MB/s eta 0:00:00
+Downloading requests-2.32.4-py3-none-any.whl (64 kB)
+Downloading charset_normalizer-3.4.2-cp313-cp313-win_amd64.whl (105 kB)
+Downloading idna-3.10-py3-none-any.whl (70 kB)
+Downloading urllib3-2.5.0-py3-none-any.whl (129 kB)
+Downloading certifi-2025.7.14-py3-none-any.whl (162 kB)
+Downloading websocket_client-1.8.0-py3-none-any.whl (58 kB)
+Installing collected packages: websocket-client, urllib3, pycryptodome, paho-mqtt, idna, charset_normalizer, certifi, requests, tuya-iot-py-sdk
+  Attempting uninstall: websocket-client
+    Found existing installation: websocket-client 1.8.0
+    Uninstalling websocket-client-1.8.0:
+      Successfully uninstalled websocket-client-1.8.0
+  Attempting uninstall: urllib3
+    Found existing installation: urllib3 2.5.0
+    Uninstalling urllib3-2.5.0:
+      Successfully uninstalled urllib3-2.5.0
+  Attempting uninstall: pycryptodome
+    Found existing installation: pycryptodome 3.23.0
+    Uninstalling pycryptodome-3.23.0:
+      Successfully uninstalled pycryptodome-3.23.0
+  Attempting uninstall: paho-mqtt
+    Found existing installation: paho-mqtt 2.1.0
+    Uninstalling paho-mqtt-2.1.0:
+      Successfully uninstalled paho-mqtt-2.1.0
+  Attempting uninstall: idna
+    Found existing installation: idna 3.10
+    Uninstalling idna-3.10:
+      Successfully uninstalled idna-3.10
+  Attempting uninstall: charset_normalizer
+    Found existing installation: charset-normalizer 3.4.2
+    Uninstalling charset-normalizer-3.4.2:
+      Successfully uninstalled charset-normalizer-3.4.2
+  Attempting uninstall: certifi
+    Found existing installation: certifi 2025.7.14
+    Uninstalling certifi-2025.7.14:
+      Successfully uninstalled certifi-2025.7.14
+  Attempting uninstall: requests
+    Found existing installation: requests 2.32.4
+    Uninstalling requests-2.32.4:
+      Successfully uninstalled requests-2.32.4
+  Attempting uninstall: tuya-iot-py-sdk
+    Found existing installation: tuya-iot-py-sdk 0.6.6
+    Uninstalling tuya-iot-py-sdk-0.6.6:
+      Successfully uninstalled tuya-iot-py-sdk-0.6.6
+
+Successfully installed certifi-2025.7.14 charset_normalizer-3.4.2 idna-3.10 paho-mqtt-2.1.0 pycryptodome-3.23.0 requests-2.32.4 tuya-iot-py-sdk-0.6.6 urllib3-2.5.0 websocket-client-1.8.0

@@ -285,7 +285,9 @@ const ChartContainer = ({ device, chartType = 'tension', onClose }) => {
         <h3>
           {getChartConfig(chartType).label} - {device.nom_appareil}
         </h3>
-        
+        <Button variant="outline" size="small" onClick={onClose}>
+          ✕ Fermer
+        </Button>
       </div>
 
       <div className="chart-controls">
