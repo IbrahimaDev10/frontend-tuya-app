@@ -362,7 +362,11 @@ class TuyaClient:
             devices_response = self.get_devices()
 
             if not devices_response.get("success"):
-                return {"success": False, "result": [], "error": "Impossible de récupérer les appareils"}
+                return {
+                    "success": False,
+                    "result": [],
+                    "error": "Impossible de récupérer les appareils"
+                }
 
             devices = devices_response.get("result", [])
             performance_stats = devices_response.get("performance_stats", {})
@@ -378,7 +382,12 @@ class TuyaClient:
             for device in devices:
                 device_info = device.copy()
                 device_info["device_id"] = device.get("id")
-                is_online = device.get("isOnline", False)
+
+                # ✅ EXTRACTION FIABLE DU STATUT EN LIGNE
+                is_online = device.get("isOnline")
+                if is_online is None:
+                    is_online = device.get("online", False)  # fallback
+                device_info["online"] = is_online  # ✅ Clé attendue par _process_devices_data()
                 device_info["online_status"] = "Online" if is_online else "Offline"
 
                 if is_online:
@@ -386,7 +395,7 @@ class TuyaClient:
                 else:
                     offline_count += 1
 
-                # Détection des appareils triphasés
+                # 🔎 Détection triphasé
                 is_triphase = self._detect_triphase_device(device)
                 if is_triphase:
                     device_info["device_type"] = "triphase"
@@ -411,7 +420,12 @@ class TuyaClient:
 
         except Exception as e:
             print(f"❌ Erreur récupération détails intelligente: {e}")
-            return {"success": False, "result": [], "error": str(e)}
+            return {
+                "success": False,
+                "result": [],
+                "error": str(e)
+            }
+
 
     def _detect_triphase_device(self, device):
         """Détecter si un appareil est triphasé basé sur ses données"""
@@ -490,7 +504,7 @@ class TuyaClient:
             return {"success": False, "error": str(e)}
     
     def get_device_current_values(self, device_id):
-        """🧠 VALEURS ACTUELLES - Version intelligente avec mapping optimal et détection triphasé"""
+        """🧠 VALEURS ACTUELLES - Version intelligente avec mapping optimal, détection triphasé et support base64"""
         try:
             # Récupération intelligente du statut en ligne
             device_info_response = self.get_device_info(device_id)
@@ -521,79 +535,78 @@ class TuyaClient:
 
             # 🧠 MAPPING INTELLIGENT des valeurs
             values = {}
-            triphase_indicators = ['phase_a', 'phase_b', 'phase_c', 'total_forward_energy', 'forward_energy_total']
             is_triphase = False
+            triphase_indicators = ['phase_a', 'phase_b', 'phase_c', 'total_forward_energy', 'forward_energy_total']
 
             for item in status_data:
-                if isinstance(item, dict):
-                    code = item.get('code', '')
-                    value = item.get('value')
+                if not isinstance(item, dict):
+                    continue
 
-                    # Mapping intelligent selon le type de données
-                    if code == "cur_voltage":
-                        values["tension"] = value / 100 if value is not None and value != 0 else None
-                    elif code == "cur_current":
-                        values["courant"] = value / 1000 if value is not None and value != 0 else None
-                    elif code == "cur_power":
-                        values["puissance"] = value / 10 if value is not None and value != 0 else None
-                    elif code == "add_ele":
-                        values["energie"] = value / 1000 if value is not None else None
-                    elif code in ["switch", "switch_1", "switch_led"]:
-                        values["etat_switch"] = bool(value) if value is not None else None
-                    elif code == "temp_current":
-                        values["temperature"] = value / 10 if value is not None else None
-                    elif code == "humidity":
-                        values["humidite"] = value if value is not None else None
+                code = item.get('code', '')
+                value = item.get('value')
 
-                    # 🔌 MAPPING TRIPHASÉ INTELLIGENT
-                    elif code in triphase_indicators:
-                        is_triphase = True
-                        if code == "phase_a":
-                            values["phase_a"] = value
-                        elif code == "phase_b":
-                            values["phase_b"] = value
-                        elif code == "phase_c":
-                            values["phase_c"] = value
-                        elif code == "total_forward_energy":
-                            values["energie_totale"] = value
-                        elif code == "forward_energy_total":
-                            values["energie_totale"] = value
-                        elif code == "supply_frequency":
-                            values["frequence"] = value
-                        elif code == "fault":
-                            values["defaut"] = value
-                        elif code == "leakage_current":
-                            values["courant_fuite"] = value
-                        elif code == "switch_prepayment":
-                            values["prepaiement"] = bool(value) if value is not None else None
+                # Décodage automatique si valeur base64 détectée
+                if isinstance(value, str):
+                    try:
+                        decoded = base64.b64decode(value)
+                        if len(decoded) == 4:
+                            value = round(struct.unpack('<f', decoded)[0], 3)
+                    except Exception:
+                        pass
 
-                    # 🌡️ THERMOSTATS
-                    elif code == "temp_set":
-                        values["temperature_consigne"] = value
-                    elif code == "mode":
-                        values["mode"] = value
-                    elif code == "eco":
-                        values["mode_eco"] = bool(value) if value is not None else None
-                    elif code == "child_lock":
-                        values["verrouillage_enfant"] = bool(value) if value is not None else None
-
-                    # 🔧 AUTRES CODES COURANTS
-                    elif code == "countdown_1":
-                        values["minuterie"] = value
-                    elif code == "relay_status":
-                        values["etat_relais"] = value
-                    elif code == "light_mode":
-                        values["mode_eclairage"] = value
-                    else:
-                        # Conserver codes non mappés pour compatibilité
-                        values[code] = value
+                # MAPPING INTELLIGENT
+                if code == "cur_voltage":
+                    values["tension"] = value / 100 if value not in (None, 0) else None
+                elif code == "cur_current":
+                    values["courant"] = value / 1000 if value not in (None, 0) else None
+                elif code == "cur_power":
+                    values["puissance"] = value / 10 if value not in (None, 0) else None
+                elif code == "add_ele":
+                    values["energie"] = value / 1000 if value is not None else None
+                elif code in ["switch", "switch_1", "switch_led"]:
+                    values["etat_switch"] = bool(value) if value is not None else None
+                elif code == "temp_current":
+                    values["temperature"] = value / 10 if value is not None else None
+                elif code == "humidity":
+                    values["humidite"] = value
+                elif code in ["phase_a", "phase_b", "phase_c"]:
+                    is_triphase = True
+                    values[code] = value
+                elif code == "total_forward_energy" or code == "forward_energy_total":
+                    is_triphase = True
+                    values["energie_totale"] = value
+                elif code == "supply_frequency":
+                    values["frequence"] = value
+                elif code == "fault":
+                    values["defaut"] = value
+                elif code == "leakage_current":
+                    values["courant_fuite"] = value
+                elif code == "switch_prepayment":
+                    values["prepaiement"] = bool(value) if value is not None else None
+                elif code == "temp_set":
+                    values["temperature_consigne"] = value
+                elif code == "mode":
+                    values["mode"] = value
+                elif code == "eco":
+                    values["mode_eco"] = bool(value) if value is not None else None
+                elif code == "child_lock":
+                    values["verrouillage_enfant"] = bool(value) if value is not None else None
+                elif code == "countdown_1":
+                    values["minuterie"] = value
+                elif code == "relay_status":
+                    values["etat_relais"] = value
+                elif code == "light_mode":
+                    values["mode_eclairage"] = value
+                else:
+                    # fallback générique
+                    values[code] = value
 
             return {
                 "success": True,
                 "values": values,
                 "is_online": real_online_status,
                 "device_id": device_id,
-                "is_triphase": is_triphase,  # Ajout du champ pour indiquer si l'appareil est triphasé
+                "is_triphase": is_triphase,
                 "raw_status": status_data,
                 "timestamp": datetime.utcnow().isoformat(),
                 "intelligent_mapping": True
@@ -606,6 +619,7 @@ class TuyaClient:
                 "is_online": False,
                 "error": str(e)
             }
+
 
     
     def toggle_device(self, device_id, state=None):
