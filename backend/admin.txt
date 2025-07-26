@@ -1,0 +1,479 @@
+from app import db
+from app.models import User
+
+# Créer l'utilisateur superadmin
+superadmin = User(
+    prenom='Bamba', 
+    nom='Thiam', 
+    email='bambathiam@gmail.com', 
+    telephone='773596455', 
+    role='superadmin'
+)
+
+# Définir le mot de passe
+superadmin.set_password('Securise123!')
+
+# Sauvegarder dans la base
+db.session.add(superadmin)
+db.session.commit()
+
+print(f"✅ Superadmin créé avec l'email : {superadmin.email}")
+amna li {
+    "data": {
+        "actif": true,
+        "analysis_summary": {
+            "alertes_summary": {
+                "critiques": 0,
+                "nouvelles": 0,
+                "total": 0,
+                "warnings": 0
+            },
+            "cached_at": "2025-07-25T15:38:22.468460",
+            "device_id": "f1b6ca8b-5515-43fc-b4f4-201ae17a2b44",
+            "device_name": "Tủ điện VERATTI",
+            "donnees_summary": {
+                "couverture_donnees": 22.22,
+                "derniere_donnee": "2025-07-25T15:38:22",
+                "nb_echantillons": 16
+            },
+            "from_cache": true,
+            "periode_heures": 6,
+            "status_global": "healthy",
+            "success": true,
+            "summary_timestamp": "2025-07-25T15:38:22.468418",
+            "tendances_analysis": {
+                "desequilibres": {
+                    "courant": {
+                        "criticite": "ok",
+                        "max": 0,
+                        "moyenne": 0,
+                        "nb_depassements": 0
+                    },
+                    "evolution": {
+                        "courant": "stable",
+                        "tension": "stable"
+                    },
+                    "tension": {
+                        "criticite": "ok",
+                        "max": 0,
+                        "moyenne": 0,
+                        "nb_depassements": 0
+                    }
+                },
+                "qualite_reseau": {
+                    "niveau": "excellent",
+                    "score": 100,
+                    "tendance": "stable"
+                },
+                "recommandations": [],
+                "tensions": {
+                    "L1": {
+                        "max": 0,
+                        "min": 0,
+                        "moyenne": 0,
+                        "stabilite": "inconnue",
+                        "variation": 0
+                    },
+                    "L2": {
+                        "max": 0,
+                        "min": 0,
+                        "moyenne": 0,
+                        "stabilite": "inconnue",
+                        "variation": 0
+                    },
+                    "L3": {
+                        "max": 0,
+                        "min": 0,
+                        "moyenne": 0,
+                        "stabilite": "inconnue",
+                        "variation": 0
+                    },
+                    "ecart_entre_phases": {
+                        "max_ecart": 0,
+                        "phases_concernees": []
+                    }
+                }
+            },
+            "type_systeme": "triphase"
+        },
+        "client": {
+            "actif": true,
+            "email_contact": "contact@auchan.sn",
+            "id": "ec27ae47-41e7-4ed4-9f84-bccb4b008183",
+            "nom_entreprise": "Auchan",
+            "telephone": "+221336501234"
+        },
+        "client_id": "ec27ae47-41e7-4ed4-9f84-bccb4b008183",
+        "date_installation": "2025-07-22T15:36:36",
+        "derniere_donnee": "2025-07-25T15:19:09",
+        "derniere_maj_etat_tuya": "2025-07-22T18:52:59",
+        "emplacement": null,
+        "en_ligne": true,
+        "etat_actuel_tuya": true,
+        "id": "f1b6ca8b-5515-43fc-b4f4-201ae17a2b44",
+        "nom_appareil": "Tủ điện VERATTI",
+        "programmation": {
+            "active": false,
+            "mode_manuel": false,
+            "prochaine_action": null
+        },
+        "protection": {
+            "active": false,
+            "courant_config": null,
+            "puissance_config": null,
+            "status": "normal",
+            "temperature_config": null
+        },
+        "real_time_data": {
+            "data": {
+                "alarm_set_1": "BQEAVQQBADI=",
+                "alarm_set_2": "AQEDIAMBAREEAQCvAgAAFAUAAAA=",
+                "balance_energy": 0,
+                "charge_energy": 0,
+                "courant_fuite": 0,
+                "cycle_time": "EwAAAAAAAAAAAA==",
+                "defaut": 0,
+                "energie_totale": 93,
+                "energy_reset": "",
+                "etat_switch": true,
+                "minuterie": 0,
+                "phase_a": "CN4AAAAAAAA=",
+                "phase_b": "CN0AAAAAAAA=",
+                "phase_c": "CN4AAHMAAAs=",
+                "prepaiement": false,
+                "random_time": "",
+                "reverse_energy_total": 0,
+                "temperature": 3.6,
+                "veratti_decoded_data": {
+                    "decoder_version": "VERATTI_v3.0_CALIBRATED",
+                    "phases": {
+                        "L1": {
+                            "bytes_length": 8,
+                            "courant": 0.0,
+                            "courant_formula": "zero_current",
+                            "debug_positions": {
+                                "pos_0": 8,
+                                "pos_1_tension": 222,
+                                "pos_2": 0,
+                                "pos_3": 0,
+                                "pos_4_courant": 0,
+                                "pos_5": 0,
+                                "pos_6": 0,
+                                "pos_7": 0
+                            },
+                            "phase": "L1",
+                            "puissance": 0.0,
+                            "puissance_source": "default",
+                            "raw_bytes_hex": "08 de 00 00 00 00 00 00",
+                            "success": true,
+                            "tension": null,
+                            "tension_formula": "failed",
+                            "timestamp": "2025-07-25T15:39:51.957043"
+                        },
+                        "L2": {
+                            "bytes_length": 8,
+                            "courant": 0.0,
+                            "courant_formula": "zero_current",
+                            "debug_positions": {
+                                "pos_0": 8,
+                                "pos_1_tension": 221,
+                                "pos_2": 0,
+                                "pos_3": 0,
+                                "pos_4_courant": 0,
+                                "pos_5": 0,
+                                "pos_6": 0,
+                                "pos_7": 0
+                            },
+                            "phase": "L2",
+                            "puissance": 0.0,
+                            "puissance_source": "default",
+                            "raw_bytes_hex": "08 dd 00 00 00 00 00 00",
+                            "success": true,
+                            "tension": null,
+                            "tension_formula": "failed",
+                            "timestamp": "2025-07-25T15:39:51.957109"
+                        },
+                        "L3": {
+                            "bytes_length": 8,
+                            "courant": 0.115,
+                            "courant_formula": "VERATTI_calibrated_primary",
+                            "debug_positions": {
+                                "pos_0": 8,
+                                "pos_1_tension": 222,
+                                "pos_2": 0,
+                                "pos_3": 0,
+                                "pos_4_courant": 115,
+                                "pos_5": 0,
+                                "pos_6": 0,
+                                "pos_7": 11
+                            },
+                            "phase": "L3",
+                            "puissance": 0.0,
+                            "puissance_source": "default",
+                            "raw_bytes_hex": "08 de 00 00 73 00 00 0b",
+                            "success": true,
+                            "tension": null,
+                            "tension_formula": "failed",
+                            "timestamp": "2025-07-25T15:39:51.957157"
+                        }
+                    },
+                    "quality": {
+                        "desequilibre_courant_pct": 200.0
+                    },
+                    "success": true,
+                    "timestamp": "2025-07-25T15:39:51.956980",
+                    "totaux": {
+                        "courant_total": 0.115,
+                        "frequence": 50.0,
+                        "puissance_totale_calculee": 0.0,
+                        "tension_moyenne": 0.0
+                    },
+                    "tuya_direct": {
+                        "energie_totale_tuya": 0.93,
+                        "temperature": 3.6
+                    },
+                    "type_systeme": "triphase"
+                }
+            },
+            "device_id": "bf5d8b7661be13d099pekf",
+            "device_name": "Tủ điện VERATTI",
+            "enhanced_status": {
+                "device_info": {
+                    "assigné": true,
+                    "id": "f1b6ca8b-5515-43fc-b4f4-201ae17a2b44",
+                    "nom": "Tủ điện VERATTI",
+                    "type": "appareil_generique"
+                },
+                "from_cache": false,
+                "is_online": true,
+                "is_veratti_decoded": true,
+                "raw_status": [
+                    {
+                        "code": "total_forward_energy",
+                        "value": 93
+                    },
+                    {
+                        "code": "phase_a",
+                        "value": "CN4AAAAAAAA="
+                    },
+                    {
+                        "code": "phase_b",
+                        "value": "CN0AAAAAAAA="
+                    },
+                    {
+                        "code": "phase_c",
+                        "value": "CN4AAHMAAAs="
+                    },
+                    {
+                        "code": "fault",
+                        "value": 0
+                    },
+                    {
+                        "code": "switch_prepayment",
+                        "value": false
+                    },
+                    {
+                        "code": "energy_reset",
+                        "value": ""
+                    },
+                    {
+                        "code": "balance_energy",
+                        "value": 0
+                    },
+                    {
+                        "code": "charge_energy",
+                        "value": 0
+                    },
+                    {
+                        "code": "leakage_current",
+                        "value": 0
+                    },
+                    {
+                        "code": "switch",
+                        "value": true
+                    },
+                    {
+                        "code": "alarm_set_1",
+                        "value": "BQEAVQQBADI="
+                    },
+                    {
+                        "code": "alarm_set_2",
+                        "value": "AQEDIAMBAREEAQCvAgAAFAUAAAA="
+                    },
+                    {
+                        "code": "temp_current",
+                        "value": 36
+                    },
+                    {
+                        "code": "countdown_1",
+                        "value": 0
+                    },
+                    {
+                        "code": "cycle_time",
+                        "value": "EwAAAAAAAAAAAA=="
+                    },
+                    {
+                        "code": "random_time",
+                        "value": ""
+                    },
+                    {
+                        "code": "reverse_energy_total",
+                        "value": 0
+                    }
+                ],
+                "success": true,
+                "threshold_analysis": {
+                    "all_ok": true,
+                    "criticals": [],
+                    "warnings": []
+                },
+                "timestamp": "2025-07-25T15:39:51.953679",
+                "values": {
+                    "alarm_set_1": "BQEAVQQBADI=",
+                    "alarm_set_2": "AQEDIAMBAREEAQCvAgAAFAUAAAA=",
+                    "balance_energy": 0,
+                    "charge_energy": 0,
+                    "courant_fuite": 0,
+                    "cycle_time": "EwAAAAAAAAAAAA==",
+                    "defaut": 0,
+                    "energie_totale": 93,
+                    "energy_reset": "",
+                    "etat_switch": true,
+                    "minuterie": 0,
+                    "phase_a": "CN4AAAAAAAA=",
+                    "phase_b": "CN0AAAAAAAA=",
+                    "phase_c": "CN4AAHMAAAs=",
+                    "prepaiement": false,
+                    "random_time": "",
+                    "reverse_energy_total": 0,
+                    "temperature": 3.6,
+                    "veratti_decoded_data": {
+                        "decoder_version": "VERATTI_v3.0_CALIBRATED",
+                        "phases": {
+                            "L1": {
+                                "bytes_length": 8,
+                                "courant": 0.0,
+                                "courant_formula": "zero_current",
+                                "debug_positions": {
+                                    "pos_0": 8,
+                                    "pos_1_tension": 222,
+                                    "pos_2": 0,
+                                    "pos_3": 0,
+                                    "pos_4_courant": 0,
+                                    "pos_5": 0,
+                                    "pos_6": 0,
+                                    "pos_7": 0
+                                },
+                                "phase": "L1",
+                                "puissance": 0.0,
+                                "puissance_source": "default",
+                                "raw_bytes_hex": "08 de 00 00 00 00 00 00",
+                                "success": true,
+                                "tension": null,
+                                "tension_formula": "failed",
+                                "timestamp": "2025-07-25T15:39:51.957043"
+                            },
+                            "L2": {
+                                "bytes_length": 8,
+                                "courant": 0.0,
+                                "courant_formula": "zero_current",
+                                "debug_positions": {
+                                    "pos_0": 8,
+                                    "pos_1_tension": 221,
+                                    "pos_2": 0,
+                                    "pos_3": 0,
+                                    "pos_4_courant": 0,
+                                    "pos_5": 0,
+                                    "pos_6": 0,
+                                    "pos_7": 0
+                                },
+                                "phase": "L2",
+                                "puissance": 0.0,
+                                "puissance_source": "default",
+                                "raw_bytes_hex": "08 dd 00 00 00 00 00 00",
+                                "success": true,
+                                "tension": null,
+                                "tension_formula": "failed",
+                                "timestamp": "2025-07-25T15:39:51.957109"
+                            },
+                            "L3": {
+                                "bytes_length": 8,
+                                "courant": 0.115,
+                                "courant_formula": "VERATTI_calibrated_primary",
+                                "debug_positions": {
+                                    "pos_0": 8,
+                                    "pos_1_tension": 222,
+                                    "pos_2": 0,
+                                    "pos_3": 0,
+                                    "pos_4_courant": 115,
+                                    "pos_5": 0,
+                                    "pos_6": 0,
+                                    "pos_7": 11
+                                },
+                                "phase": "L3",
+                                "puissance": 0.0,
+                                "puissance_source": "default",
+                                "raw_bytes_hex": "08 de 00 00 73 00 00 0b",
+                                "success": true,
+                                "tension": null,
+                                "tension_formula": "failed",
+                                "timestamp": "2025-07-25T15:39:51.957157"
+                            }
+                        },
+                        "quality": {
+                            "desequilibre_courant_pct": 200.0
+                        },
+                        "success": true,
+                        "timestamp": "2025-07-25T15:39:51.956980",
+                        "totaux": {
+                            "courant_total": 0.115,
+                            "frequence": 50.0,
+                            "puissance_totale_calculee": 0.0,
+                            "tension_moyenne": 0.0
+                        },
+                        "tuya_direct": {
+                            "energie_totale_tuya": 0.93,
+                            "temperature": 3.6
+                        },
+                        "type_systeme": "triphase"
+                    }
+                }
+            },
+            "etat": null,
+            "is_online": true,
+            "recommendations": [
+                {
+                    "action": "Configurer la protection automatique",
+                    "message": "Protection automatique non activée",
+                    "type": "security"
+                },
+                {
+                    "action": "Configurer les horaires d'allumage/extinction",
+                    "message": "Programmation horaire non configurée",
+                    "type": "optimization"
+                }
+            ],
+            "success": true,
+            "timestamp": "2025-07-25T15:39:51.982738"
+        },
+        "site": {
+            "actif": true,
+            "adresse": "Mermoz",
+            "code_postal": null,
+            "id": "36b7e9a7-1bb3-4e7f-b705-df95312847ca",
+            "latitude": "14.70458730",
+            "longitude": "-17.47311600",
+            "nom_site": "Auchan Mermoz",
+            "ville": "Dakar"
+        },
+        "site_id": "36b7e9a7-1bb3-4e7f-b705-df95312847ca",
+        "statut_assignation": "assigne",
+        "tuya_device_id": "bf5d8b7661be13d099pekf",
+        "tuya_modele": "V4面板，兼容单相，可适配",
+        "tuya_nom_original": "Tủ điện VERATTI",
+        "tuya_version_firmware": "",
+        "type_appareil": "appareil_generique",
+        "type_systeme": "triphase"
+    },
+    "success": true
+}
