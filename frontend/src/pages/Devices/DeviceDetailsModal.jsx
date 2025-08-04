@@ -268,8 +268,8 @@ const DeviceDetailsModal = ({ device, onClose }) => {
               </div>
 
               {/* Mesures actuelles */}
-              {/* MODIFICATION 16: Utiliser deviceFullDetails.real_time_status.data pour les mesures */}
-               {deviceFullDetails?.real_time_status?.data && ( 
+              {/* MODIFICATION 16: Utiliser deviceFullDetails.real_time_data pour les mesures */}
+               {deviceFullDetails?.real_time_data?.data && ( 
                 <div className="measurements-section">
                   <h4>Mesures actuelles</h4>
                   {isTriphase ? (
@@ -280,13 +280,13 @@ const DeviceDetailsModal = ({ device, onClose }) => {
                         <div className="measurement-card phase">
                           <div className="measurement-content">
                             <h6>Tension</h6>
-                            <div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.tension_l1, 'V')}</div>
+                            <div className="measurement-value">{formatValue(deviceFullDetails.real_time_data.data?.tension_l1, 'V')}</div>
                           </div>
                         </div>
                         <div className="measurement-card phase">
                           <div className="measurement-content">
                             <h6>Courant</h6>
-                            <div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.courant_l1, 'A')}</div>
+                            <div className="measurement-value">{formatValue(deviceFullDetails.real_time_data.data?.courant_l1, 'A')}</div>
                           </div>
                         </div>
                       </div>
@@ -296,13 +296,13 @@ const DeviceDetailsModal = ({ device, onClose }) => {
                         <div className="measurement-card phase">
                           <div className="measurement-content">
                             <h6>Tension</h6>
-                            <div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.tension_l2, 'V')}</div>
+                            <div className="measurement-value">{formatValue(deviceFullDetails.real_time_data.data?.tension_l2, 'V')}</div>
                           </div>
                         </div>
                         <div className="measurement-card phase">
                           <div className="measurement-content">
                             <h6>Courant</h6>
-                            <div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.courant_l2, 'A')}</div>
+                            <div className="measurement-value">{formatValue(deviceFullDetails.real_time_data.data?.courant_l2, 'A')}</div>
                           </div>
                         </div>
                       </div>
@@ -312,13 +312,13 @@ const DeviceDetailsModal = ({ device, onClose }) => {
                         <div className="measurement-card phase">
                           <div className="measurement-content">
                             <h6>Tension</h6>
-                            <div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.tension_l3, 'V')}</div>
+                            <div className="measurement-value">{formatValue(deviceFullDetails.real_time_data.data?.tension_l3, 'V')}</div>
                           </div>
                         </div>
                         <div className="measurement-card phase">
                           <div className="measurement-content">
                             <h6>Courant</h6>
-                            <div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.courant_l3, 'A')}</div>
+                            <div className="measurement-value">{formatValue(deviceFullDetails.real_time_data.data?.courant_l3, 'A')}</div>
                           </div>
                         </div>
                       </div>
@@ -326,17 +326,17 @@ const DeviceDetailsModal = ({ device, onClose }) => {
                       <div className="measurement-card total">
                         <div className="measurement-content">
                           <h5>Puissance Totale</h5>
-                          <div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.puissance_totale, 'W')}</div>
+                          <div className="measurement-value">{formatValue(deviceFullDetails.real_time_data.data?.puissance_totale, 'W')}</div>
                         </div>
                       </div>
                     </div>
                   ) : (
                     // --- VUE POUR APPAREIL MONOPHASÉ (code original) ---
                     <div className="measurements-grid">
-                      <div className="measurement-card"><div className="measurement-icon">⚡</div><div className="measurement-content"><h5>Tension</h5><div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.tension, 'V')}</div></div></div>
-                      <div className="measurement-card"><div className="measurement-icon">🔌</div><div className="measurement-content"><h5>Courant</h5><div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.courant, 'A')}</div></div></div>
-                      <div className="measurement-card"><div className="measurement-icon">💡</div><div className="measurement-content"><h5>Puissance</h5><div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.puissance, 'W')}</div></div></div>
-                      <div className="measurement-card"><div className="measurement-icon">📊</div><div className="measurement-content"><h5>Énergie</h5><div className="measurement-value">{formatValue(deviceFullDetails.real_time_status.data?.energie, 'kWh')}</div></div></div>
+                      <div className="measurement-card"><div className="measurement-icon">⚡</div><div className="measurement-content"><h5>Tension</h5><div className="measurement-value">{formatValue(deviceFullDetails.real_time_data.data?.tension, 'V')}</div></div></div>
+                      <div className="measurement-card"><div className="measurement-icon">🔌</div><div className="measurement-content"><h5>Courant</h5><div className="measurement-value">{formatValue(deviceFullDetails.real_time_data.data?.courant, 'A')}</div></div></div>
+                      <div className="measurement-card"><div className="measurement-icon">💡</div><div className="measurement-content"><h5>Puissance</h5><div className="measurement-value">{formatValue(deviceFullDetails.real_time_data.data?.puissance, 'W')}</div></div></div>
+                      <div className="measurement-card"><div className="measurement-icon">📊</div><div className="measurement-content"><h5>Énergie</h5><div className="measurement-value">{formatValue(deviceFullDetails.real_time_data.data?.energie, 'kWh')}</div></div></div>
                     </div>
                   )}
                 </div>
@@ -365,7 +365,9 @@ const DeviceDetailsModal = ({ device, onClose }) => {
                           <th>Courant L1 (A)</th>
                           <th>Courant L2 (A)</th>
                           <th>Courant L3 (A)</th>
-                          <th>Puissance Totale (W)</th>
+                          <th>Puissance A L1 (W)</th>
+                          <th>Puissance A L2 (W)</th>
+                          <th>Puissance A L3 (W)</th>
                           <th>État</th>
                         </tr>
                       ) : (
@@ -374,6 +376,7 @@ const DeviceDetailsModal = ({ device, onClose }) => {
                           <th>Tension (V)</th>
                           <th>Courant (A)</th>
                           <th>Puissance (W)</th>
+                          <th>Energie (kWh)</th>
                           <th>État</th>
                         </tr>
                       )}
@@ -384,22 +387,25 @@ const DeviceDetailsModal = ({ device, onClose }) => {
                           <td>{formatDate(data.horodatage)}</td>
                           {isTriphase ? (
                             <>
-                              <td>{formatValue(data.tension_l1)}</td>
-                              <td>{formatValue(data.tension_l2)}</td>
-                              <td>{formatValue(data.tension_l3)}</td>
-                              <td>{formatValue(data.courant_l1)}</td>
-                              <td>{formatValue(data.courant_l2)}</td>
-                              <td>{formatValue(data.courant_l3)}</td>
-                              <td>{formatValue(data.puissance_totale)}</td>
+                              <td>{formatValue(data.donnees_triphase?.tensions?.L1, 'V')}</td>
+                              <td>{formatValue(data.donnees_triphase?.tensions?.L2, 'V')}</td>
+                              <td>{formatValue(data.donnees_triphase?.tensions?.L3, 'V')}</td>
+                              <td>{formatValue(data.donnees_triphase?.courants?.L1, 'A')}</td>
+                              <td>{formatValue(data.donnees_triphase?.courants?.L2, 'A')}</td>
+                              <td>{formatValue(data.donnees_triphase?.courants?.L3, 'A')}</td>
+                              <td>{formatValue(data.donnees_triphase?.puissances.active?.L1, 'W')}</td>
+                              <td>{formatValue(data.donnees_triphase?.puissances.active?.L2, 'W')}</td>
+                              <td>{formatValue(data.donnees_triphase?.puissances.active?.L3, 'W')}</td>
                             </>
                           ) : (
                             <>
                               <td>{formatValue(data.tension)}</td>
                               <td>{formatValue(data.courant)}</td>
                               <td>{formatValue(data.puissance)}</td>
+                              <td>{formatValue(data.energie)}</td>
                             </>
                           )}
-                          <td><span className={`state-badge ${data.etat_actuel_tuya ? 'on' : 'off'}`}>{data.etat_actuel_tuya ? 'ON' : 'OFF'}</span></td>
+                          <td><span className={`state-badge ${data.etat_switch ? 'on' : 'off'}`}>{data.etat_switch ? 'ON' : 'OFF'}</span></td>
                         </tr>
                       ))}
                     </tbody>
@@ -434,10 +440,10 @@ const DeviceDetailsModal = ({ device, onClose }) => {
                   <div className="info-item"><label>Puissance max:</label><span>{formatValue(deviceFullDetails?.seuil_puissance_max, 'W')}</span></div>
                 </div>
               </div>
-              {deviceFullDetails?.real_time_status?.data && ( 
+              {deviceFullDetails?.real_time_data?.data && ( 
                 <div className="info-section">
                   <h4>Données brutes Tuya</h4>
-                  <pre className="json-display">{JSON.stringify(deviceFullDetails.real_time_status.data, null, 2)}</pre>
+                  <pre className="json-display">{JSON.stringify(deviceFullDetails.real_time_data.data, null, 2)}</pre>
                 </div>
               )}
             </div>

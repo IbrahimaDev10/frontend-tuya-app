@@ -517,11 +517,8 @@ class AnalyseurTriphaseService:
         alertes = []
         device_id = appareil.id
         
-        tensions_composees = [
-            ('L1-L2', device_data.tension_l1_l2),
-            ('L2-L3', device_data.tension_l2_l3),
-            ('L3-L1', device_data.tension_l3_l1)
-        ]
+        tensions_composees = []
+        # Les tensions composées ont été supprimées
         
         seuil_surtension = 450  # Exemple pour 400V nominal
         

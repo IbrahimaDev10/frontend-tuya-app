@@ -81,12 +81,13 @@ def make_tuya_request_fixed(endpoint, access_id, access_secret, method, path, qu
         return {"success": False, "error": str(e)}
 
 class TuyaClient:
-    """🧠 TuyaClient INTELLIGENT - Plus jamais de soucis de pagination !"""
+    """🧠 TuyaClient INTELLIGENT - Gestion optimisée des tokens et de la pagination !"""
     
     def __init__(self):
         load_dotenv()
         
         self.access_token = None
+        self.refresh_token = None  # Propriété pour stocker le refresh_token
         self.token_expires_at = None
         self.uid = None
         self.is_connected = False
@@ -95,25 +96,28 @@ class TuyaClient:
         # Configuration depuis .env
         self.access_id = os.getenv('ACCESS_ID')
         self.access_secret = os.getenv('ACCESS_KEY')
-        self.endpoint = os.getenv('TUYA_ENDPOINT', 'https://openapi.tuyaeu.com')
+        self.endpoint = os.getenv('TUYA_ENDPOINT', 'https://openapi.tuyaeu.com' )
         
-        # ✅ NOUVEAU: Configuration intelligente de pagination
+        # ... (votre configuration de pagination reste ici) ...
         self.pagination_config = {
-            'page_size': 20,                    # Taille de page optimale
-            'max_pages_safe': 15,               # Limite sécurisée (300 appareils)
-            'max_pages_extended': 50,           # Limite étendue si nécessaire
-            'empty_pages_tolerance': 2,         # Tolérance pages vides consécutives
-            'duplicate_detection': True,        # Détection doublons
-            'intelligent_stop': True,           # Arrêt intelligent
-            'performance_mode': True            # Mode performance
+            'page_size': 20,
+            'max_pages_safe': 15,
+            'max_pages_extended': 50,
+            'empty_pages_tolerance': 2,
+            'duplicate_detection': True,
+            'intelligent_stop': True,
+            'performance_mode': True
         }
         
-        print(f"🧠 TuyaClient INTELLIGENT initialisé")
-        print(f"   📊 Config: {self.pagination_config['page_size']} par page, max {self.pagination_config['max_pages_safe']} pages sécurisées")
+        print(f"🧠 TuyaClient INTELLIGENT initialisé (avec gestion refresh_token)")
         print(f"   🔧 Access ID: {self.access_id[:10]}..." if self.access_id else "None")
-    
+
     def get_access_token(self):
-        """✅ STABLE: Token d'accès (ne pas modifier)"""
+        """
+        [MODIFIÉ] Obtient un NOUVEAU token d'accès par authentification complète.
+        À n'utiliser que pour la toute première connexion.
+        """
+        print("🔑 Authentification complète initiale...")
         try:
             if not self.access_id or not self.access_secret:
                 print("❌ ACCESS_ID ou ACCESS_KEY manquants dans .env")
@@ -131,6 +135,7 @@ class TuyaClient:
             if response.get('success') and response.get('result'):
                 result = response['result']
                 self.access_token = result['access_token']
+                self.refresh_token = result['refresh_token']  # <-- On stocke le refresh_token
                 self.uid = result['uid']
                 
                 expire_time = result.get('expire_time', 7200)
@@ -138,48 +143,104 @@ class TuyaClient:
                 
                 self.is_connected = True
                 self._connection_status = True
-                print(f"✅ Token obtenu et configuré")
+                print("✅ Token initial obtenu et configuré (avec refresh_token).")
                 return True
             else:
-                print(f"❌ Erreur récupération token: {response}")
+                print(f"❌ Erreur récupération token initial: {response}")
                 self.is_connected = False
                 self._connection_status = False
                 return False
                 
         except Exception as e:
-            print(f"❌ Erreur token: {e}")
+            print(f"❌ Erreur critique lors de l'authentification initiale: {e}")
             self.is_connected = False
             self._connection_status = False
             return False
-    
+
+    def refresh_access_token(self):
+        """
+        [NOUVEAU] Rafraîchit le token d'accès en utilisant le refresh_token.
+        C'est la méthode la plus efficace et rapide.
+        """
+        print("🔄 Le token a expiré. Tentative de rafraîchissement...")
+        
+        if not self.refresh_token:
+            print("⚠️ Aucun refresh_token disponible. Authentification complète nécessaire.")
+            return self.get_access_token()
+
+        try:
+            # L'endpoint de rafraîchissement est différent et plus simple.
+            path = f"/v1.0/token/{self.refresh_token}"
+            
+            # La signature pour le refresh est plus simple, elle n'inclut pas de token.
+            # Votre fonction `make_tuya_request_fixed` gère déjà cela.
+            response = make_tuya_request_fixed(
+                self.endpoint,
+                self.access_id,
+                self.access_secret,
+                "GET",
+                path
+            )
+
+            if response.get('success') and response.get('result'):
+                result = response['result']
+                self.access_token = result['access_token']
+                self.refresh_token = result['refresh_token'] # On reçoit aussi un nouveau refresh_token
+                
+                expire_time = result.get('expire_time', 7200)
+                self.token_expires_at = datetime.now() + timedelta(seconds=expire_time)
+                
+                self.is_connected = True
+                self._connection_status = True
+                print("✅ Token rafraîchi avec succès !")
+                return True
+            else:
+                print(f"❌ Échec du rafraîchissement du token: {response.get('msg', 'Erreur inconnue')}")
+                print("   Tentative de ré-authentification complète...")
+                # Si le refresh échoue (ex: révoqué), on tente une authentification complète.
+                return self.get_access_token()
+
+        except Exception as e:
+            print(f"❌ Erreur critique lors du rafraîchissement du token: {e}")
+            self.is_connected = False
+            self._connection_status = False
+            return False
+
     def is_token_valid(self):
-        """Vérifier validité token"""
+        """Vérifier validité token (avec une marge de sécurité de 5 minutes)."""
         if not self.access_token or not self.token_expires_at:
             return False
         return datetime.now() < (self.token_expires_at - timedelta(minutes=5))
-    
+
     def ensure_token(self):
-        """S'assurer qu'on a un token valide"""
+        """
+        [MODIFIÉ] S'assure qu'on a un token valide, en le rafraîchissant si besoin.
+        C'est la méthode à appeler avant chaque requête API.
+        """
         if not self.is_token_valid():
-            return self.get_access_token()
+            return self.refresh_access_token() # <-- Appelle maintenant la méthode de rafraîchissement
         return True
-    
+
     def is_connected_method(self):
-        """Vérifier si la connexion est active"""
+        """Vérifier si la connexion est active."""
         return self._connection_status and self.is_token_valid()
-    
+
     def reconnect_if_needed(self):
-        """Reconnecter si nécessaire"""
+        """
+        [MODIFIÉ] S'assure que la connexion est active et que le token est valide.
+        Utilise maintenant la logique de rafraîchissement.
+        """
         if not self.is_connected_method():
-            return self.get_access_token()
+            return self.ensure_token()
         return True
-    
-    # ✅ MÉTHODES DE COMPATIBILITÉ
+
+    # ✅ MÉTHODES DE COMPATIBILITÉ (inchangées)
     def connect(self, username=None, password=None, country_code=None, app_type=None):
         return self.get_access_token()
     
     def auto_connect_from_env(self):
         return self.get_access_token()
+
     
     # 🧠 PAGINATION INTELLIGENTE - LA RÉVOLUTION !
     def get_devices(self):
@@ -502,6 +563,47 @@ class TuyaClient:
                 
         except Exception as e:
             return {"success": False, "error": str(e)}
+
+
+    def get_mqtt_config(self):
+        # CETTE LIGNE et toutes les suivantes doivent être décalées
+        print("🔌 Récupération de la configuration MQTT...")
+        if not self.ensure_token():
+            return {"success": False, "error": "Token invalide, impossible de récupérer la configuration MQTT."}
+
+        link_id = f"mqtt-client-{int(time.time())}"
+
+        body = json.dumps({
+          "uid": self.uid,
+          "link_id": link_id,
+          "link_type": "mqtt",
+          "topics": "device",
+          "msg_encrypted_version": "1.0"
+        })
+
+        try:
+            response = make_tuya_request_fixed(
+                self.endpoint,
+                self.access_id,
+                self.access_secret,
+                "POST",
+                "/v1.0/iot-03/open-hub/access-config",
+                "",
+                body,
+                self.access_token
+            )
+
+            if response.get('success'):
+                print("✅ Configuration MQTT obtenue avec succès.")
+                return response
+            else:
+                error_msg = response.get('msg', 'Erreur inconnue')
+                print(f"❌ Erreur lors de la récupération de la configuration MQTT: {error_msg}")
+                return {"success": False, "error": error_msg, "details": response}
+
+        except Exception as e:
+            print(f"❌ Erreur critique lors de la récupération de la configuration MQTT: {e}")
+            return {"success": False, "error": str(e)}       
     
     def get_device_current_values(self, device_id):
         """🧠 VALEURS ACTUELLES - Version intelligente avec mapping optimal, détection triphasé et support base64"""
@@ -556,11 +658,11 @@ class TuyaClient:
 
                 # MAPPING INTELLIGENT
                 if code == "cur_voltage":
-                    values["tension"] = value / 100 if value not in (None, 0) else None
+                    values["tension"] = value / 100 if value is not None else None
                 elif code == "cur_current":
-                    values["courant"] = value / 1000 if value not in (None, 0) else None
+                    values["courant"] = value / 1000 if value is not None else None
                 elif code == "cur_power":
-                    values["puissance"] = value / 10 if value not in (None, 0) else None
+                    values["puissance"] = value / 100 if value is not None else None
                 elif code == "add_ele":
                     values["energie"] = value / 1000 if value is not None else None
                 elif code in ["switch", "switch_1", "switch_led"]:

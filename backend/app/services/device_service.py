@@ -1756,7 +1756,7 @@ class DeviceService:
             final_values = tuya_values
             is_veratti_decoded = False
             if device and device.type_systeme == 'triphase' or any(k in tuya_values for k in ['phase_a', 'Phase A grid detailed data']):
-                veratti_result = self.veratti_decoder.decode_full_veratti_triphasé(tuya_values)
+                veratti_result = self.veratti_decoder.decode_full_veratti_triphase(tuya_values)
                 if veratti_result.get('success'):
                     final_values = {**tuya_values, 'veratti_decoded_data': veratti_result}
                     is_veratti_decoded = True

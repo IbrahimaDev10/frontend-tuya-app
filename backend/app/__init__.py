@@ -61,6 +61,9 @@ def create_app():
     # Configure and start the scheduler
     setup_scheduler_with_all_jobs(app)
 
+    if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
+        setup_mqtt_listener(app)
+
     # Vérifier et afficher le statut de la configuration mail
     if config.is_mail_configured():
         app.logger.info("✅ Service mail configuré et activé")
@@ -111,6 +114,40 @@ def create_app():
 
     app.logger.info("🚀 Application SERTEC IoT initialisée avec succès")
     return app
+
+def setup_mqtt_listener(app):
+    """
+    Initialise et démarre le listener MQTT Tuya en arrière-plan.
+    """
+    app.logger.info("🚀 Initialisation du service temps réel (MQTT)...")
+    try:
+        # Importer les services nécessaires ici pour éviter les imports circulaires
+        from app.services.tuya_service import TuyaClient
+        from app.services.mqtt_listener import TuyaMQTTListener
+
+        # 1. Connexion à l'API Tuya
+        tuya_client = TuyaClient()
+        if not tuya_client.auto_connect_from_env():
+            app.logger.error("❌ [MQTT] Échec de la connexion à l'API Tuya. Le service temps réel est désactivé.")
+            return
+
+        # 2. Récupération de la configuration MQTT
+        config_response = tuya_client.get_mqtt_config()
+        if not config_response.get("success"):
+            app.logger.error(f"❌ [MQTT] Impossible d'obtenir la configuration. Service temps réel désactivé. Raison: {config_response.get('error')}")
+            return
+        
+        config = config_response['result']
+        secret_key = os.getenv('ACCESS_KEY')
+
+        # 3. Démarrage du listener dans un thread
+        listener = TuyaMQTTListener(config, secret_key)
+        listener.start()
+        app.logger.info("✅ Service temps réel (MQTT) démarré et à l'écoute en arrière-plan.")
+
+    except Exception as e:
+        app.logger.critical(f"❌ [MQTT] Erreur majeure lors du démarrage du service temps réel: {e}")
+
 
 def setup_scheduler_with_all_jobs(app):
     """

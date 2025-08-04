@@ -35,11 +35,7 @@ class DeviceData(db.Model):
     tension_l2 = db.Column(db.Float, nullable=True)  # Phase 2 vers Neutre
     tension_l3 = db.Column(db.Float, nullable=True)  # Phase 3 vers Neutre
     
-    # Tensions composées (Line to Line) - V
-    tension_l1_l2 = db.Column(db.Float, nullable=True)  # Phase 1 vers Phase 2
-    tension_l2_l3 = db.Column(db.Float, nullable=True)  # Phase 2 vers Phase 3
-    tension_l3_l1 = db.Column(db.Float, nullable=True)  # Phase 3 vers Phase 1
-    
+
     # Courants par phase - A
     courant_l1 = db.Column(db.Float, nullable=True)  # Courant Phase 1
     courant_l2 = db.Column(db.Float, nullable=True)  # Courant Phase 2
@@ -442,10 +438,10 @@ class DeviceData(db.Model):
             'type_systeme': self.type_systeme,  # ✅ NOUVEAU
             
             # Données de base (compatibilité)
-            'tension': float(self.tension) if self.tension else None,
-            'courant': float(self.courant) if self.courant else None,
-            'puissance': float(self.puissance) if self.puissance else None,
-            'energie': float(self.energie) if self.energie else None,
+            'tension': float(self.tension) if self.tension is not None else None,
+            'courant': float(self.courant) if self.courant is not None else None,
+            'puissance': float(self.puissance) if self.puissance is not None else None,
+            'energie': float(self.energie) if self.energie is not None else None,
             
             # Données environnementales
             'temperature': float(self.temperature) if self.temperature else None,
@@ -458,37 +454,34 @@ class DeviceData(db.Model):
         if self.is_triphase():
             data['donnees_triphase'] = {
                 'tensions': {
-                    'L1': float(self.tension_l1) if self.tension_l1 else None,
-                    'L2': float(self.tension_l2) if self.tension_l2 else None,
-                    'L3': float(self.tension_l3) if self.tension_l3 else None,
-                    'L1_L2': float(self.tension_l1_l2) if self.tension_l1_l2 else None,
-                    'L2_L3': float(self.tension_l2_l3) if self.tension_l2_l3 else None,
-                    'L3_L1': float(self.tension_l3_l1) if self.tension_l3_l1 else None,
+                    'L1': float(self.tension_l1) if self.tension_l1 is not None else None,
+                    'L2': float(self.tension_l2) if self.tension_l2 is not None else None,
+                    'L3': float(self.tension_l3) if self.tension_l3 is not None else None,
                 },
                 'courants': {
-                    'L1': float(self.courant_l1) if self.courant_l1 else None,
-                    'L2': float(self.courant_l2) if self.courant_l2 else None,
-                    'L3': float(self.courant_l3) if self.courant_l3 else None,
-                    'neutre': float(self.courant_neutre) if self.courant_neutre else None,
+                    'L1': float(self.courant_l1) if self.courant_l1 is not None else None,
+                    'L2': float(self.courant_l2) if self.courant_l2 is not None else None,
+                    'L3': float(self.courant_l3) if self.courant_l3 is not None else None,
+                    'neutre': float(self.courant_neutre) if self.courant_neutre is not None else None,
                 },
                 'puissances': {
                     'active': {
-                        'L1': float(self.puissance_l1) if self.puissance_l1 else None,
-                        'L2': float(self.puissance_l2) if self.puissance_l2 else None,
-                        'L3': float(self.puissance_l3) if self.puissance_l3 else None,
-                        'totale': float(self.puissance_totale) if self.puissance_totale else None,
+                        'L1': float(self.puissance_l1) if self.puissance_l1 is not None else None,
+                        'L2': float(self.puissance_l2) if self.puissance_l2 is not None else None,
+                        'L3': float(self.puissance_l3) if self.puissance_l3 is not None else None,
+                        'totale': float(self.puissance_totale) if self.puissance_totale is not None else None,
                     },
                     'reactive': {
-                        'L1': float(self.puissance_reactive_l1) if self.puissance_reactive_l1 else None,
-                        'L2': float(self.puissance_reactive_l2) if self.puissance_reactive_l2 else None,
-                        'L3': float(self.puissance_reactive_l3) if self.puissance_reactive_l3 else None,
-                        'totale': float(self.puissance_reactive_totale) if self.puissance_reactive_totale else None,
+                        'L1': float(self.puissance_reactive_l1) if self.puissance_reactive_l1 is not None else None,
+                        'L2': float(self.puissance_reactive_l2) if self.puissance_reactive_l2 is not None else None,
+                        'L3': float(self.puissance_reactive_l3) if self.puissance_reactive_l3 is not None else None,
+                        'totale': float(self.puissance_reactive_totale) if self.puissance_reactive_totale is not None else None,
                     },
                     'apparente': {
-                        'L1': float(self.puissance_apparente_l1) if self.puissance_apparente_l1 else None,
-                        'L2': float(self.puissance_apparente_l2) if self.puissance_apparente_l2 else None,
-                        'L3': float(self.puissance_apparente_l3) if self.puissance_apparente_l3 else None,
-                        'totale': float(self.puissance_apparente_totale) if self.puissance_apparente_totale else None,
+                        'L1': float(self.puissance_apparente_l1) if self.puissance_apparente_l1 is not None else None,
+                        'L2': float(self.puissance_apparente_l2) if self.puissance_apparente_l2 is not None else None,
+                        'L3': float(self.puissance_apparente_l3) if self.puissance_apparente_l3 is not None else None,
+                        'totale': float(self.puissance_apparente_totale) if self.puissance_apparente_totale is not None else None,
                     }
                 },
                 'facteurs_puissance': {
@@ -498,12 +491,12 @@ class DeviceData(db.Model):
                     'total': float(self.facteur_puissance_total) if self.facteur_puissance_total else None,
                 },
                 'energies': {
-                    'L1': float(self.energie_l1) if self.energie_l1 else None,
-                    'L2': float(self.energie_l2) if self.energie_l2 else None,
-                    'L3': float(self.energie_l3) if self.energie_l3 else None,
-                    'totale': float(self.energie_totale) if self.energie_totale else None,
+                    'L1': float(self.energie_l1) if self.energie_l1 is not None else None,
+                    'L2': float(self.energie_l2) if self.energie_l2 is not None else None,
+                    'L3': float(self.energie_l3) if self.energie_l3 is not None else None,
+                    'totale': float(self.energie_totale) if self.energie_totale is not None else None,
                 },
-                'frequence': float(self.frequence) if self.frequence else None
+                'frequence': float(self.frequence) if self.frequence is not None else None
             }
         
         # Ajouter calculs si demandés

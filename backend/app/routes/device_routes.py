@@ -1305,27 +1305,61 @@ def get_graphique_metric(current_user, device_id, metric_type):
         
         donnees_bdd = query.order_by(DeviceData.horodatage.asc()).all()
         
+        # Vérifier si l'appareil est triphasé
+        is_triphase = device.type_systeme == 'triphase'
+        
+        # Préparer les données en fonction du type d'appareil
+        if is_triphase and metric_type in ['tension', 'courant', 'puissance']:
+            # Pour les appareils triphasés, inclure les données par phase
+            donnees_formattees = []
+            for d in donnees_bdd:
+                data_point = {
+                    'timestamp': d.horodatage.isoformat(),
+                    'horodatage': int(d.horodatage.timestamp() * 1000),
+                    # Inclure la valeur principale pour compatibilité
+                    'value': float(getattr(d, field_name)) if getattr(d, field_name) is not None else None
+                }
+                
+                # Ajouter les données spécifiques à chaque phase
+                if metric_type == 'tension':
+                    data_point['tension_l1'] = float(d.tension_l1) if d.tension_l1 is not None else None
+                    data_point['tension_l2'] = float(d.tension_l2) if d.tension_l2 is not None else None
+                    data_point['tension_l3'] = float(d.tension_l3) if d.tension_l3 is not None else None
+                elif metric_type == 'courant':
+                    data_point['courant_l1'] = float(d.courant_l1) if d.courant_l1 is not None else None
+                    data_point['courant_l2'] = float(d.courant_l2) if d.courant_l2 is not None else None
+                    data_point['courant_l3'] = float(d.courant_l3) if d.courant_l3 is not None else None
+                elif metric_type == 'puissance':
+                    data_point['puissance_l1'] = float(d.puissance_l1) if d.puissance_l1 is not None else None
+                    data_point['puissance_l2'] = float(d.puissance_l2) if d.puissance_l2 is not None else None
+                    data_point['puissance_l3'] = float(d.puissance_l3) if d.puissance_l3 is not None else None
+                    data_point['puissance_totale'] = float(d.puissance_totale) if d.puissance_totale is not None else None
+                
+                donnees_formattees.append(data_point)
+        else:
+            # Pour les appareils monophasés, format standard
+            donnees_formattees = [
+                {
+                    'timestamp': d.horodatage.isoformat(),
+                    'value': float(getattr(d, field_name)) if getattr(d, field_name) is not None else None,
+                    'horodatage': int(d.horodatage.timestamp() * 1000)
+                } for d in donnees_bdd
+            ]
+        
         result = {
             'success': True,
             'device_info': {
                 'uuid': device.id,
                 'tuya_device_id': device.tuya_device_id,
-                'nom': device.nom_appareil
+                'nom': device.nom_appareil,
+                'type_systeme': device.type_systeme  # Ajouter le type de système pour le frontend
             },
             'metric_type': metric_type,
             'period': {
                 'start_time': int(start_dt.timestamp() * 1000),
                 'end_time': int(end_dt.timestamp() * 1000)
             },
-            # MODIFICATION ICI : Renommez 'data' en 'donnees_bdd'
-            'donnees_bdd': [
-                {
-                    'timestamp': d.horodatage.isoformat(),
-                    'value': float(getattr(d, field_name)) if getattr(d, field_name) else None,
-                    'horodatage': int(d.horodatage.timestamp() * 1000)
-                } for d in donnees_bdd
-            ],
-            # Ajoutez une clé 'donnees_tuya' vide si vous ne la remplissez pas côté backend
+            'donnees_bdd': donnees_formattees,
             'donnees_tuya': [], 
             'count': len(donnees_bdd),
             'from_cache': cache_hit

@@ -128,58 +128,102 @@ const ChartContainer = ({ device, chartType = 'tension', onClose }) => {
   const formatChartData = (data, type) => {
     const { donnees_bdd = [], donnees_tuya = [] } = data
 
-    // Combinaison des données BDD et Tuya
-    const allData = [
-      ...donnees_bdd.map(d => ({
-        x: new Date(d.timestamp),
-        y: d.value,
-        source: 'BDD'
-      })),
-      ...donnees_tuya.map(d => ({
-        x: new Date(d.timestamp),
-        y: d.value,
-        source: 'Tuya'
-      }))
-    ].sort((a, b) => a.x - b.x)
-
-    const bddData = donnees_bdd.map(d => ({
-      x: new Date(d.timestamp),
-      y: d.value
-    }))
-
-    const tuyaData = donnees_tuya.map(d => ({
-      x: new Date(d.timestamp),
-      y: d.value
-    }))
+    // Vérifier si l'appareil est triphasé en cherchant des données triphasées
+    const isTriphase = data.device_info?.type_systeme === 'triphase' || 
+                      device.type_systeme === 'triphase' || 
+                      donnees_bdd.some(d => d.donnees_triphase) ||
+                      donnees_bdd.some(d => d.tension_l1 !== undefined || d.courant_l1 !== undefined || d.puissance_l1 !== undefined)
 
     const config = getChartConfig(type)
 
-    return {
-      datasets: [
-        {
-          label: `${config.label} (BDD)`,
-          data: bddData,
-          borderColor: config.color,
-          backgroundColor: config.backgroundColor,
+    if (isTriphase && (type === 'tension' || type === 'courant' || type === 'puissance')) {
+      // Traitement pour les appareils triphasés
+      const phases = ['L1', 'L2', 'L3']
+      const phaseColors = {
+        L1: { color: 'rgb(255, 99, 132)', backgroundColor: 'rgba(255, 99, 132, 0.2)' },
+        L2: { color: 'rgb(54, 162, 235)', backgroundColor: 'rgba(54, 162, 235, 0.2)' },
+        L3: { color: 'rgb(75, 192, 192)', backgroundColor: 'rgba(75, 192, 192, 0.2)' }
+      }
+
+      // Créer un dataset pour chaque phase
+      const datasets = phases.map(phase => {
+        // Extraire les données pour cette phase
+        const phaseData = donnees_bdd.map(d => {
+          let value = null
+          const phaseLower = phase.toLowerCase()
+          
+          if (type === 'tension') {
+            value = d[`tension_${phaseLower}`] || 
+                   (d.donnees_triphase?.tensions && d.donnees_triphase.tensions[phase])
+          } else if (type === 'courant') {
+            value = d[`courant_${phaseLower}`] || 
+                   (d.donnees_triphase?.courants && d.donnees_triphase.courants[phase])
+          } else if (type === 'puissance') {
+            value = d[`puissance_${phaseLower}`] || 
+                   (d.donnees_triphase?.puissances?.active && d.donnees_triphase.puissances.active[phase])
+          }
+          
+          // Convertir les valeurs null ou undefined en 0 si nécessaire
+          // Mais garder null/undefined pour les points qui n'ont pas de données du tout
+          return {
+            x: new Date(d.timestamp || d.horodatage),
+            y: value !== null && value !== undefined ? parseFloat(value) : null
+          }
+        }).filter(d => d.x) // Filtrer uniquement les points sans horodatage valide
+
+        return {
+          label: `${config.label} ${phase}`,
+          data: phaseData,
+          borderColor: phaseColors[phase].color,
+          backgroundColor: phaseColors[phase].backgroundColor,
           tension: 0.4,
           pointRadius: 2,
           pointHoverRadius: 4,
           borderWidth: 2,
           cubicInterpolationMode: 'monotone'
-        },
-        ...(tuyaData.length > 0 ? [{
-          label: `${config.label} (Tuya)`,
-          data: tuyaData,
-          borderColor: config.secondaryColor,
-          backgroundColor: config.secondaryBackgroundColor,
-          tension: 0.4,
-          pointRadius: 2,
-          pointHoverRadius: 4,
-          borderWidth: 2,
-          borderDash: [5, 5],
-          cubicInterpolationMode: 'monotone'
-        }] : [])
-      ]
+        }
+      })
+
+      return { datasets }
+    } else {
+      // Traitement standard pour les appareils monophasés
+      const bddData = donnees_bdd.map(d => ({
+        x: new Date(d.timestamp || d.horodatage),
+        y: d.value !== null && d.value !== undefined ? parseFloat(d.value) : null
+      })).filter(d => d.x) // Filtrer uniquement les points sans horodatage valide
+
+      const tuyaData = donnees_tuya.map(d => ({
+        x: new Date(d.timestamp || d.horodatage),
+        y: d.value !== null && d.value !== undefined ? parseFloat(d.value) : null
+      })).filter(d => d.x) // Filtrer uniquement les points sans horodatage valide
+
+      return {
+        datasets: [
+          {
+            label: `${config.label} (BDD)`,
+            data: bddData,
+            borderColor: config.color,
+            backgroundColor: config.backgroundColor,
+            tension: 0.4,
+            pointRadius: 2,
+            pointHoverRadius: 4,
+            borderWidth: 2,
+            cubicInterpolationMode: 'monotone'
+          },
+          ...(tuyaData.length > 0 ? [{
+            label: `${config.label} (Tuya)`,
+            data: tuyaData,
+            borderColor: config.secondaryColor,
+            backgroundColor: config.secondaryBackgroundColor,
+            tension: 0.4,
+            pointRadius: 2,
+            pointHoverRadius: 4,
+            borderWidth: 2,
+            borderDash: [5, 5],
+            cubicInterpolationMode: 'monotone'
+          }] : [])
+        ]
+      }
     }
   }
 

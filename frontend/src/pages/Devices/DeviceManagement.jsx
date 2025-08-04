@@ -577,17 +577,7 @@ const DevicesTable = ({
                     </Button>
                   )}
                   
-                  {/* Bouton Configurer l'appareil */}
-                  {device.statut_assignation === 'assigne' && (isSuperadmin || currentUserRole === 'admin') && (
-                    <Button
-                      variant="text"
-                      size="small"
-                      onClick={() => onGoToConfigPage(device)}
-                      title="Configurer l'appareil"
-                    >
-                      ⚙️ Configurer
-                    </Button>
-                  )}
+                 
 
                   {/* Bouton Assigner (si non assigné et l'action est visible) */}
                   {showAssignActions && device.statut_assignation !== 'assigne' && currentUserRole !== 'user' && (
