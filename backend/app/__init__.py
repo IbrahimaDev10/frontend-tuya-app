@@ -415,6 +415,24 @@ def register_blueprints(app):
     except Exception as e:
         app.logger.error(f"❌ Erreur import blueprint devices: {e}")
 
+
+    # 📦 BLUEPRINT EXPORT DEVICES
+    try:
+        app.logger.info("🔍 Import du blueprint export devices...")
+        export_routes_file_path = os.path.join(routes_dir, 'device_export_routes.py')
+        if os.path.exists(export_routes_file_path):
+            spec = importlib.util.spec_from_file_location("app.routes.device_export_routes", export_routes_file_path)
+            export_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(export_module)
+            export_bp = export_module.export_bp
+            app.register_blueprint(export_bp)
+            app.logger.info("✅ Blueprint export devices enregistré sur /api/export")
+        else:
+            app.logger.error(f"❌ Fichier device_export_routes non trouvé: {export_routes_file_path}")
+    except Exception as e:
+        app.logger.error(f"❌ Erreur import blueprint export devices: {e}")
+
+
     # 🔧 ROUTES DE DEBUG ET SANTÉ
     @app.route('/debug/routes')
     def debug_routes():
