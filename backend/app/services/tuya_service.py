@@ -565,46 +565,6 @@ class TuyaClient:
             return {"success": False, "error": str(e)}
 
 
-    def get_mqtt_config(self):
-        # CETTE LIGNE et toutes les suivantes doivent être décalées
-        print("🔌 Récupération de la configuration MQTT...")
-        if not self.ensure_token():
-            return {"success": False, "error": "Token invalide, impossible de récupérer la configuration MQTT."}
-
-        link_id = f"mqtt-client-{int(time.time())}"
-
-        body = json.dumps({
-          "uid": self.uid,
-          "link_id": link_id,
-          "link_type": "mqtt",
-          "topics": "device",
-          "msg_encrypted_version": "1.0"
-        })
-
-        try:
-            response = make_tuya_request_fixed(
-                self.endpoint,
-                self.access_id,
-                self.access_secret,
-                "POST",
-                "/v1.0/iot-03/open-hub/access-config",
-                "",
-                body,
-                self.access_token
-            )
-
-            if response.get('success'):
-                print("✅ Configuration MQTT obtenue avec succès.")
-                return response
-            else:
-                error_msg = response.get('msg', 'Erreur inconnue')
-                print(f"❌ Erreur lors de la récupération de la configuration MQTT: {error_msg}")
-                return {"success": False, "error": error_msg, "details": response}
-
-        except Exception as e:
-            print(f"❌ Erreur critique lors de la récupération de la configuration MQTT: {e}")
-            return {"success": False, "error": str(e)}       
-    
     def get_device_current_values(self, device_id):
         """🧠 VALEURS ACTUELLES - Version intelligente avec mapping optimal, détection triphasé et support base64"""
         try:

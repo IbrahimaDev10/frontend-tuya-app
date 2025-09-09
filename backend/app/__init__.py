@@ -4,6 +4,7 @@ from flask_jwt_extended import JWTManager
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_mail import Mail
+from flask_socketio import SocketIO
 import os
 import time
 import logging
@@ -17,6 +18,7 @@ db = SQLAlchemy()
 migrate = Migrate()
 jwt = JWTManager()
 mail = Mail()
+socketio = SocketIO()
 
 # Instance globale du planificateur
 scheduler = BackgroundScheduler(daemon=True)
@@ -55,6 +57,10 @@ def create_app():
     # Initialize Flask-Mail
     mail.init_app(app)
 
+    # Le paramètre async_mode='threading' est souvent plus compatible avec les déploiements standards.
+    # 'eventlet' ou 'gevent' sont plus performants mais nécessitent une configuration serveur spécifique.
+    socketio.init_app(app, async_mode='threading', cors_allowed_origins="*")
+
     # Initialize Redis ultra-optimisé
     setup_redis(app)
 
@@ -62,7 +68,7 @@ def create_app():
     setup_scheduler_with_all_jobs(app)
 
     if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
-        setup_mqtt_listener(app)
+        setup_pulsar_listener(app) # On appelle notre nouvelle fonction
 
     # Vérifier et afficher le statut de la configuration mail
     if config.is_mail_configured():
@@ -94,6 +100,12 @@ def create_app():
     except ImportError as e:
         app.logger.warning(f"⚠️ Erreur import service mail: {e}")
 
+    try:
+        from . import socket_events
+        app.logger.info("✅ Événements WebSocket importés.")
+    except ImportError as e:
+        app.logger.warning(f"⚠️ Fichier socket_events.py non trouvé ou erreur d'import: {e}")    
+
     # Register blueprints - Version améliorée
     register_blueprints(app)
 
@@ -112,43 +124,37 @@ def create_app():
             except Exception as e:
                 app.logger.error(f"⚠️ Erreur création tables: {e}")
 
-    app.logger.info("🚀 Application SERTEC IoT initialisée avec succès")
+    app.logger.info("🚀 Application SERTEC IoT initialisée avec succès (avec support WebSocket)")
     return app
 
-def setup_mqtt_listener(app):
+def setup_pulsar_listener(app): # Renommez la fonction pour plus de clarté
     """
-    Initialise et démarre le listener MQTT Tuya en arrière-plan.
+    Initialise et démarre le listener PULSAR Tuya en arrière-plan.
     """
-    app.logger.info("🚀 Initialisation du service temps réel (MQTT)...")
+    app.logger.info("🚀 Initialisation du service temps réel (PULSAR)...")
     try:
-        # Importer les services nécessaires ici pour éviter les imports circulaires
-        from app.services.tuya_service import TuyaClient
-        from app.services.mqtt_listener import TuyaMQTTListener
+        # Importer le nouveau listener
+        from app.services.pulsar_listener import TuyaPulsarListener 
+        import os
 
-        # 1. Connexion à l'API Tuya
-        tuya_client = TuyaClient()
-        if not tuya_client.auto_connect_from_env():
-            app.logger.error("❌ [MQTT] Échec de la connexion à l'API Tuya. Le service temps réel est désactivé.")
-            return
-
-        # 2. Récupération de la configuration MQTT
-        config_response = tuya_client.get_mqtt_config()
-        if not config_response.get("success"):
-            app.logger.error(f"❌ [MQTT] Impossible d'obtenir la configuration. Service temps réel désactivé. Raison: {config_response.get('error')}")
-            return
+        # Récupérer vos identifiants depuis les variables d'environnement
+        ACCESS_ID = os.getenv('ACCESS_ID')
+        ACCESS_KEY = os.getenv('ACCESS_KEY')
         
-        config = config_response['result']
-        secret_key = os.getenv('ACCESS_KEY')
+        # Définir les constantes pour Pulsar
+        PULSAR_SERVER_URL = "pulsar+ssl://mqe.tuyaeu.com:7285" # Pour l'Europe
+        MQ_ENV = "event" # "event" pour la production
 
-        # 3. Démarrage du listener dans un thread
-        listener = TuyaMQTTListener(config, secret_key)
+        # Créer et démarrer le listener
+        listener = TuyaPulsarListener(ACCESS_ID, ACCESS_KEY, PULSAR_SERVER_URL, MQ_ENV, app)
         listener.start()
-        app.logger.info("✅ Service temps réel (MQTT) démarré et à l'écoute en arrière-plan.")
+        
+        app.logger.info("✅ Service temps réel (PULSAR) démarré et à l'écoute en arrière-plan.")
 
     except Exception as e:
-        app.logger.critical(f"❌ [MQTT] Erreur majeure lors du démarrage du service temps réel: {e}")
+        app.logger.critical(f"❌ [PULSAR] Erreur majeure lors du démarrage du service temps réel: {e}")
 
-
+        
 def setup_scheduler_with_all_jobs(app):
     """
     Configure et démarre le planificateur (APScheduler) avec TOUTES les tâches nécessaires,
@@ -198,7 +204,7 @@ def setup_scheduler_with_all_jobs(app):
         scheduler.add_job(
             func=sync_all_devices_job,
             trigger='interval',
-            minutes=5,
+            minutes=60,
             id='sync_all_devices_job',
             replace_existing=True,
             next_run_time=datetime.now() + timedelta(seconds=20)
@@ -207,7 +213,7 @@ def setup_scheduler_with_all_jobs(app):
         scheduler.start()
         app.logger.info("🚀 Planificateur (APScheduler) démarré avec 2 tâches actives.")
         app.logger.info("   - Tâche 1: Exécution des actions programmées (toutes les minutes).")
-        app.logger.info("   - Tâche 2: Synchronisation des données des appareils (toutes les 5 minutes).")
+        app.logger.info("   - Tâche 2: Synchronisation des données des appareils (toutes les 60 minutes).")
 
     except Exception as e:
         app.logger.error(f"❌ Erreur lors du démarrage du planificateur APScheduler: {e}")
@@ -414,6 +420,22 @@ def register_blueprints(app):
             app.logger.error(f"❌ Fichier device_routes non trouvé: {device_routes_file_path}")
     except Exception as e:
         app.logger.error(f"❌ Erreur import blueprint devices: {e}")
+
+    # 📊 BLUEPRINT EXPORT
+    try:
+        app.logger.info("🔍 Import du blueprint export...")
+        export_routes_file_path = os.path.join(routes_dir, 'export_routes.py')
+        if os.path.exists(export_routes_file_path):
+            spec = importlib.util.spec_from_file_location("app.routes.export_routes", export_routes_file_path)
+            export_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(export_module)
+            export_bp = export_module.export_bp
+            app.register_blueprint(export_bp)
+            app.logger.info("✅ Blueprint export enregistré sur /api/export")
+        else:
+            app.logger.warning(f"⚠️ Fichier export_routes non trouvé: {export_routes_file_path}")
+    except Exception as e:
+        app.logger.error(f"❌ Erreur import blueprint export: {e}")
 
     # 🔧 ROUTES DE DEBUG ET SANTÉ
     @app.route('/debug/routes')

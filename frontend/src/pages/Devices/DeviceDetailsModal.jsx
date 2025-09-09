@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import io from 'socket.io-client'
 import MultiChartView from '../../pages/DeviceCharts/MultiChartView'
 import QuickStatsPanel from '../../pages/DeviceCharts/QuickStatsPanel'
 import DeviceService from '../../services/deviceService'
@@ -27,11 +28,37 @@ const DeviceDetailsModal = ({ device, onClose }) => {
 
   useEffect(() => {
     if (device) {
-      // MODIFICATION 2: Appeler loadFullDeviceDetails au lieu de loadDeviceDetails
-      loadFullDeviceDetails() 
-      loadDeviceData()
+      loadFullDeviceDetails();
+      loadDeviceData();
+
+      // --- 👇 CONNEXION WEBSOCKET ---
+      // Se connecte au backend Flask
+      const socket = io('http://localhost:5000' ); // Mettez l'URL de votre backend
+
+      // Écoute de l'événement 'new_data'
+      socket.on('new_data', (newData) => {
+        // Vérifier si la nouvelle donnée concerne l'appareil affiché dans le modal
+        if (newData.appareil_id === device.id) {
+          console.log("🚀 Données temps réel reçues pour cet appareil !", newData);
+          
+          // Mettre à jour les "Mesures actuelles"
+          setDeviceFullDetails(prevDetails => ({
+            ...prevDetails,
+            real_time_data: { data: newData } // Mettre à jour les données temps réel
+          }));
+
+          // Ajouter la nouvelle donnée en haut de la liste de l'historique
+          setDeviceData(prevHistory => [newData, ...prevHistory]);
+        }
+      });
+
+      // --- NETTOYAGE ---
+      // Se déconnecter du socket lorsque le composant est démonté (le modal se ferme)
+      return () => {
+        socket.disconnect();
+      };
     }
-  }, [device])
+  }, [device]);
 
   // MODIFICATION 3: Nouvelle fonction pour charger tous les détails de l'appareil
   const loadFullDeviceDetails = async () => {

@@ -1,210 +1,180 @@
-# test_mqtt_v4.py
+# Fichier: test_final.py
+# Un script de test complet et autonome pour diagnostiquer la connexion Pulsar.
 
+import pulsar
 import os
+import logging
+import json
 import time
 import hashlib
-import hmac
-import json
-import requests
-import ssl
 import base64
-import struct
-import paho.mqtt.client as mqtt
-from dotenv import load_dotenv
 from Crypto.Cipher import AES
 
-# ==============================================================================
-#  PARTIE 1 : CLIENT TUYA AVEC APPEL API CORRIGÉ
-# ==============================================================================
+# --- Dépendances requises ---
+# pip install pulsar-client pycryptodome python-dotenv certifi
 
-class RobustTuyaClient:
-    def __init__(self):
+# --- Configuration du Logging ---
+# Met en place un logger clair pour voir ce qui se passe.
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - [TEST_FINAL] - %(message)s'
+)
+
+# --- Fonctions Utilitaires (regroupées ici pour la simplicité) ---
+
+def get_authentication(access_id: str, access_key: str):
+    """
+    Génère l'objet d'authentification Basic pour Pulsar, en utilisant
+    le formatage très spécifique requis par Tuya.
+    """
+    logging.info("Génération des identifiants d'authentification...")
+    md5_access_key = hashlib.md5(access_key.encode('utf-8')).hexdigest()
+    combined = access_id + md5_access_key
+    md5_combined = hashlib.md5(combined.encode('utf-8')).hexdigest()
+    password_part = md5_combined[8:24]
+    
+    username_str = f'{{"username":"{access_id}","password":'
+    password_str = f'"{password_part}"}}'
+    
+    logging.info("Identifiants formatés prêts pour l'envoi.")
+    return pulsar.AuthenticationBasic(username_str, password_str)
+
+def decrypt_message(pulsar_message, access_key: str) -> str:
+    """
+    Déchiffre un message Pulsar reçu de Tuya.
+    """
+    payload = pulsar_message.data().decode('utf-8')
+    decrypt_model = pulsar_message.properties().get("em", "aes_ecb") # "aes_ecb" par défaut
+
+    data_json = json.loads(payload)
+    encrypt_data = data_json['data']
+    key_bytes = access_key[8:24].encode('utf-8')
+    raw_bytes = base64.b64decode(encrypt_data)
+
+    logging.info(f"Déchiffrement du message avec la méthode : {decrypt_model}")
+
+    if decrypt_model == "aes_gcm":
+        nonce = raw_bytes[:12]
+        ciphertext = raw_bytes[12:-16]
+        auth_tag = raw_bytes[-16:]
+        aes_cipher = AES.new(key_bytes, AES.MODE_GCM, nonce)
+        return aes_cipher.decrypt_and_verify(ciphertext, auth_tag).decode('utf-8')
+    else: # AES/ECB
+        cipher = AES.new(key_bytes, AES.MODE_ECB)
+        decrypted_data = cipher.decrypt(raw_bytes)
+        # Nettoyage du padding et des caractères invalides
+        res_str = decrypted_data.decode('utf-8', errors='ignore')
+        return res_str.strip()
+
+def message_id(msg_id) -> str:
+    """
+    Formate l'ID du message Pulsar pour un affichage lisible.
+    """
+    return f"{msg_id.ledger_id()}:{msg_id.entry_id()}:{msg_id.partition()}:{msg_id.batch_index()}"
+
+# --- Point d'entrée principal du script ---
+
+def main():
+    """
+    Fonction principale qui se connecte à Pulsar et écoute les messages.
+    """
+    logging.info("--- DÉBUT DU TEST FINAL DE CONNEXION PULSAR ---")
+
+    # --- 1. Chargement de la configuration ---
+    try:
+        from dotenv import load_dotenv
         load_dotenv()
-        self.access_id = os.getenv('ACCESS_ID')
-        self.access_secret = os.getenv('ACCESS_KEY')
-        self.endpoint = os.getenv('TUYA_ENDPOINT', 'https://openapi.tuyaeu.com' )
-        self.access_token = None
-        self.uid = None
-        print(f"🔧 Client Tuya Robuste v4 initialisé avec Access ID: {self.access_id[:10]}...")
+        logging.info("Fichier .env chargé.")
+    except ImportError:
+        logging.warning("python-dotenv non trouvé. Lecture des variables système uniquement.")
 
-    def _calculate_sign(self, method, path, query=None, body=None, access_token=""):
-        timestamp = str(int(time.time() * 1000))
-        # Pour la signature, le body doit être une chaîne JSON vide si None, ou le dump du dict
-        body_str = json.dumps(body, separators=(',', ':')) if body else ""
+    ACCESS_ID = os.getenv('ACCESS_ID')
+    ACCESS_KEY = os.getenv('ACCESS_KEY')
+    PULSAR_SERVER_URL = "pulsar+ssl://mqe.tuyaeu.com:7285"
+    MQ_ENV = "event"
+
+    if not all([ACCESS_ID, ACCESS_KEY]):
+        logging.error("ERREUR: ACCESS_ID ou ACCESS_KEY non trouvé dans les variables d'environnement.")
+        logging.error("Veuillez créer un fichier .env ou exporter ces variables.")
+        return
+
+    logging.info(f"Configuration chargée pour ACCESS_ID: {ACCESS_ID[:10]}...")
+
+    # --- 2. Configuration SSL avec certifi ---
+    try:
+        import certifi
+        tls_trust_certs_file_path = certifi.where()
+        logging.info(f"Utilisation du fichier de certificats SSL : {tls_trust_certs_file_path}")
+    except ImportError:
+        tls_trust_certs_file_path = None
+        logging.warning("certifi non trouvé. Utilisation des certificats SSL du système.")
+
+    # --- 3. Boucle de connexion et de réception ---
+    client = None
+    try:
+        logging.info("Tentative de connexion au broker Pulsar...")
+        client = pulsar.Client(
+            PULSAR_SERVER_URL,
+            authentication=get_authentication(ACCESS_ID, ACCESS_KEY),
+            tls_trust_certs_file_path=tls_trust_certs_file_path,
+            operation_timeout_seconds=30 # Délai d'attente de 30 secondes
+        )
+
+        topic = f"persistent://{ACCESS_ID}/out/{MQ_ENV}"
+        subscription_name = f"{ACCESS_ID}-final-test-sub"
+
+        consumer = client.subscribe(
+            topic,
+            subscription_name,
+            consumer_type=pulsar.ConsumerType.Failover
+        )
         
-        content_hash = hashlib.sha256(body_str.encode('utf-8')).hexdigest()
-        
-        string_to_sign = f"{method}\n{content_hash}\n\n{path}"
-        if query:
-            query_str = "&".join(sorted([f"{k}={v}" for k, v in query.items()]))
-            string_to_sign += f"?{query_str}"
+        logging.info("======================================================")
+        logging.info("✅✅✅  CONNEXION RÉUSSIE ! ✅✅✅")
+        logging.info(f"À l'écoute sur le topic : {topic}")
+        logging.info("En attente de messages... (Pressez CTRL+C pour arrêter)")
+        logging.info("======================================================")
+
+        while True:
+            pulsar_message = consumer.receive()
+            msg_id = message_id(pulsar_message.message_id())
+            logging.info(f"\n--- MESSAGE REÇU (ID: {msg_id}) ---")
             
-        sign_str = self.access_id + access_token + timestamp + string_to_sign
-        signature = hmac.new(self.access_secret.encode('utf-8'), sign_str.encode('utf-8'), hashlib.sha256).hexdigest().upper()
+            try:
+                decrypted_msg = decrypt_message(pulsar_message, ACCESS_KEY)
+                logging.info("CONTENU DÉCHIFFRÉ :")
+                # Essayer de formater le JSON pour une meilleure lisibilité
+                try:
+                    parsed_json = json.loads(decrypted_msg)
+                    logging.info(json.dumps(parsed_json, indent=2))
+                except json.JSONDecodeError:
+                    logging.info(decrypted_msg)
+
+                consumer.acknowledge(pulsar_message)
+                logging.info("Message acquitté avec succès.")
+
+            except Exception as e:
+                logging.error(f"Erreur lors du traitement du message {msg_id}: {e}")
+                consumer.negative_acknowledge(pulsar_message)
+
+    except (pulsar.ConnectError, pulsar.AuthenticationError) as e:
+        logging.error("======================================================")
+        logging.error("❌❌❌ ÉCHEC DE LA CONNEXION ❌❌❌")
+        logging.error(f"Erreur : {e}")
+        logging.error("Causes possibles : Pare-feu, Antivirus, Problème réseau, ou Identifiants incorrects.")
+        logging.error("======================================================")
         
-        return timestamp, signature
-
-    def _make_request(self, method, path, query=None, body=None):
-        access_token = self.access_token or ""
-        timestamp, signature = self._calculate_sign(method, path, query, body, access_token)
+    except KeyboardInterrupt:
+        logging.info("\nArrêt demandé par l'utilisateur.")
         
-        headers = {
-            'client_id': self.access_id,
-            'sign': signature,
-            't': timestamp,
-            'sign_method': 'HMAC-SHA256',
-        }
-        if access_token:
-            headers['access_token'] = access_token
-            
-        url = f"{self.endpoint}{path}"
-        if query:
-            url += "?" + "&".join([f"{k}={v}" for k, v in query.items()])
-            
-        try:
-            if method == 'GET':
-                response = requests.get(url, headers=headers, timeout=10)
-            elif method == 'POST':
-                # --- CORRECTION CLÉ ---
-                # On utilise le paramètre 'json' qui gère tout pour nous.
-                # On ne met plus 'Content-Type' dans les headers, 'requests' le fait.
-                headers['Content-Type'] = 'application/json'
-                response = requests.post(url, headers=headers, json=body, timeout=10)
-            return response.json()
-        except Exception as e:
-            print(f"❌ Erreur critique de requête: {e}")
-            return {"success": False, "msg": str(e)}
+    except Exception as e:
+        logging.critical(f"Une erreur critique et inattendue est survenue : {e}", exc_info=True)
+        
+    finally:
+        if client:
+            client.close()
+            logging.info("Client Pulsar fermé proprement.")
+        logging.info("--- FIN DU TEST ---")
 
-    # Le reste de la classe est inchangé
-    def connect(self):
-        print("🔑 Tentative de connexion à l'API Tuya...")
-        response = self._make_request('GET', '/v1.0/token', query={'grant_type': 1})
-        if response and response.get('success'):
-            self.access_token = response['result']['access_token']
-            self.uid = response['result']['uid']
-            print("✅ Connexion API Tuya réussie.")
-            return True
-        else:
-            print(f"❌ Erreur de connexion API Tuya: {response.get('msg')}")
-            return False
-
-    def get_mqtt_config(self, target_uid):
-        print("🔄 [MQTT] Obtention de la configuration...")
-        body = {
-            "uid": target_uid,
-            "link_id": f"sertec-test-script-{int(time.time())}",
-            "topics": "device",
-            "msg_encrypted_version": "2.0"
-        }
-        return self._make_request('POST', '/v1.0/iot-03/open-hub/access-config', body=body)
-
-# ... (Copiez les classes VerattiDecoder et MqttTester du script v3 ici, elles n'ont pas besoin de changer) ...
-# ... Pour être sûr, voici le code complet :
-
-# ==============================================================================
-#  PARTIE 2 : DÉCODEUR VERATTI (INCHANGÉ)
-# ==============================================================================
-class VerattiDecoder:
-    def __init__(self, debug=True): self.debug = debug
-    def _debug_log(self, message: str):
-        if self.debug: print(f"[DECODEUR] {message}")
-    def decode_phase_simple_data(self, base64_data: str, phase_name: str):
-        try:
-            bytes_data = base64.b64decode(base64_data)
-            if len(bytes_data) < 4: return {'success': False, 'error': 'data_too_short'}
-            result = {'success': True, 'tension': round(struct.unpack('>H', bytes_data[0:2])[0] / 10.0, 1), 'courant': round(struct.unpack('>H', bytes_data[2:4])[0] / 1000.0, 3)}
-            result['puissance'] = round(result['tension'] * result['courant'] * 0.9, 2)
-            return result
-        except Exception as e: return {'success': False, 'error': str(e)}
-    def decode_phase_detailed_data(self, base64_data: str, phase_name: str):
-        try:
-            bytes_data = base64.b64decode(base64_data)
-            if len(bytes_data) < 14: return {'success': False, 'error': 'data_too_short'}
-            result = {'success': True, 'tension': round(struct.unpack('>H', bytes_data[0:2])[0] / 10.0, 1), 'courant': round(int.from_bytes(bytes_data[2:5], 'big') / 1000.0, 3), 'puissance': round(struct.unpack('>H', bytes_data[5:7])[0] / 10.0, 2)}
-            return result
-        except Exception as e: return {'success': False, 'error': str(e)}
-
-# ==============================================================================
-#  PARTIE 3 : LE CLIENT MQTT (INCHANGÉ)
-# ==============================================================================
-class MqttTester:
-    def __init__(self):
-        self.tuya_client = RobustTuyaClient()
-        self.decoder = VerattiDecoder()
-        self.access_secret_bytes = self.tuya_client.access_secret.encode('utf-8')
-        self.mqtt_client = None
-        self.config = {}
-    def _decrypt_message(self, encrypted_data: str):
-        try:
-            decoded_data = base64.b64decode(encrypted_data)
-            cipher = AES.new(self.access_secret_bytes[:16], AES.MODE_ECB)
-            decrypted_data = cipher.decrypt(decoded_data)
-            unpad = lambda s: s[:-ord(s[len(s)-1:])]
-            unpadded_data = unpad(decrypted_data)
-            return json.loads(unpadded_data.decode('utf-8'))
-        except Exception as e:
-            print(f"❌ Erreur de décryptage: {e}")
-            return None
-    def on_connect(self, client, userdata, flags, rc):
-        if rc == 0:
-            print("✅ [MQTT] Connecté avec succès au broker Tuya !")
-            topic = self.config["source_topic"]["device"]
-            client.subscribe(topic)
-            print(f"👂 [MQTT] En écoute sur le topic: {topic}")
-            print("\n" + "="*50 + "\n🚀 LE TEST EST ACTIF ! 🚀\n" + "="*50 + "\n")
-        else:
-            print(f"❌ [MQTT] Échec de la connexion, code de retour: {rc}")
-    def on_message(self, client, userdata, msg):
-        print("\n--- 📩 Message en Temps Réel Reçu ! ---")
-        try:
-            payload = json.loads(msg.payload.decode())
-            encrypted_data = payload.get("data")
-            if not encrypted_data: return
-            decrypted_payload = self._decrypt_message(encrypted_data)
-            if decrypted_payload:
-                print("📦 Données décryptées :\n" + json.dumps(decrypted_payload, indent=2))
-                for item in decrypted_payload.get("status", []):
-                    code, value = item.get("code"), item.get("value")
-                    if code in ['phase_a', 'phase_b', 'phase_c']:
-                        print(f"🔎 Décodage {code}: {self.decoder.decode_phase_simple_data(value, code)}")
-                    elif 'grid detailed data' in code:
-                        print(f"🔎 Décodage {code}: {self.decoder.decode_phase_detailed_data(value, code)}")
-        except Exception as e: print(f"❌ Erreur lors du traitement du message: {e}")
-        finally: print("--- Fin du Message ---")
-    def run_test(self):
-        if not self.tuya_client.connect(): return
-        target_uid = "bay1754056739178QqkC" 
-        print(f"✅ [INFO] Utilisation de l'UID forcé : {target_uid}")
-        response = self.tuya_client.get_mqtt_config(target_uid)
-        if not response or not response.get("success"):
-            print("❌ Impossible d'obtenir la configuration MQTT.")
-            print(f"   Réponse de l'API: {response}")
-            return
-        self.config = response["result"]
-        print("✅ [MQTT] Configuration obtenue.")
-        self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1, client_id=self.config["client_id"])
-        self.mqtt_client.username_pw_set(self.config["username"], self.config["password"])
-        self.mqtt_client.tls_set(cert_reqs=ssl.CERT_NONE)
-        self.mqtt_client.tls_insecure_set(True)
-        self.mqtt_client.on_connect = self.on_connect
-        self.mqtt_client.on_message = self.on_message
-        url = self.config["url"]
-        host, port = (url.split("://")[1].split(":")[0], int(url.split(":")[-1])) if "://" in url else (url.split(":")[0], int(url.split(":")[1]))
-        print(f"🔗 [MQTT] Connexion à {host} sur le port {port}...")
-        try:
-            self.mqtt_client.connect(host, port, 60)
-            self.mqtt_client.loop_forever()
-        except KeyboardInterrupt: print("\n🛑 Script arrêté.")
-        except Exception as e: print(f"❌ Erreur critique MQTT: {e}")
-        finally:
-            if self.mqtt_client.is_connected():
-                self.mqtt_client.disconnect()
-                print("🔌 [MQTT] Déconnecté.")
-
-# ==============================================================================
-#  PARTIE 4 : LANCEMENT DU TEST
-# ==============================================================================
 if __name__ == "__main__":
-    print("="*50 + "\n     SCRIPT DE TEST MQTT v4 (Appel API Corrigé)\n" + "="*50)
-    tester = MqttTester()
-    tester.run_test()
+    main()

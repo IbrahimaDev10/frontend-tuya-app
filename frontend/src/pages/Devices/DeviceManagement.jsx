@@ -12,6 +12,7 @@ import DropdownMenu from '../../components/DropdownMenu'
 import DeviceDetailsModal from './DeviceDetailsModal'
 import ConfirmModal from '../../components/ConfirmModal'
 import Toast from '../../components/Toast'
+import ExportModal from '../../components/ExportModal'
 import './DeviceManagement.css'
 import MultiChartView from '../DeviceCharts/MultiChartView'
 import AlertIndicator from '../../components/Alerts/AlertIndicator'
@@ -43,6 +44,7 @@ const [selectedDeviceForAlerts, setSelectedDeviceForAlerts] = useState(null)
 
   const [showChartsModal, setShowChartsModal] = useState(false)
   const [selectedDeviceForCharts, setSelectedDeviceForCharts] = useState(null)
+  const [showExportModal, setShowExportModal] = useState(false)
 
 
   useEffect(() => {
@@ -258,6 +260,11 @@ const handleShowCharts = (device) => {
     navigate(`/devices/config/${device.id}`);
   };
 
+  // Fonction pour ouvrir le modal d'export Excel
+  const handleShowExportModal = () => {
+    setShowExportModal(true);
+  };
+
   if (loading) {
     return (
       <Layout>
@@ -291,6 +298,12 @@ const handleShowCharts = (device) => {
               loading={syncing}
             >
               🔄 Synchroniser
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleShowExportModal}
+            >
+              📊 Exporter Rapport
             </Button>
             {isSuperadmin() && (
               <Button
@@ -440,6 +453,32 @@ const handleShowCharts = (device) => {
             message={toast.message}
             type={toast.type}
             onClose={() => setToast(null)}
+          />
+        )}
+
+        {/* Modal des graphiques */}
+        {showChartsModal && selectedDeviceForCharts && (
+          <MultiChartView
+            device={selectedDeviceForCharts}
+            onClose={() => setShowChartsModal(false)}
+          />
+        )}
+
+        {/* Modal des alertes */}
+        {showAlertsPanel && selectedDeviceForAlerts && (
+          <AlertPanel
+            device={selectedDeviceForAlerts}
+            onClose={() => setShowAlertsPanel(false)}
+          />
+        )}
+
+        {/* Modal d'export Excel */}
+        {showExportModal && (
+          <ExportModal
+            isOpen={showExportModal}
+            onClose={() => setShowExportModal(false)}
+            clientId={currentUser?.client_id || ''}
+            clientName={currentUser?.nom || ''}
           />
         )}
       </div>

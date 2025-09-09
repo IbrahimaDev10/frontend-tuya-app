@@ -450,28 +450,71 @@ const ChartContainer = ({ device, chartType = 'tension', onClose }) => {
     </div>
   )
 
-  function exportToCSV() {
-    if (!chartData || !chartData.datasets[0].data.length) return
+function exportToCSV() {
+  if (!chartData || chartData.datasets.length === 0 || chartData.datasets.every(d => d.data.length === 0)) {
+    alert("Aucune donnée à exporter.");
+    return;
+  }
 
-    const config = getChartConfig(chartType)
-    let csvContent = `Timestamp,${config.label} (${config.unit}),Source\n`
+  const config = getChartConfig(chartType);
+  const isTriphase = chartData.datasets.length > 1 && chartData.datasets.some(d => d.label.includes('L1'));
+
+  let csvContent = '';
+  let dataRows = new Map(); // Utiliser une Map pour regrouper les données par timestamp
+
+  if (isTriphase) {
+    // --- CAS TRIPHASÉ ---
+    const headers = ['Timestamp', `Valeur L1 (${config.unit})`, `Valeur L2 (${config.unit})`, `Valeur L3 (${config.unit})`];
+    csvContent += headers.join(',') + '\n';
+
+    // Parcourir chaque dataset (L1, L2, L3)
+    chartData.datasets.forEach(dataset => {
+      const phaseLabel = dataset.label.includes('L1') ? 'L1' : dataset.label.includes('L2') ? 'L2' : 'L3';
+      
+      dataset.data.forEach(point => {
+        const timestamp = point.x.toISOString();
+        if (!dataRows.has(timestamp)) {
+          // Initialiser la ligne avec des valeurs vides
+          dataRows.set(timestamp, { L1: '', L2: '', L3: '' });
+        }
+        // Remplir la valeur pour la phase correspondante
+        dataRows.get(timestamp)[phaseLabel] = point.y !== null ? point.y.toFixed(3) : '';
+      });
+    });
+
+    // Convertir la Map en lignes CSV
+    const sortedTimestamps = Array.from(dataRows.keys()).sort();
+    sortedTimestamps.forEach(timestamp => {
+      const rowData = dataRows.get(timestamp);
+      csvContent += `${timestamp},${rowData.L1},${rowData.L2},${rowData.L3}\n`;
+    });
+
+  } else {
+    // --- CAS MONOPHASÉ ---
+    const headers = ['Timestamp', `Valeur (${config.unit})`, 'Source'];
+    csvContent += headers.join(',') + '\n';
 
     chartData.datasets.forEach(dataset => {
+      const source = dataset.label; // ex: "Tension (BDD)"
       dataset.data.forEach(point => {
-        csvContent += `${point.x.toISOString()},${point.y},${dataset.label}\n`
-      })
-    })
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-    const link = document.createElement('a')
-    const url = URL.createObjectURL(blob)
-    link.setAttribute('href', url)
-    link.setAttribute('download', `${device.nom_appareil}_${chartType}_${timeRange}.csv`)
-    link.style.visibility = 'hidden'
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+        const timestamp = point.x.toISOString();
+        const value = point.y !== null ? point.y.toFixed(3) : '';
+        csvContent += `${timestamp},${value},"${source}"\n`;
+      });
+    });
   }
+
+  // Création et téléchargement du fichier
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  link.setAttribute('href', url);
+  link.setAttribute('download', `${device.nom_appareil}_${chartType}_${timeRange}.csv`);
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
 }
 
 export default ChartContainer
