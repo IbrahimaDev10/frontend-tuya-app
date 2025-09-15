@@ -24,9 +24,9 @@ def emit_new_device_data(data: dict):
         data (dict): Les données de l'appareil formatées en dictionnaire.
     """
     try:
-        device_id = data.get('appareil_id')
+        device_id = data.get('device_id')
         if not device_id:
-            log.warning("[WebSocket] Tentative d'émission sans appareil_id.")
+            log.warning("[WebSocket] Tentative d'émission sans device_id.")
             return
             
         log.info(f"🚀 [WebSocket] Émission de 'new_data' pour l'appareil {device_id}")

@@ -157,66 +157,74 @@ def setup_pulsar_listener(app): # Renommez la fonction pour plus de clarté
         
 def setup_scheduler_with_all_jobs(app):
     """
-    Configure et démarre le planificateur (APScheduler) avec TOUTES les tâches nécessaires,
-    y compris la synchronisation des données.
+    [HARMONISÉ] Configure et démarre le planificateur avec des tâches optimisées
+    pour la performance et l'économie d'appels API.
     """
     global scheduler
 
     if scheduler.running:
-        app.logger.info("✅ Planificateur (APScheduler) déjà en cours d'exécution.")
+        app.logger.info("✅ [SCHEDULER] Planificateur déjà en cours d'exécution.")
         return
 
-    # Tâche 1 : Exécution des actions programmées (allumage/extinction)
+    # --- Tâche 1 : Exécution des actions programmées (ON/OFF) ---
     def execute_scheduled_actions_job():
         with app.app_context():
-            app.logger.info("⏰ [APScheduler] Exécution des actions programmées (allumage/extinction)...")
+            app.logger.info("⏰ [SCHEDULER] Vérification des actions programmées...")
             try:
                 from app.services.schedule_executor_service import ScheduleExecutorService
-                executor = ScheduleExecutorService()
-                executor.execute_pending_actions_optimized()
-            except ImportError:
-                app.logger.warning("⚠️ [APScheduler] Service 'schedule_executor_service' non trouvé. Tâche ignorée.")
+                executor = ScheduleExecutorService() 
+                result = executor.execute_pending_actions_optimized()
+                if result.get("executed_count", 0) > 0:
+                    app.logger.info(f"  -> {result['executed_count']} action(s) programmée(s) exécutée(s).")
             except Exception as e:
-                app.logger.error(f"❌ [APScheduler] Erreur dans la tâche d'exécution des actions: {e}")
+                app.logger.error(f"❌ [SCHEDULER] Erreur dans la tâche d'exécution des actions: {e}", exc_info=True)
 
-    # Tâche 2 : Synchronisation des données de tous les appareils
-    def sync_all_devices_job():
+    # --- Tâche 2 : Synchronisation de la liste des appareils (Online/Offline) ---
+    def sync_device_list_job():
         with app.app_context():
-            app.logger.info("🔄 [APScheduler] Démarrage de la tâche de synchronisation des données des appareils...")
+            app.logger.info("🔄 [SCHEDULER] Synchronisation de la liste des appareils (online/offline)...")
             try:
                 from app.services.device_service import DeviceService
                 service = DeviceService()
-                service.sync_all_devices_data_to_db()
+                result = service.import_tuya_devices(use_cache=False, force_refresh=True, auto_delete_missing=False)
+                if result.get("success"):
+                    stats = result.get("statistiques", {})
+                    app.logger.info(f"  -> Sync liste OK. Nouveaux: {stats.get('nouveaux_appareils', 0)}, Mis à jour: {stats.get('appareils_mis_a_jour', 0)}.")
+                else:
+                    app.logger.error(f"  -> Échec de la synchronisation de la liste: {result.get('error')}")
             except Exception as e:
-                app.logger.error(f"❌ [APScheduler] Erreur dans la tâche de synchronisation des données: {e}")
+                app.logger.error(f"❌ [SCHEDULER] Erreur dans la tâche de synchronisation de la liste: {e}", exc_info=True)
 
     try:
-        # Ajout de la tâche pour les actions programmées (toutes les minutes)
+        # Ajout de la Tâche 1 (fréquente et légère)
         scheduler.add_job(
             func=execute_scheduled_actions_job,
             trigger='interval',
             minutes=1,
             id='execute_scheduled_actions_job',
+            name='Exécuter les programmations horaires',
             replace_existing=True
         )
 
-        # Ajout de la tâche de synchronisation des données (toutes les 5 minutes)
+        # Ajout de la Tâche 2 (moins fréquente, un seul appel API)
         scheduler.add_job(
-            func=sync_all_devices_job,
+            func=sync_device_list_job,
             trigger='interval',
-            minutes=60,
-            id='sync_all_devices_job',
+            minutes=10,
+            id='sync_device_list_job',
+            name='Synchroniser la liste des appareils (online/offline)',
             replace_existing=True,
-            next_run_time=datetime.now() + timedelta(seconds=20)
+            next_run_time=datetime.now() + timedelta(seconds=30)
         )
 
         scheduler.start()
-        app.logger.info("🚀 Planificateur (APScheduler) démarré avec 2 tâches actives.")
-        app.logger.info("   - Tâche 1: Exécution des actions programmées (toutes les minutes).")
-        app.logger.info("   - Tâche 2: Synchronisation des données des appareils (toutes les 60 minutes).")
+        app.logger.info("🚀 [SCHEDULER] Planificateur démarré avec des tâches optimisées.")
+        app.logger.info("   - Tâche 1: Exécution des programmations (toutes les minutes).")
+        app.logger.info("   - Tâche 2: Sync de la liste des appareils (toutes les 10 minutes).")
 
     except Exception as e:
-        app.logger.error(f"❌ Erreur lors du démarrage du planificateur APScheduler: {e}")
+        app.logger.error(f"❌ [SCHEDULER] Erreur lors du démarrage du planificateur: {e}", exc_info=True)
+
 
 def setup_redis(app):
     """Setup Redis ultra-optimisé pour performance - VERSION FINALE CORRIGÉE"""

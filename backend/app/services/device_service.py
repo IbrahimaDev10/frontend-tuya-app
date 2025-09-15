@@ -21,6 +21,9 @@ class DeviceService:
         """
         Initialise le DeviceService avec tous les composants, y compris le décodeur Veratti.
         """
+
+        self.logger = logging.getLogger(__name__)
+
         # --- Initialisation des clients de base ---
         self.tuya_client = TuyaClient()
         self.redis = get_redis()
@@ -109,7 +112,7 @@ class DeviceService:
     def _cache_devices_list(self, devices_data, ttl=None):
         """Cache liste optimisé"""
         try:
-            ttl = ttl or 120  # 2 minutes au lieu de 5
+            ttl = ttl or 300  # 2 minutes au lieu de 5
 
             cache_data = {
                 'devices': devices_data,
@@ -1085,66 +1088,17 @@ class DeviceService:
 
     def sync_all_devices_data_to_db(self):
         """
-        ✅ VERSION FINALE : Synchronise les données de TOUS les appareils actifs et en ligne,
-        qu'ils soient assignés ou non.
+        [OBSOLÈTE] Cette fonction est désactivée pour des raisons de performance et d'économie d'API.
+        La sauvegarde des données est maintenant gérée en temps réel par le service de messagerie Pulsar
+        via data_processor -> data_aggregator -> event_dispatcher.
         """
-        print(f"[{datetime.utcnow()}] 🚀 Démarrage de la synchronisation BDD pour tous les appareils actifs et en ligne...")
-        
-        try:
-            # 1. Récupérer TOUS les appareils actifs depuis la BDD
-            active_devices = Device.query.filter_by(actif=True).all()
-            
-            if not active_devices:
-                print("✅ Aucun appareil actif à synchroniser.")
-                return {"success": True, "message": "Aucun appareil actif à synchroniser."}
-                
-            print(f"📊 {len(active_devices)} appareils actifs trouvés. Vérification du statut en ligne...")
-            
-            success_count = 0
-            error_count = 0
-            skipped_offline = 0
+        self.logger.warning("⛔️ [OBSOLÈTE] Tentative d'appel à sync_all_devices_data_to_db. Cette fonction est désactivée.")
+        return {
+            "success": True,
+            "message": "Fonction obsolète et désactivée. La sauvegarde est maintenant temps réel.",
+            "status": "disabled"
+        }
 
-            # 2. Parcourir chaque appareil
-            for device in active_devices:
-                try:
-                    # On vérifie d'abord si l'appareil est en ligne
-                    status_result = self.get_device_status(device.tuya_device_id, use_cache=False)
-                    
-                    if not status_result.get("is_online", False):
-                        skipped_offline += 1
-                        print(f"⏭️  Appareil {device.nom_appareil} ignoré (hors ligne).")
-                        continue
-
-                    # Si l'appareil est bien en ligne, la sauvegarde a déjà été faite
-                    # et commitée à l'intérieur de get_device_status.
-                    # Il n'y a rien de plus à faire ici, juste compter le succès.
-                    print(f"✅ Données pour {device.nom_appareil} traitées et sauvegardées.")
-                    success_count += 1
-
-                except Exception as e:
-                    error_count += 1
-                    print(f"❌ Erreur majeure lors du traitement de {device.nom_appareil}: {e}")
-            
-            # 3. Rapport final
-            final_report = {
-                "success": True,
-                "message": "Synchronisation globale terminée.",
-                "summary": {
-                    "total_active_devices_found": len(active_devices),
-                    "processed_for_saving": success_count + error_count,
-                    "successful_saves": success_count,
-                    "skipped_offline": skipped_offline,
-                    "errors": error_count
-                }
-            }
-            print(f"✅ Synchronisation terminée : {success_count} sauvegardes, {skipped_offline} ignorés (hors ligne), {error_count} erreurs.")
-            return final_report
-
-        except Exception as e:
-            print(f"💥 Erreur critique dans la synchronisation globale : {e}")
-            import traceback
-            traceback.print_exc()
-            return {"success": False, "error": str(e)}
 
     def synchroniser_statuts_avec_tuya(self):
         """
@@ -1741,7 +1695,7 @@ class DeviceService:
                 cached_status = self._get_cached_device_status(tuya_device_id)
                 if cached_status:
                     age = (now - datetime.fromisoformat(cached_status.get('cached_at', now.isoformat()))).total_seconds()
-                    if age < 30:
+                    if age < 300:
                         return self._enhance_device_status(cached_status, tuya_device_id)
 
             # ... (La récupération et le décodage sont maintenant parfaits) ...
@@ -1770,24 +1724,7 @@ class DeviceService:
                 self._cache_device_status(tuya_device_id, full_status)
                 self._cache_device_data(tuya_device_id, final_values)
 
-            # ================== LA CORRECTION FINALE EST ICI ==================
-
-            # 5. SAUVEGARDE ET COMMIT GARANTI
-            if device and device.actif and device.is_assigne():
-                # Appel de la méthode qui prépare l'objet DeviceData
-                self._save_device_data_with_processing(device, full_status)
-                
-                try:
-                    # On force la sauvegarde en base de données ICI.
-                    db.session.commit()
-                    print(f"💾 COMMIT SUCCEEDED: Données pour {device.nom_appareil} enregistrées en base.")
-                except Exception as e:
-                    # En cas d'erreur, on annule pour ne pas corrompre la session
-                    db.session.rollback()
-                    logging.error(f"❌ COMMIT FAILED pour {device.nom_appareil}: {e}")
-            
-            # =================== FIN DE LA CORRECTION ===================
-            
+       
             # 6. Enrichissement final
             return self._enhance_device_status(full_status, tuya_device_id)
 

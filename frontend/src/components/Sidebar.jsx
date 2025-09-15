@@ -30,11 +30,7 @@ const Sidebar = ({ isOpen, onClose }) => {
           path: '/sites',
           active: window.location.pathname === '/sites'
         },
-        // {
-        //   icon: '🏢',
-        //   label: 'Gestion des Structures',
-        //   path: '/structures'
-        // },
+        
         {
           icon: '📱',
           label: 'Gestion des Appareils',
@@ -46,11 +42,7 @@ const Sidebar = ({ isOpen, onClose }) => {
           label: 'Rapports Globaux',
           path: '/reports'
         },
-        {
-          icon: '⚙️',
-          label: 'Configuration Système',
-          path: '/settings'
-        }
+        
       ]
     }
 
@@ -80,21 +72,8 @@ const Sidebar = ({ isOpen, onClose }) => {
           path: '/devices',
           active: window.location.pathname === '/devices'
         },
-        {
-          icon: '📋',
-          label: 'Inventaire',
-          path: '/inventory'
-        },
-        {
-          icon: '🔧',
-          label: 'Maintenance',
-          path: '/maintenance'
-        },
-        {
-          icon: '📈',
-          label: 'Statistiques',
-          path: '/statistics'
-        }
+        
+        
       ]
     }
 
@@ -111,17 +90,8 @@ const Sidebar = ({ isOpen, onClose }) => {
           icon: '🔄',
           label: 'Demandes Support',
           path: '/support-requests'
-        },
-        {
-          icon: '📋',
-          label: 'Historique',
-          path: '/history'
-        },
-        {
-          icon: '👤',
-          label: 'Mon Profil',
-          path: '/profile'
         }
+       
       ]
     }
 

@@ -305,6 +305,7 @@ const DeviceDetailsModal = ({ device, onClose }) => {
                           <th>Puissance A L1 (W)</th>
                           <th>Puissance A L2 (W)</th>
                           <th>Puissance A L3 (W)</th>
+                          <th>Consommation (kWh)</th>
                           <th>État</th>
                         </tr>
                       ) : (
@@ -333,6 +334,7 @@ const DeviceDetailsModal = ({ device, onClose }) => {
                               <td>{formatValue(data.donnees_triphase?.puissances.active?.L1, 'W')}</td>
                               <td>{formatValue(data.donnees_triphase?.puissances.active?.L2, 'W')}</td>
                               <td>{formatValue(data.donnees_triphase?.puissances.active?.L3, 'W')}</td>
+                              <td>{formatValue(data.donnees_triphase?.energie?.consommation, 'kWh')}</td>
                             </>
                           ) : (
                             <>
@@ -380,7 +382,7 @@ const DeviceDetailsModal = ({ device, onClose }) => {
               {deviceFullDetails?.real_time_data?.data && ( 
                 <div className="info-section">
                   <h4>Données brutes Tuya</h4>
-                  <pre className="json-display">{JSON.stringify(deviceFullDetails.real_time_data.data, null, 2)}</pre>
+                  <pre className="json-display">{JSON.stringify(deviceFullDetails.data, null, 2)}</pre>
                 </div>
               )}
             </div>

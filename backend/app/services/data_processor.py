@@ -1,20 +1,25 @@
-# app/services/data_processor.py
+# app/services/data_processor.py - VERSION FINALE HARMONISÉE
+
 import logging
 import json
 from datetime import datetime
 
-# Importations corrigées pour éviter la dépendance circulaire
-from .data_aggregator_service import aggregate_and_check_completeness
-from .event_dispatcher import dispatch_complete_snapshot
+# --- NOUVELLES IMPORTATIONS ---
+# On importe les deux fonctions distinctes de notre nouvel agrégateur.
+from .data_aggregator_service import aggregate_data, check_and_dispatch_if_complete
 
 log = logging.getLogger(__name__)
 
-# La fonction de décodage a été déplacée dans decoders.py
-
-# --- PROCESSEUR DE MESSAGES PRINCIPAL (SIMPLIFIÉ) ---
 def process_pulsar_message(raw_data: str):
+    """
+    [FINAL] Traite un message brut de Pulsar.
+    1. Agrège chaque morceau de donnée contenu dans le message.
+    2. À la fin du message, demande à l'agrégateur de vérifier si un snapshot est complet.
+    """
     log.info(f"➡️ [PROCESSEUR] Nouveau message brut reçu : {raw_data[:200]}...")
     try:
+        # --- 1. Nettoyage et parsing du JSON ---
+        # Cette partie est déjà correcte et robuste.
         last_brace_index = raw_data.rfind('}')
         if last_brace_index == -1:
             log.warning("[PROCESSEUR] Message rejeté : aucune accolade fermante trouvée.")
@@ -23,6 +28,7 @@ def process_pulsar_message(raw_data: str):
         clean_json_string = raw_data[:last_brace_index + 1]
         data = json.loads(clean_json_string)
 
+        # Normalisation du format du message
         if "bizData" in data:
             data["devId"] = data["bizData"].get("devId")
             data["status"] = data["bizData"].get("properties")
@@ -32,23 +38,34 @@ def process_pulsar_message(raw_data: str):
             return
 
         device_id = data.get('devId')
-        log.info(f"⚙️ [PROCESSEUR] Passage à l'agrégateur pour devId: {device_id}")
-
-        # On boucle sur chaque propriété et on l'envoie à l'agrégateur
         timestamp = data.get("ts") or int(datetime.utcnow().timestamp() * 1000)
+        
+        log.info(f"⚙️ [PROCESSEUR] Agrégation des données pour devId: {device_id}")
 
-        for status_update in data.get("status", []):
+        # --- 2. Agrégation des données ---
+        # On boucle sur chaque propriété dans le message et on l'ajoute au "pot commun" dans Redis.
+        # La fonction aggregate_data ne fait qu'ajouter, elle ne vérifie rien.
+        status_updates = data.get("status", [])
+        if not status_updates:
+            log.info(f"ℹ️ [PROCESSEUR] Message pour {device_id} ne contient aucune propriété à traiter. Ignoré.")
+            return
+            
+        for status_update in status_updates:
             code = status_update.get("code")
             value = status_update.get("value")
             
-            # Chaque morceau de donnée est envoyé à l'agrégateur
-            snapshot, is_complete = aggregate_and_check_completeness(device_id, code, value, timestamp)
-            
-            # Si l'agrégateur nous dit que le snapshot est complet...
-            if is_complete:
-                log.info(f"✅ Snapshot complet reçu de l'agrégateur pour {device_id}. Envoi au dispatcher.")
-                # ... on appelle la nouvelle fonction du dispatcher.
-                dispatch_complete_snapshot(device_id, snapshot)
+            if code:
+                aggregate_data(device_id, code, value, timestamp)
 
+        # --- 3. Vérification de la complétude ---
+        # C'est la nouvelle étape clé. Une fois que toutes les données du message ont été
+        # ajoutées, on demande à l'agrégateur de vérifier si, par hasard, le snapshot
+        # est maintenant complet.
+        log.debug(f"Vérification de la complétude pour {device_id} après traitement du message.")
+        check_and_dispatch_if_complete(device_id)
+
+    except json.JSONDecodeError as e:
+        log.error(f"❌ [PROCESSEUR] Erreur de décodage JSON: {e}. Données brutes: {raw_data[:300]}")
     except Exception as e:
         log.error(f"❌ [PROCESSEUR] Erreur inattendue: {e}", exc_info=True)
+
