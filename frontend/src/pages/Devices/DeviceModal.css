@@ -262,3 +262,141 @@
     grid-template-columns: 1fr; /* Une seule colonne sur mobile */
   }
 }
+/* ==========================================================================
+   3. CARTE TEMPS RÉEL (DeviceRealtimeCard)
+   ========================================================================== */
+
+/* Conteneur principal de la carte. On retire les bordures pour mieux l'intégrer. */
+.rt-card {
+  background-color: #f8f9fa; /* Fond gris clair, comme le body du modal */
+  border-radius: 8px; /* Bords arrondis cohérents */
+  padding: 1.25rem; /* 20px */
+}
+
+/* En-tête de la carte */
+.rt-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #e9ecef; /* Séparateur comme dans les autres sections */
+}
+
+.rt-card__title {
+  font-size: 1rem; /* 16px */
+  font-weight: 600;
+  color: #343a40; /* Couleur de texte standard */
+}
+
+/* Indicateur "LIVE" */
+.rt-card__live-indicator {
+  font-size: 0.75rem; /* 12px */
+  font-weight: 700;
+  color: #6b7280; /* Gris par défaut (inactif) */
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  transition: color 0.3s ease;
+}
+
+.rt-card__live-indicator.active {
+  color: #28a745; /* Vert vif quand les données arrivent */
+}
+
+/* Horodatage */
+.rt-card__timestamp {
+  font-size: 0.8rem; /* 13px */
+  color: #6b7280;
+  margin-top: 0.75rem;
+  text-align: left;
+}
+
+/* Corps de la carte */
+.rt-card__body {
+  margin-top: 1.5rem;
+}
+
+/* Grille pour les métriques */
+.rt-metrics-grid {
+  display: grid;
+  /* Crée 3 colonnes sur grand écran, 1 sur petit */
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1.5rem;
+}
+
+/* Pour le triphasé, on force une seule colonne pour plus de clarté */
+.rt-metrics-grid--triphase {
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+/* Style d'une métrique individuelle */
+.rt-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+/* Pour le triphasé, on met le label et la valeur sur la même ligne */
+.rt-metric--phase,
+.rt-metric--total {
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #e9ecef;
+}
+.rt-metrics-grid--triphase > .rt-metric:last-child {
+  border-bottom: none;
+}
+
+.rt-metric__label {
+  font-size: 0.875rem; /* 14px */
+  color: #64748b; /* Couleur de label standard */
+  font-weight: 500;
+}
+
+.rt-metric__values {
+  font-size: 1.25rem; /* 20px */
+  font-weight: 600;
+  color: #1e293b;
+  display: flex;
+  align-items: baseline; /* Aligne la valeur et l'unité */
+  gap: 0.25rem;
+}
+
+/* Style spécifique pour la puissance totale en triphasé */
+.rt-metric--total .rt-metric__label {
+  font-weight: 600;
+  color: #343a40;
+}
+.rt-metric--total .rt-metric__values {
+  font-size: 1.5rem; /* Plus grand pour le total */
+  color: #007bff; /* Couleur d'accentuation */
+}
+
+/* Style des valeurs et unités */
+.metric-value {
+  font-variant-numeric: tabular-nums; /* Assure que les chiffres ont la même largeur */
+}
+
+.metric-unit {
+  font-size: 0.8rem; /* Unité plus petite */
+  font-weight: 500;
+  color: #6b7280;
+  margin-left: 2px;
+}
+
+/* Valeur non disponible */
+.metric-value-na {
+  color: #adb5bd; /* Gris clair pour N/A */
+}
+
+/* Placeholder si aucune donnée n'est disponible */
+.rt-card-placeholder {
+  text-align: center;
+  padding: 2rem;
+  color: #6b7280;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+}

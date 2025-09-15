@@ -1,6 +1,7 @@
 import React from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './store/authContext'
+import { RealtimeProvider } from './store/realtimeContext'
 import ProtectedRoute from './routes/ProtectedRoute'
 import Login from './auth/Login'
 import ForgotPassword from './auth/ForgotPassword'
@@ -19,6 +20,7 @@ import './App.css'
 function App() {
   return (
     <AuthProvider>
+      <RealtimeProvider>
       <Router>
         <div className="App">
           <Routes>
@@ -90,6 +92,7 @@ function App() {
           </Routes>
         </div>
       </Router>
+      </RealtimeProvider>
     </AuthProvider>
   )
 }

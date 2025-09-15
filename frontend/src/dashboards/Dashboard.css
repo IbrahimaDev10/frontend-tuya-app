@@ -175,3 +175,102 @@
       gap: 0.5rem;
     }
   }
+
+  /* Styles pour les nouvelles sections du Dashboard */
+
+.dashboard-section {
+  background: white;
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07);
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.section-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: #333;
+}
+
+/* Grille pour la consommation par site */
+.site-consumption-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.5rem;
+}
+
+.site-card {
+  background-color: #f8f9fa;
+  border-radius: 10px;
+  padding: 1.25rem;
+  border: 1px solid #e9ecef;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.site-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.site-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.site-card-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #333;
+}
+
+.site-icon {
+  font-size: 1.5rem;
+}
+
+.site-card-body .site-power {
+  font-size: 2.25rem;
+  font-weight: 700;
+  color: #007bff;
+  margin-bottom: 0.25rem;
+}
+
+.site-card-body .site-device-count {
+  font-size: 0.9rem;
+  color: #666;
+}
+
+/* Styles pour le graphique */
+.chart-wrapper {
+  height: 350px; /* Hauteur fixe pour le graphique */
+  position: relative;
+}
+
+.time-range-buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.7);
+  color: #666;
+  font-weight: 500;
+  border-radius: 8px;
+}

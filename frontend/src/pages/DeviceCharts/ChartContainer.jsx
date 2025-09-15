@@ -257,7 +257,61 @@ const ChartContainer = ({ device, chartType = 'tension', onClose }) => {
     return configs[type] || configs.tension
   }
 
-  const chartOptions = {
+
+  const getDynamicYAxisLimits = (data, type) => {
+  if (!data || !data.datasets || data.datasets.every(ds => ds.data.length === 0)) {
+    // Si pas de données, retour aux valeurs par défaut
+    return { min: undefined, max: undefined, beginAtZero: true };
+  }
+
+  // 1. Aplatir toutes les valeurs 'y' de tous les datasets en une seule liste
+  const allYValues = data.datasets
+    .flatMap(dataset => dataset.data.map(point => point.y))
+    .filter(y => y !== null && y !== undefined); // Garder uniquement les valeurs valides
+
+  if (allYValues.length === 0) {
+    return { min: undefined, max: undefined, beginAtZero: true };
+  }
+
+  // 2. Trouver le min et le max réels des données
+  const dataMin = Math.min(...allYValues);
+  const dataMax = Math.max(...allYValues);
+
+  // 3. Définir des plages de zoom spécifiques par type de graphique
+  if (type === 'tension') {
+    // Pour la tension, on veut zoomer autour de la plage 200-250V
+    // On prend la valeur la plus basse et on retire une marge, mais on ne descend pas sous 180V
+    const suggestedMin = Math.max(180, Math.floor(dataMin - 10)); 
+    // On prend la valeur la plus haute et on ajoute une marge, mais on ne dépasse pas 270V
+    const suggestedMax = Math.min(270, Math.ceil(dataMax + 10));
+    
+    return {
+      min: suggestedMin,
+      max: suggestedMax,
+      beginAtZero: false // Très important pour permettre le zoom
+    };
+  }
+
+  if (type === 'courant' || type === 'puissance') {
+    // Pour le courant et la puissance, commencer à zéro est souvent pertinent,
+    // mais on veut que le max soit un peu au-dessus de la valeur la plus haute.
+    const suggestedMax = Math.ceil(dataMax * 1.15); // Ajoute une marge de 15%
+    return {
+      min: 0, // On commence à 0
+      max: suggestedMax > 5 ? suggestedMax : 5, // Si le max est très petit, on met au moins 5
+      beginAtZero: true
+    };
+  }
+
+  // Comportement par défaut si le type n'est pas reconnu
+  return { min: undefined, max: undefined, beginAtZero: true };
+};
+
+  const chartOptions = React.useMemo(() => {
+  const config = getChartConfig(chartType);
+  const yAxisLimits = getDynamicYAxisLimits(chartData, chartType);
+
+  return {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
@@ -266,7 +320,7 @@ const ChartContainer = ({ device, chartType = 'tension', onClose }) => {
       },
       title: {
         display: true,
-        text: `${getChartConfig(chartType).label} - ${device.nom_appareil}`,
+        text: `${config.label} - ${device.nom_appareil}`,
         font: {
           size: 16
         }
@@ -276,11 +330,10 @@ const ChartContainer = ({ device, chartType = 'tension', onClose }) => {
         intersect: false,
         callbacks: {
           label: function(context) {
-            const config = getChartConfig(chartType)
-            return `${context.dataset.label}: ${context.parsed.y.toFixed(2)} ${config.unit}`
+            return `${context.dataset.label}: ${context.parsed.y.toFixed(2)} ${config.unit}`;
           },
           title: function(tooltipItems) {
-            return new Date(tooltipItems[0].parsed.x).toLocaleString('fr-FR')
+            return new Date(tooltipItems[0].parsed.x).toLocaleString('fr-FR');
           }
         }
       }
@@ -303,10 +356,16 @@ const ChartContainer = ({ device, chartType = 'tension', onClose }) => {
       y: {
         title: {
           display: true,
-          text: `${getChartConfig(chartType).label} (${getChartConfig(chartType).unit})`
+          text: `${config.label} (${config.unit})`
         },
-        beginAtZero: true,
-        suggestedMin: 0
+        // --- 👇 C'EST ICI QUE LA MAGIE OPÈRE ---
+        beginAtZero: yAxisLimits.beginAtZero, // Contrôle si l'axe doit commencer à 0
+        min: yAxisLimits.min,                 // Définit la valeur minimale de l'axe
+        max: yAxisLimits.max,                 // Définit la valeur maximale de l'axe
+        ticks: {
+          // Améliore le nombre de lignes sur l'axe pour une meilleure lisibilité
+          stepSize: (chartType === 'tension') ? 10 : undefined, // Suggère un pas de 10V pour la tension
+        }
       }
     },
     interaction: {
@@ -314,7 +373,8 @@ const ChartContainer = ({ device, chartType = 'tension', onClose }) => {
       axis: 'x',
       intersect: false
     }
-  }
+  };
+}, [chartData, chartType, device.nom_appareil]);
 
   const handleCustomRangeApply = () => {
     if (customRange.start && customRange.end) {
