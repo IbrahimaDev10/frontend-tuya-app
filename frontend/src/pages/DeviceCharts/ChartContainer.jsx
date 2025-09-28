@@ -44,73 +44,98 @@ const ChartContainer = ({ device, chartType = 'tension', onClose }) => {
   }, [device, chartType, timeRange])
 
   const getTimeRangeTimestamps = () => {
-    const now = new Date()
-    let startTime, endTime = now.getTime()
+  const now = new Date();
+  let startTime, endTime = now.getTime();
+  let resolution = 'raw'; // Par défaut, on demande les données brutes
 
-    switch (timeRange) {
-      case '1h':
-        startTime = now.getTime() - (1 * 60 * 60 * 1000)
-        break
-      case '6h':
-        startTime = now.getTime() - (6 * 60 * 60 * 1000)
-        break
-      case '24h':
-        startTime = now.getTime() - (24 * 60 * 60 * 1000)
-        break
-      case '7d':
-        startTime = now.getTime() - (7 * 24 * 60 * 60 * 1000)
-        break
-      case '30d':
-        startTime = now.getTime() - (30 * 24 * 60 * 60 * 1000)
-        break
-      case 'custom':
-        if (customRange.start && customRange.end) {
-          startTime = new Date(customRange.start).getTime()
-          endTime = new Date(customRange.end).getTime()
+  switch (timeRange) {
+    case '1h':
+      startTime = now.getTime() - (1 * 60 * 60 * 1000);
+      resolution = 'raw'; // Pas besoin d'agréger sur 1h
+      break;
+    case '6h':
+      startTime = now.getTime() - (6 * 60 * 60 * 1000);
+      resolution = 'raw'; // Pas besoin d'agréger sur 6h
+      break;
+    case '24h':
+      startTime = now.getTime() - (24 * 60 * 60 * 1000);
+      resolution = 'hourly'; // ✅ On demande une moyenne par HEURE
+      break;
+    case '7d':
+      startTime = now.getTime() - (7 * 24 * 60 * 60 * 1000);
+      resolution = 'hourly'; // ✅ Une moyenne par HEURE est bien pour 7 jours
+      break;
+    case '30d':
+      startTime = now.getTime() - (30 * 24 * 60 * 60 * 1000);
+      resolution = 'daily'; // ✅ On demande une moyenne par JOUR
+      break;
+    case 'custom':
+      if (customRange.start && customRange.end) {
+        startTime = new Date(customRange.start).getTime();
+        endTime = new Date(customRange.end).getTime();
+        
+        // Logique pour choisir la résolution en mode personnalisé
+        const durationDays = (endTime - startTime) / (1000 * 60 * 60 * 24);
+        if (durationDays <= 2) {
+            resolution = 'raw';
+        } else if (durationDays <= 14) {
+            resolution = 'hourly';
         } else {
-          startTime = now.getTime() - (24 * 60 * 60 * 1000)
+            resolution = 'daily';
         }
-        break
-      default:
-        startTime = now.getTime() - (24 * 60 * 60 * 1000)
-    }
 
-    return { startTime, endTime }
+      } else {
+        // Fallback si custom est sélectionné mais pas de dates
+        startTime = now.getTime() - (24 * 60 * 60 * 1000);
+        resolution = 'hourly';
+      }
+      break;
+    default:
+      startTime = now.getTime() - (24 * 60 * 60 * 1000);
+      resolution = 'hourly';
   }
+
+  // On retourne tout ce dont on a besoin
+  return { startTime, endTime, resolution };
+};
 
   const loadChartData = async () => {
     try {
       setLoading(true)
       setError(null)
 
-      const { startTime, endTime } = getTimeRangeTimestamps()
-      let response
+      const { startTime, endTime, resolution } = getTimeRangeTimestamps();
+    let response;
 
-      switch (chartType) {
-        case 'tension':
-          response = await DeviceService.obtenirGraphiqueTension(
-            device.tuya_device_id,
-            startTime,
-            endTime
-          )
-          break
-        case 'courant':
-          response = await DeviceService.obtenirGraphiqueCourant(
-            device.id || device.tuya_device_id,
-            startTime,
-            endTime
-          )
-          break
-        case 'puissance':
-          response = await DeviceService.obtenirGraphiquePuissance(
-            device.id || device.tuya_device_id,
-            startTime,
-            endTime
-          )
-          break
-        default:
-          throw new Error('Type de graphique non supporté')
-      }
+    // 2. Passer la 'resolution' à l'appel de service
+    switch (chartType) {
+      case 'tension':
+        response = await DeviceService.obtenirGraphiqueTension(
+          device.tuya_device_id,
+          startTime,
+          endTime,
+          resolution // <-- LE PARAMÈTRE EST PASSÉ ICI !
+        );
+        break;
+      case 'courant':
+        response = await DeviceService.obtenirGraphiqueCourant(
+          device.id || device.tuya_device_id,
+          startTime,
+          endTime,
+          resolution // <-- ET ICI !
+        );
+        break;
+      case 'puissance':
+        response = await DeviceService.obtenirGraphiquePuissance(
+          device.id || device.tuya_device_id,
+          startTime,
+          endTime,
+          resolution // <-- ET LÀ !
+        );
+        break;
+      default:
+        throw new Error('Type de graphique non supporté');
+    }
 
       if (response.data.success) {
         setChartData(formatChartData(response.data, chartType))

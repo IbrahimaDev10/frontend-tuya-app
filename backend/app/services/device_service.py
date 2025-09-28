@@ -3110,6 +3110,71 @@ class DeviceService:
             print(f"❌ Erreur statistiques: {e}")
             return {"success": False, "error": str(e)}
 
+
+
+    # =================== Graphiques ===================
+
+    def obtenir_donnees_graphique(self, device_id, start_time, end_time, data_type, resolution='raw'):
+        """
+        Méthode unifiée pour récupérer les données de graphique, brutes ou agrégées.
+        
+        :param device_id: ID Tuya de l'appareil.
+        :param start_time: Timestamp de début (en ms).
+        :param end_time: Timestamp de fin (en ms).
+        :param data_type: 'tension', 'courant', 'puissance'.
+        :param resolution: 'raw', 'hourly', 'daily', 'monthly'.
+        """
+        try:
+            # Convertir les timestamps en objets datetime
+            start_dt = datetime.fromtimestamp(start_time / 1000)
+            end_dt = datetime.fromtimestamp(end_time / 1000)
+
+            # Trouver l'appareil dans notre base de données
+            device = Device.get_by_tuya_id(device_id)
+            if not device:
+                return {"success": False, "error": "Appareil non trouvé dans la base de données locale."}
+
+            # Utiliser la nouvelle méthode d'agrégation
+            # Note: on passe l'ID interne de l'appareil (UUID), pas l'ID Tuya
+            aggregated_data = DeviceData.get_aggregated_by_timerange(
+                device.id, start_dt, end_dt, resolution
+            )
+
+            # Formater les données pour le frontend
+            formatted_data = []
+            for row in aggregated_data:
+                # La requête renvoie un objet RowProxy, on le convertit en dict
+                row_dict = row._asdict() if hasattr(row, '_asdict') else row.__dict__
+                
+                # Renommer la clé d'horodatage pour la cohérence
+                if 'horodatage_agg' in row_dict:
+                    row_dict['horodatage'] = row_dict.pop('horodatage_agg')
+
+                # Pour le frontend, on a besoin de 'timestamp' et 'value' pour le monophasé
+                # ou des champs spécifiques pour le triphasé.
+                # On va renvoyer l'objet complet, le frontend saura le traiter.
+                formatted_data.append({
+                    'timestamp': row_dict['horodatage'].isoformat(),
+                    'value': row_dict.get(data_type), # Pour le monophasé
+                    **row_dict # Inclure tous les champs (tension_l1, etc.)
+                })
+
+            return {
+                "success": True,
+                "donnees_bdd": formatted_data,
+                "device_info": device.to_dict(),
+                "query_info": {
+                    "resolution": resolution,
+                    "points_returned": len(formatted_data)
+                }
+            }
+
+        except Exception as e:
+            self.logger.error(f"Erreur dans obtenir_donnees_graphique: {e}")
+            import traceback
+            traceback.print_exc()
+            return {"success": False, "error": str(e)}        
+
     # =================== MÉTHODES UTILITAIRES INTERNES ===================
 
     def _device_to_dict_enhanced(self, device):

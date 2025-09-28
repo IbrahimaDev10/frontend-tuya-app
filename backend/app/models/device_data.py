@@ -1,5 +1,7 @@
 from app import db
 from datetime import datetime
+from sqlalchemy import func, text
+from sqlalchemy.dialects import mysql, postgresql
 import uuid
 import math
 
@@ -535,7 +537,73 @@ class DeviceData(db.Model):
             cls.horodatage >= start_time,
             cls.horodatage <= end_time
         ).order_by(cls.horodatage.asc()).all()
-    
+
+    @classmethod
+    def get_aggregated_by_timerange(cls, device_id, start_time, end_time, resolution='raw'):
+        """
+        ✅ Récupérer les données agrégées (moyennées) pour une plage de temps.
+        VERSION COMPATIBLE PostgreSQL et MySQL.
+        """
+        if resolution == 'raw' or resolution is None:
+            # ... (la logique pour 'raw' ne change pas)
+            return cls.query.filter(
+                cls.appareil_id == device_id,
+                cls.horodatage >= start_time,
+                cls.horodatage <= end_time
+            ).order_by(cls.horodatage.asc()).all()
+
+        if resolution not in ['hourly', 'daily', 'monthly']:
+            raise ValueError("Résolution non supportée. Utilisez 'hourly', 'daily', ou 'monthly'.")
+
+        # --- 👇 MODIFICATION POUR LA COMPATIBILITÉ MYSQL ---
+
+        # Déterminer le dialecte de la base de données actuelle
+        dialect = db.engine.dialect.name
+
+
+        if dialect == 'mysql':
+            # Syntaxe pour MySQL avec DATE_FORMAT
+            if resolution == 'hourly':
+                trunc_expression = func.date_format(cls.horodatage, '%Y-%m-%d %H:00:00')
+            elif resolution == 'daily':
+                trunc_expression = func.date_format(cls.horodatage, '%Y-%m-%d')
+            else: # monthly
+                trunc_expression = func.date_format(cls.horodatage, '%Y-%m-01')
+        else: # Par défaut, on utilise la syntaxe PostgreSQL (ou standard SQL)
+            trunc_unit = 'hour' if resolution == 'hourly' else 'day' if resolution == 'daily' else 'month'
+            trunc_expression = func.date_trunc(trunc_unit, cls.horodatage)
+
+        # --- 👆 FIN DE LA MODIFICATION ---
+
+        # La suite de la requête reste la même, mais utilise notre expression dynamique
+        query = db.session.query(
+            trunc_expression.label('horodatage_agg'),
+            
+            func.avg(cls.tension).label('tension'),
+            func.avg(cls.courant).label('courant'),
+            func.avg(cls.puissance).label('puissance'),
+            
+            func.avg(cls.tension_l1).label('tension_l1'),
+            func.avg(cls.tension_l2).label('tension_l2'),
+            func.avg(cls.tension_l3).label('tension_l3'),
+            func.avg(cls.courant_l1).label('courant_l1'),
+            func.avg(cls.courant_l2).label('courant_l2'),
+            func.avg(cls.courant_l3).label('courant_l3'),
+            func.avg(cls.puissance_l1).label('puissance_l1'),
+            func.avg(cls.puissance_l2).label('puissance_l2'),
+            func.avg(cls.puissance_l3).label('puissance_l3')
+            
+        ).filter(
+            cls.appareil_id == device_id,
+            cls.horodatage >= start_time,
+            cls.horodatage <= end_time
+        ).group_by(
+            'horodatage_agg'
+        ).order_by(
+            'horodatage_agg'
+        )
+        
+        return query.all()
     @classmethod
     def count_by_system_type(cls, client_id=None):
         """Compter les données par type de système"""

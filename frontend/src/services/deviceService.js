@@ -96,28 +96,45 @@ async toggleAppareil(deviceId, etat = null) { // 'etat' est la valeur booléenne
 
   // =================== GRAPHIQUES ===================
   
-  async obtenirGraphiqueTension(deviceId, startTime = null, endTime = null) {
+  async obtenirGraphiqueTension(deviceId, startTime = null, endTime = null, resolution = 'raw') {
     const params = {};
-    if (startTime) params.start_time = startTime;
-    if (endTime) params.end_time = endTime;
+    if (startTime) params.startTime = startTime; // Note: le backend attend startTime et endTime
+    if (endTime) params.endTime = endTime;
+    if (resolution) params.resolution = resolution; // <-- ON AJOUTE LA RÉSOLUTION ICI
     
     return apiClient.get(`/devices/${deviceId}/graphique/tension`, { params });
   }
 
-  async obtenirGraphiqueCourant(deviceId, startTime = null, endTime = null) {
+  async obtenirGraphiqueCourant(deviceId, startTime = null, endTime = null, resolution = 'raw') {
     const params = {};
-    if (startTime) params.start_time = startTime;
-    if (endTime) params.end_time = endTime;
+    if (startTime) params.startTime = startTime;
+    if (endTime) params.endTime = endTime;
+    if (resolution) params.resolution = resolution; // <-- ET ICI
     
     return apiClient.get(`/devices/${deviceId}/graphique/courant`, { params });
   }
 
-  async obtenirGraphiquePuissance(deviceId, startTime = null, endTime = null) {
+  async obtenirGraphiquePuissance(deviceId, startTime = null, endTime = null, resolution = 'raw') {
     const params = {};
-    if (startTime) params.start_time = startTime;
-    if (endTime) params.end_time = endTime;
+    if (startTime) params.startTime = startTime;
+    if (endTime) params.endTime = endTime;
+    if (resolution) params.resolution = resolution; // <-- ET LÀ
     
     return apiClient.get(`/devices/${deviceId}/graphique/puissance`, { params });
+  }
+  // =================== DASHBOARD ===================
+  
+  async obtenirStatsDashboard() {
+    return apiClient.get('/devices/dashboard-stats');
+  }
+  async obtenirGraphiqueGlobalPuissance(startTime, endTime, resolution) {
+    const params = {
+      startTime,
+      endTime,
+      resolution
+    };
+    // Notez que l'URL n'a pas de deviceId, elle est fixe.
+    return apiClient.get('/devices/global/graphique/puissance', { params });
   }
 
   async obtenirStatutAppareil(deviceId) {

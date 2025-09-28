@@ -9,6 +9,8 @@ from app.models.device import Device
 from app.models.device_data import DeviceData
 from app.models.protection_event import ProtectionEvent
 from app.models.scheduled_action import ScheduledAction
+from sqlalchemy import func, desc
+from app.models.site import Site
 from datetime import datetime, timedelta
 from functools import wraps
 
@@ -1239,147 +1241,240 @@ def get_device_recommendations(current_user, device_id):
 @device_bp.route('/<device_id>/graphique/<metric_type>', methods=['GET'])
 @authenticated_user_required
 def get_graphique_metric(current_user, device_id, metric_type):
-    """Obtenir les données pour graphiques avec cache"""
+    """
+    ✅ OBTENIR LES DONNÉES POUR GRAPHIQUES AVEC AGRÉGATION DYNAMIQUE
+    VERSION FINALE : Gère les retours de type 'str' de MySQL.
+    """
     try:
+        # ... (le début de la fonction reste identique)
         device = find_device_by_id_or_tuya_id(device_id)
-        
-        if not device:
-            return jsonify({'error': f'Appareil non trouvé: {device_id}'}), 404
-        
-        if not device.peut_etre_vu_par_utilisateur(current_user):
-            return jsonify({'error': 'Accès interdit à cet appareil'}), 403
-        
-        # Paramètres temporels
-        start_time = request.args.get("start_time")
-        end_time = request.args.get("end_time")
-        use_cache = request.args.get('use_cache', 'true').lower() == 'true'
-        
-        if not start_time or not end_time:
-            # Par défaut : dernières 24h
-            end_dt = datetime.utcnow()
-            start_dt = end_dt - timedelta(hours=24)
-        else:
-            start_dt = datetime.fromtimestamp(int(start_time) / 1000)
-            end_dt = datetime.fromtimestamp(int(end_time) / 1000)
-        
-        # Mapper le type de métrique vers le champ de la base
-        metric_mapping = {
-            'tension': 'tension',
-            'courant': 'courant', 
-            'puissance': 'puissance',
-            'energie': 'energie',
-            'temperature': 'temperature'
-        }
-        
-        if metric_type not in metric_mapping:
-            return jsonify({'error': f'Type de métrique non supporté: {metric_type}'}), 400
-        
-        field_name = metric_mapping[metric_type]
-        
-        # ✅ NOUVEAU : Essayer d'utiliser cache service si disponible
-        cache_hit = False
-        if use_cache and device_service and hasattr(device_service, 'redis') and device_service.redis:
-            try:
-                import hashlib
-                cache_key = f"graph_data:{device.id}:{field_name}:{int(start_dt.timestamp())}:{int(end_dt.timestamp())}"
-                cache_hash = hashlib.md5(cache_key.encode()).hexdigest()
-                
-                cached_data = device_service.redis.get(f"graph:{cache_hash}")
-                if cached_data:
-                    import json
-                    cached_result = json.loads(cached_data)
-                    cached_result['from_cache'] = True
-                    return jsonify(cached_result), 200
-            except:
-                pass
-        
-        # Requête avec filtre dynamique
-        query = DeviceData.query.filter(
-            DeviceData.appareil_id == device.id,
-            DeviceData.horodatage >= start_dt,
-            DeviceData.horodatage <= end_dt
+        if not device: return jsonify({'error': f'Appareil non trouvé: {device_id}'}), 404
+        if not device.peut_etre_vu_par_utilisateur(current_user): return jsonify({'error': 'Accès interdit'}), 403
+
+        start_time_ms = request.args.get("startTime", type=int)
+        end_time_ms = request.args.get("endTime", type=int)
+        resolution = request.args.get("resolution", "raw")
+
+        if not start_time_ms or not end_time_ms: return jsonify({'error': 'startTime et endTime requis'}), 400
+
+        start_dt = datetime.fromtimestamp(start_time_ms / 1000)
+        end_dt = datetime.fromtimestamp(end_time_ms / 1000)
+
+        supported_metrics = ['tension', 'courant', 'puissance', 'energie', 'temperature']
+        if metric_type not in supported_metrics: return jsonify({'error': f'Métrique non supportée: {metric_type}'}), 400
+
+        donnees_agrégées = DeviceData.get_aggregated_by_timerange(
+            device.id, start_dt, end_dt, resolution
         )
-        
-        # Ajouter filtre pour que le champ ne soit pas NULL
-        query = query.filter(getattr(DeviceData, field_name).isnot(None))
-        
-        donnees_bdd = query.order_by(DeviceData.horodatage.asc()).all()
-        
-        # Vérifier si l'appareil est triphasé
-        is_triphase = device.type_systeme == 'triphase'
-        
-        # Préparer les données en fonction du type d'appareil
-        if is_triphase and metric_type in ['tension', 'courant', 'puissance']:
-            # Pour les appareils triphasés, inclure les données par phase
-            donnees_formattees = []
-            for d in donnees_bdd:
-                data_point = {
-                    'timestamp': d.horodatage.isoformat(),
-                    'horodatage': int(d.horodatage.timestamp() * 1000),
-                    # Inclure la valeur principale pour compatibilité
-                    'value': float(getattr(d, field_name)) if getattr(d, field_name) is not None else None
-                }
-                
-                # Ajouter les données spécifiques à chaque phase
-                if metric_type == 'tension':
-                    data_point['tension_l1'] = float(d.tension_l1) if d.tension_l1 is not None else None
-                    data_point['tension_l2'] = float(d.tension_l2) if d.tension_l2 is not None else None
-                    data_point['tension_l3'] = float(d.tension_l3) if d.tension_l3 is not None else None
-                elif metric_type == 'courant':
-                    data_point['courant_l1'] = float(d.courant_l1) if d.courant_l1 is not None else None
-                    data_point['courant_l2'] = float(d.courant_l2) if d.courant_l2 is not None else None
-                    data_point['courant_l3'] = float(d.courant_l3) if d.courant_l3 is not None else None
-                elif metric_type == 'puissance':
-                    data_point['puissance_l1'] = float(d.puissance_l1) if d.puissance_l1 is not None else None
-                    data_point['puissance_l2'] = float(d.puissance_l2) if d.puissance_l2 is not None else None
-                    data_point['puissance_l3'] = float(d.puissance_l3) if d.puissance_l3 is not None else None
-                    data_point['puissance_totale'] = float(d.puissance_totale) if d.puissance_totale is not None else None
-                
-                donnees_formattees.append(data_point)
-        else:
-            # Pour les appareils monophasés, format standard
-            donnees_formattees = [
-                {
-                    'timestamp': d.horodatage.isoformat(),
-                    'value': float(getattr(d, field_name)) if getattr(d, field_name) is not None else None,
-                    'horodatage': int(d.horodatage.timestamp() * 1000)
-                } for d in donnees_bdd
-            ]
-        
+
+        # --- 👇 LA CORRECTION EST DANS LA BOUCLE SUIVANTE ---
+        donnees_formattees = []
+        for row in donnees_agrégées:
+            row_dict = row._asdict() if hasattr(row, '_asdict') else row.__dict__
+            horodatage_brut = row_dict.get('horodatage_agg') or row_dict.get('horodatage')
+            if not horodatage_brut: continue
+
+            # 1. Vérifier le type de l'horodatage
+            if isinstance(horodatage_brut, datetime):
+                # Si c'est déjà un objet datetime, on le formate directement
+                timestamp_iso = horodatage_brut.isoformat()
+            else:
+                # Si c'est une chaîne (cas de MySQL), on la garde telle quelle.
+                # Le format 'YYYY-MM-DD HH:MM:SS' est déjà un format ISO partiel
+                # et sera correctement interprété par Chart.js.
+                # On ajoute 'Z' pour indiquer que c'est du temps UTC.
+                timestamp_iso = str(horodatage_brut).replace(" ", "T") + "Z"
+
+            # 2. Construire le point de donnée avec le timestamp formaté
+            point_de_donnee = {
+                'timestamp': timestamp_iso,
+                'value': float(row_dict.get(metric_type)) if row_dict.get(metric_type) is not None else None
+            }
+
+            # ... (la logique pour le triphasé reste la même)
+            if device.type_systeme == 'triphase' and metric_type in ['tension', 'courant', 'puissance']:
+                for i in range(1, 4):
+                    phase_key = f"{metric_type}_l{i}"
+                    point_de_donnee[phase_key] = float(row_dict.get(phase_key)) if row_dict.get(phase_key) is not None else None
+            
+            donnees_formattees.append(point_de_donnee)
+        # --- 👆 FIN DE LA CORRECTION ---
+
+        # La fin de la fonction reste identique
         result = {
             'success': True,
-            'device_info': {
-                'uuid': device.id,
-                'tuya_device_id': device.tuya_device_id,
-                'nom': device.nom_appareil,
-                'type_systeme': device.type_systeme  # Ajouter le type de système pour le frontend
-            },
+            'device_info': { 'uuid': device.id, 'tuya_device_id': device.tuya_device_id, 'nom': device.nom_appareil, 'type_systeme': device.type_systeme },
             'metric_type': metric_type,
-            'period': {
-                'start_time': int(start_dt.timestamp() * 1000),
-                'end_time': int(end_dt.timestamp() * 1000)
-            },
+            'query_info': { 'resolution_used': resolution, 'points_returned': len(donnees_formattees) },
+            'period': { 'start_time': start_time_ms, 'end_time': end_time_ms },
             'donnees_bdd': donnees_formattees,
-            'donnees_tuya': [], 
-            'count': len(donnees_bdd),
-            'from_cache': cache_hit
+            'donnees_tuya': [],
+            'count': len(donnees_formattees)
         }
-        
-        # ✅ NOUVEAU : Mettre en cache le résultat
-        if use_cache and device_service and hasattr(device_service, 'redis') and device_service.redis:
-            try:
-                import json
-                cache_ttl = 300  # 5 minutes
-                device_service.redis.setex(f"graph:{cache_hash}", cache_ttl, json.dumps(result))
-            except:
-                pass
         
         return jsonify(result), 200
         
     except Exception as e:
-        print(f"Erreur graphique {metric_type} {device_id}: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500
 
+# =================== Dashboard Stats ===================
+
+@device_bp.route('/dashboard-stats', methods=['GET'])
+@admin_required # Accessible aux Admins et SuperAdmins
+def get_dashboard_stats(current_user):
+    """
+    Fournit un résumé complet des statistiques pour les tableaux de bord.
+    Filtre automatiquement par client pour les Admins.
+    """
+    try:
+        # Définir la base de la requête en fonction du rôle
+        if current_user.is_superadmin():
+            base_query = DeviceData.query
+            device_base_query = Device.query
+        else: # Pour un Admin, on filtre par son client_id
+            base_query = DeviceData.query.filter(DeviceData.client_id == current_user.client_id)
+            device_base_query = Device.query.filter(Device.client_id == current_user.client_id)
+
+        # --- 1. Calcul de la puissance totale actuelle ---
+        # On prend la dernière entrée de chaque appareil et on somme leur puissance
+        # C'est une requête complexe, une approximation est souvent suffisante pour un dashboard.
+        # Approximation : somme des puissances des mesures des 5 dernières minutes.
+        five_minutes_ago = datetime.utcnow() - timedelta(minutes=5)
+        
+        # On récupère la dernière mesure de puissance pour chaque appareil actif
+        subquery = db.session.query(
+            DeviceData.appareil_id,
+            func.max(DeviceData.horodatage).label('max_horodatage')
+        ).filter(DeviceData.horodatage > five_minutes_ago).group_by(DeviceData.appareil_id).subquery()
+
+        recent_power_data = db.session.query(func.sum(DeviceData.puissance_totale)).join(
+            subquery,
+            (DeviceData.appareil_id == subquery.c.appareil_id) & (DeviceData.horodatage == subquery.c.max_horodatage)
+        ).scalar()
+        
+        current_total_power = recent_power_data or 0
+
+        # --- 2. Pic de consommation sur 24h ---
+        twenty_four_hours_ago = datetime.utcnow() - timedelta(hours=24)
+        peak_power_24h_query = base_query.filter(DeviceData.horodatage >= twenty_four_hours_ago)
+        peak_power_24h = db.session.query(func.max(peak_power_24h_query.subquery().c.puissance_totale)).scalar()
+
+        # --- 3. Site le plus énergivore (actuellement) ---
+        # On regroupe les dernières mesures par site
+        power_by_site = db.session.query(
+            Site.nom_site,
+            func.sum(DeviceData.puissance_totale).label('total_power')
+        ).join(Device, Device.id == DeviceData.appareil_id)\
+         .join(Site, Site.id == Device.site_id)\
+         .join(subquery, (DeviceData.appareil_id == subquery.c.appareil_id) & (DeviceData.horodatage == subquery.c.max_horodatage))\
+         .group_by(Site.nom_site)\
+         .order_by(desc('total_power'))\
+         .first()
+
+        most_consuming_site = {
+            'name': power_by_site[0] if power_by_site else '--',
+            'power': float(power_by_site[1]) if power_by_site else 0
+        }
+
+        # --- 4. Statistiques pour les dashboards Admin et Client ---
+        total_devices = device_base_query.filter(Device.actif == True).count()
+        online_devices = device_base_query.filter(Device.actif == True, Device.en_ligne == True).count()
+        
+        stats = {
+            # Pour SuperAdmin
+            'current_total_power': float(current_total_power),
+            'peak_power_24h': float(peak_power_24h) if peak_power_24h else 0,
+            'most_consuming_site': most_consuming_site,
+            
+            # Pour Admin/Client
+            'total_devices': total_devices,
+            'online_devices': online_devices,
+            'offline_devices': total_devices - online_devices,
+        }
+
+        # Pour SuperAdmin, on ajoute le nombre de clients
+        if current_user.is_superadmin():
+            from app.models.client import Client
+            stats['total_clients'] = Client.query.filter(Client.actif == True).count()
+
+        return jsonify({'success': True, 'stats': stats}), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': f'Erreur serveur: {str(e)}'}), 500
+
+@device_bp.route('/global/graphique/puissance', methods=['GET'])
+@admin_required # Assurez-vous que seuls les admins/superadmins peuvent y accéder
+def get_global_graph_puissance(current_user):
+    """
+    Fournit les données agrégées de la consommation de puissance GLOBALE
+    pour le graphique du tableau de bord principal.
+    """
+    try:
+        # 1. Récupérer les paramètres de temps et de résolution
+        start_time_ms = request.args.get("startTime", type=int)
+        end_time_ms = request.args.get("endTime", type=int)
+        resolution = request.args.get("resolution", "hourly") # 'hourly' par défaut pour un graphique global
+
+        if not start_time_ms or not end_time_ms:
+            return jsonify({'error': 'startTime et endTime requis'}), 400
+
+        start_dt = datetime.fromtimestamp(start_time_ms / 1000)
+        end_dt = datetime.fromtimestamp(end_time_ms / 1000)
+
+        # 2. Déterminer le dialecte et l'expression de troncature (comme avant)
+        dialect = db.engine.dialect.name
+        if dialect == 'mysql':
+            format_str = '%Y-%m-%d %H:00:00' if resolution == 'hourly' else '%Y-%m-%d'
+            trunc_expression = func.date_format(DeviceData.horodatage, format_str)
+        else: # PostgreSQL
+            trunc_unit = 'hour' if resolution == 'hourly' else 'day'
+            trunc_expression = func.date_trunc(trunc_unit, DeviceData.horodatage)
+
+        # 3. Construire la requête d'agrégation GLOBALE
+        # La différence clé : on ne filtre PAS par appareil_id, et on fait une SOMME.
+        query = db.session.query(
+            trunc_expression.label('horodatage_agg'),
+            func.sum(DeviceData.puissance_totale).label('total_power') # <-- On fait une SOMME
+        ).filter(
+            DeviceData.horodatage >= start_dt,
+            DeviceData.horodatage <= end_dt
+        ).group_by('horodatage_agg').order_by('horodatage_agg')
+        
+        # Si l'utilisateur est un Admin (pas SuperAdmin), on filtre par son client
+        if not current_user.is_superadmin():
+            query = query.filter(DeviceData.client_id == current_user.client_id)
+
+        results = query.all()
+
+        # 4. Formater les données pour le frontend
+        donnees_formattees = []
+        for row in results:
+            horodatage_brut = row.horodatage_agg
+            
+            if isinstance(horodatage_brut, datetime):
+                timestamp_iso = horodatage_brut.isoformat()
+            else:
+                timestamp_iso = str(horodatage_brut).replace(" ", "T") + "Z"
+
+            donnees_formattees.append({
+                'timestamp': timestamp_iso,
+                'value': float(row.total_power) if row.total_power is not None else 0
+            })
+
+        return jsonify({
+            'success': True,
+            'donnees_bdd': donnees_formattees,
+            'count': len(donnees_formattees)
+        }), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': f'Erreur serveur: {str(e)}'}), 500        
 
 # =================== NOUVELLE ROUTE POUR INFO SITE UTILISATEUR ===================
 

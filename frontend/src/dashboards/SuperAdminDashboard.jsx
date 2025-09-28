@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import SuperAdminLayout from '../layouts/SuperAdminLayout';
 import { useAuth } from '../store/authContext';
-
+import DeviceService from '../services/deviceService';
 // On importe uniquement le composant pour le graphique
 import GlobalConsumptionChart from './GlobalConsumptionChart';
 
@@ -21,36 +21,34 @@ const SuperAdminDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [chartTimeRange, setChartTimeRange] = useState('24h');
 
-  useEffect(() => {
+   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        // --- SIMULATION POUR LES STAT-CARDS D'ÉNERGIE ---
-        const fakeEnergyStats = {
-          current_total_power: 49860, // Consommation totale actuelle
-          peak_power_24h: 67300,      // Pic de consommation sur 24h
-          most_consuming_site: {      // Site le plus énergivore
-            name: 'Entrepôt Nord',
-            power: 27800,
-          },
-        };
-        setEnergyStats(fakeEnergyStats);
+        // --- ✅ APPEL RÉEL AUX STATISTIQUES ---
+        const statsResponse = await DeviceService.obtenirStatsDashboard();
+        if (statsResponse.data.success) {
+          setEnergyStats(statsResponse.data.stats);
+        }
 
-        // --- SIMULATION POUR LA COURBE DE CONSOMMATION GLOBALE ---
-        const generateFakeChartData = (range) => {
-          if (range === '7d') {
-            return Array.from({ length: 7 }, (_, i) => ({
-              time: new Date(Date.now() - (6 - i) * 24 * 3600 * 1000),
-              value: Math.random() * 400000 + 300000,
-            }));
-          }
-          return Array.from({ length: 24 }, (_, i) => ({
-            time: new Date(Date.now() - (23 - i) * 3600 * 1000),
-            value: Math.random() * 30000 + 15000,
-          }));
-        };
+        // --- ✅ APPEL RÉEL POUR LE GRAPHIQUE ---
+        // On peut créer une route dédiée ou utiliser celle existante
+        // Ici, utilisons une route fictive pour l'exemple, à créer sur le même modèle
+        // que les graphiques par appareil.
+        const chartResponse = await DeviceService.obtenirGraphiqueGlobalPuissance( // ✅ Utiliser la nouvelle méthode
+            Date.now() - (chartTimeRange === '24h' ? 24 : 7 * 24) * 3600 * 1000,
+            Date.now(),
+            chartTimeRange === '24h' ? 'hourly' : 'daily'
+        );
         
-        setConsumptionData(generateFakeChartData(chartTimeRange));
+        if (chartResponse.data.success) {
+            const formattedData = chartResponse.data.donnees_bdd.map(d => ({
+                time: d.timestamp, // Le backend renvoie 'timestamp'
+                value: d.value    // Le backend renvoie 'value'
+            }));
+            setConsumptionData(formattedData);
+        }
+// ...
 
       } catch (error) {
         console.error("Erreur de chargement du dashboard", error);
