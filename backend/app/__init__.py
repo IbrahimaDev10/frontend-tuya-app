@@ -165,6 +165,9 @@ def setup_scheduler_with_all_jobs(app):
     if scheduler.running:
         app.logger.info("✅ [SCHEDULER] Planificateur déjà en cours d'exécution.")
         return
+    
+    # Nettoyer les jobs existants avant d'en ajouter de nouveaux
+    scheduler.remove_all_jobs()
 
     # --- Tâche 1 : Exécution des actions programmées (ON/OFF) ---
     def execute_scheduled_actions_job():
@@ -249,7 +252,7 @@ def setup_redis(app):
             max_connections=redis_config.get('max_connections', 15),
             retry_on_timeout=redis_config.get('retry_on_timeout', True),
             socket_connect_timeout=redis_config.get('socket_connect_timeout', 5),
-            socket_timeout=redis_config.get('socket_timeout', 5),
+            socket_timeout=redis_config.get('socket_timeout', 10),
             socket_keepalive=redis_config.get('socket_keepalive', True),
             socket_keepalive_options={},
             health_check_interval=redis_config.get('health_check_interval', 30),
@@ -431,19 +434,19 @@ def register_blueprints(app):
 
     # 📊 BLUEPRINT EXPORT
     try:
-        app.logger.info("🔍 Import du blueprint export...")
-        export_routes_file_path = os.path.join(routes_dir, 'export_routes.py')
-        if os.path.exists(export_routes_file_path):
-            spec = importlib.util.spec_from_file_location("app.routes.export_routes", export_routes_file_path)
-            export_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(export_module)
-            export_bp = export_module.export_bp
-            app.register_blueprint(export_bp)
-            app.logger.info("✅ Blueprint export enregistré sur /api/export")
-        else:
-            app.logger.warning(f"⚠️ Fichier export_routes non trouvé: {export_routes_file_path}")
+        app.logger.info("Import du blueprint export...")
+        
+        # Méthode 1 : Import direct (RECOMMANDÉ - plus simple et fiable)
+        from app.routes.export_routes import export_bp
+        app.register_blueprint(export_bp)
+        app.logger.info("Blueprint export enregistré sur /api/export")
+        
+    except ImportError as e:
+        app.logger.error(f"Erreur import blueprint export: {e}")
+        app.logger.warning("Le module export_routes.py est manquant ou contient des erreurs")
+        
     except Exception as e:
-        app.logger.error(f"❌ Erreur import blueprint export: {e}")
+        app.logger.error(f"Erreur inattendue lors de l'enregistrement du blueprint export: {e}")
 
     # 🔧 ROUTES DE DEBUG ET SANTÉ
     @app.route('/debug/routes')

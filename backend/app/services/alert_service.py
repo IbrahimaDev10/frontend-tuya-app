@@ -1260,16 +1260,88 @@ class AlertService:
 
 
 
-    def get_alertes_actives_pour_device(self, device_id):
-        """⚠️ À implémenter - Récupère les alertes actives d’un appareil"""
-        # return Alert.query.filter(...).all() ou lecture depuis Redis
-        return []
+    def get_alertes_actives_pour_device(self, device_id: str) -> Dict[str, Any]:
+        """
+        Récupère les alertes actives (non résolues) pour un appareil spécifique.
+        """
+        try:
+            # Récupérer les alertes avec le statut 'nouvelle' ou 'vue'
+            alertes_actives = Alert.query.filter(
+                Alert.appareil_id == device_id,
+                Alert.statut.in_(['nouvelle', 'vue'])
+            ).order_by(Alert.priorite.desc(), Alert.date_creation.desc()).all()
 
-    def get_statistiques_alertes(self, device_id, days=7):
-        """⚠️ À implémenter - Renvoie les stats d’alertes d’un appareil"""
-        return {
-            "total": 0,
-            "critiques": 0,
-            "non_critiques": 0,
-            "par_jour": []  # liste de {jour, total, critiques}
-        }
+            # Sérialiser les données pour la réponse API, en incluant les détails
+            alertes_data = [alerte.to_dict(include_details=True) for alerte in alertes_actives]
+
+            # Retourner une réponse structurée comme attendu par la route
+            return {
+                'success': True,
+                'device_id': device_id,
+                'total_actives': len(alertes_data),
+                'alertes': alertes_data,
+                'retrieved_at': datetime.utcnow().isoformat()
+            }
+
+        except Exception as e:
+            self.logger.error(f"❌ Erreur récupération alertes actives pour device {device_id}: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'device_id': device_id
+            }
+    
+
+    def get_statistiques_alertes(self, device_id: str, days: int = 7) -> Dict[str, Any]:
+        """
+        Calcule et renvoie les statistiques d'alertes pour un appareil sur une période donnée.
+        """
+        try:
+            # Calculer la date de début
+            since = datetime.utcnow() - timedelta(days=days)
+            
+            # Récupérer les alertes pour l'appareil et la période
+            query = Alert.query.filter(
+                Alert.appareil_id == device_id,
+                Alert.date_creation >= since
+            )
+            
+            alertes = query.all()
+            
+            stats = {
+                'total': len(alertes),
+                'par_gravite': {'info': 0, 'warning': 0, 'critique': 0},
+                'par_type_systeme': {'monophase': 0, 'triphase': 0},
+                'par_statut': {'nouvelle': 0, 'vue': 0, 'resolue': 0},
+                'types_plus_frequents': {}
+            }
+            
+            for alerte in alertes:
+                stats['par_gravite'][alerte.gravite] += 1
+                stats['par_type_systeme'][alerte.type_systeme] += 1
+                stats['par_statut'][alerte.statut] += 1
+                
+                if alerte.type_alerte not in stats['types_plus_frequents']:
+                    stats['types_plus_frequents'][alerte.type_alerte] = 0
+                stats['types_plus_frequents'][alerte.type_alerte] += 1
+
+            # Trier les types par fréquence
+            stats['types_plus_frequents'] = dict(
+                sorted(stats['types_plus_frequents'].items(), key=lambda item: item[1], reverse=True)
+            )
+
+            return {
+                'success': True,
+                'device_id': device_id,
+                'period_days': days,
+                'stats': stats,
+                'retrieved_at': datetime.utcnow().isoformat()
+            }
+
+        except Exception as e:
+            self.logger.error(f"❌ Erreur statistiques alertes device {device_id}: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'device_id': device_id
+            }

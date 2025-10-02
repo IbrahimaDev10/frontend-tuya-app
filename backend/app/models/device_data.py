@@ -163,21 +163,47 @@ class DeviceData(db.Model):
         ecart_max = max([abs(t - tension_moyenne) for t in tensions_valides])
         return round((ecart_max / tension_moyenne) * 100, 2)
     
+    # def calculer_desequilibre_courant(self):
+    #     """Calculer le déséquilibre de courant en %"""
+    #     if not self.is_triphase():
+    #         return None
+        
+    #     courants = [self.courant_l1, self.courant_l2, self.courant_l3]
+    #     courants_valides = [c for c in courants if c is not None]
+        
+    #     if len(courants_valides) < 3:
+    #         return None
+        
+    #     courant_moyen = sum(courants_valides) / len(courants_valides)
+    #     if courant_moyen == 0:
+    #         return None
+        
+    #     ecart_max = max([abs(c - courant_moyen) for c in courants_valides])
+    #     return round((ecart_max / courant_moyen) * 100, 2)
+
     def calculer_desequilibre_courant(self):
-        """Calculer le déséquilibre de courant en %"""
+        """Calculer le déséquilibre de courant en % - VERSION CORRIGÉE ET ROBUSTE"""
         if not self.is_triphase():
             return None
         
         courants = [self.courant_l1, self.courant_l2, self.courant_l3]
-        courants_valides = [c for c in courants if c is not None]
         
+        # CORRECTION : On ne considère valides que les courants qui ont une valeur significative (supérieure à 0.1A).
+        # Ceci exclut les phases à 0A d'un appareil monophasé mal configuré.
+        courants_valides = [c for c in courants if c is not None and c > 0.1]
+        
+        # S'il n'y a pas 3 phases avec du courant, on ne peut pas calculer un déséquilibre fiable.
+        # On retourne 0.0 pour indiquer "pas de déséquilibre détecté".
         if len(courants_valides) < 3:
-            return None
+            return 0.0
         
         courant_moyen = sum(courants_valides) / len(courants_valides)
-        if courant_moyen == 0:
-            return None
         
+        # Sécurité pour éviter la division par zéro, bien que très improbable avec la correction ci-dessus.
+        if courant_moyen == 0:
+            return 0.0
+        
+        # La suite du calcul reste identique
         ecart_max = max([abs(c - courant_moyen) for c in courants_valides])
         return round((ecart_max / courant_moyen) * 100, 2)
     

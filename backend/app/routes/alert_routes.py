@@ -295,7 +295,7 @@ def get_device_alerts_stats(current_user, device_id):
         
         # Utiliser AlertService
         if device_service and hasattr(device_service, '_alert_service') and device_service._alert_service:
-            result = device_service._alert_service.get_statistiques_alertes(device.id, jours=days)
+            result = device_service._alert_service.get_statistiques_alertes(device.id, days=days)
             return jsonify(result), 200 if result.get('success') else 400
         
         # Fallback basique
