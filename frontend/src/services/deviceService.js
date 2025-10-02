@@ -42,6 +42,42 @@ class DeviceService {
     return apiClient.get(`/devices/${deviceId}`);
   }
 
+
+
+  /**
+ * Récupère les appareils d'un client en filtrant côté frontend
+ */
+async listerAppareilsPourClient(clientId) {
+  if (!clientId) {
+    return [];
+  }
+
+  try {
+    // Charger TOUS les appareils (sans filtre backend)
+    const response = await apiClient.get('/devices/', {
+      params: {
+        use_cache: 'true',
+        refresh_status: 'false'
+      }
+    });
+
+    // Le backend retourne { success: true, data: [...] }
+    const allDevices = response.data?.data || response.data || [];
+    
+    // Filtrer côté client par client_id
+    const clientDevices = allDevices.filter(device => {
+      return device.client_id === clientId;
+    });
+
+    console.log(`Appareils trouvés pour client ${clientId}:`, clientDevices.length);
+    
+    return clientDevices;
+
+  } catch (error) {
+    console.error(`Erreur récupération appareils client ${clientId}:`, error);
+    return [];
+  }
+}
   // =================== CONTRÔLE DES APPAREILS ===================
   
   async controlerAppareil(deviceId, action, valeur = null) {
