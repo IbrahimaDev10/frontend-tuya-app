@@ -178,7 +178,15 @@ const AlertPanel = ({ device, onClose }) => {
   return (
     <div className="alert-panel" onKeyDown={handleKeyDown} tabIndex={0}>
       <div className="alert-panel-header">
-        <h3>🔔 Alertes - {device?.nom_appareil}</h3>
+        <div className="header-left">
+          <button className="back-btn" onClick={onClose}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M19 12H5M12 19l-7-7 7-7"/>
+            </svg>
+            Retour
+          </button>
+          <h3>🔔 Alertes - {device?.nom_appareil}</h3>
+        </div>
         <div className="header-actions">
           <select 
             value={timeRange} 
@@ -190,9 +198,6 @@ const AlertPanel = ({ device, onClose }) => {
             <option value="24">24 heures</option>
             <option value="168">7 jours</option>
           </select>
-          <Button variant="outline" size="small" onClick={onClose}>
-            ✕ Fermer
-          </Button>
         </div>
       </div>
 

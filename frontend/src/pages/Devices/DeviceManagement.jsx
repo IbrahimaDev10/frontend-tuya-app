@@ -5,9 +5,11 @@ import AdminLayout from '../../layouts/AdminLayout'
 import ClientLayout from '../../layouts/ClientLayout'
 import DeviceService from '../../services/deviceService'
 import Button from '../../components/Button'
+import ToggleSwitch from '../../components/ToggleSwitch';
 import Input from '../../components/Input'
 import DeviceModal from './DeviceModal' // Non utilisé dans ce fichier, mais laissé pour référence
 import AssignModal from './AssignModal'
+import { useRealtimeContext } from '../../store/realtimeContext'
 import DropdownMenu from '../../components/DropdownMenu'
 import DeviceDetailsModal from './DeviceDetailsModal'
 import ConfirmModal from '../../components/ConfirmModal'
@@ -20,12 +22,23 @@ import AlertPanel from '../../components/Alerts/AlertPanel'
 import { useNavigate } from 'react-router-dom';
 
 const DeviceManagement = () => {
-  const { isSuperadmin, isAdmin, isClient, user: currentUser } = useAuth() // <-- NOUVEAU : Récupérez l'utilisateur courant
+  const { isSuperadmin, isAdmin, isClient, user: currentUser } = useAuth()
+
+  // --- MODIFICATION 1 : Logique d'initialisation de l'onglet ---
+  // Pour admin et client, on force un onglet unique "mes_appareils".
+  // Pour superadmin, on commence par "assigned" par défaut.
+  const getDefaultTab = () => {
+    if (isSuperadmin()) {
+      return 'assigned';
+    }
+    // Pour admin et client, c'est toujours la même vue.
+    return 'mes_appareils'; 
+  };
+
   const [devices, setDevices] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
-  const [selectedTab, setSelectedTab] = useState('assigned')
-  const [showDeviceModal, setShowDeviceModal] = useState(false) // Non utilisé
+  const [selectedTab, setSelectedTab] = useState(getDefaultTab) // Utilise la fonction pour l'état initial
   const [showAssignModal, setShowAssignModal] = useState(false)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [selectedDevice, setSelectedDevice] = useState(null)
@@ -37,44 +50,74 @@ const DeviceManagement = () => {
   const [loadingDeviceIds, setLoadingDeviceIds] = useState([])
 
   const Layout = isSuperadmin() ? SuperAdminLayout : isAdmin() ? AdminLayout : ClientLayout
-  const navigate = useNavigate(); // <-- ÉTAPE 1 : Initialiser useNavigate
+  const navigate = useNavigate();
 
-const [showAlertsPanel, setShowAlertsPanel] = useState(false)
-const [selectedDeviceForAlerts, setSelectedDeviceForAlerts] = useState(null)
+  const [showAlertsPanel, setShowAlertsPanel] = useState(false)
+  const [selectedDeviceForAlerts, setSelectedDeviceForAlerts] = useState(null)
 
   const [showChartsModal, setShowChartsModal] = useState(false)
   const [selectedDeviceForCharts, setSelectedDeviceForCharts] = useState(null)
   const [showExportModal, setShowExportModal] = useState(false)
 
+    // ---  UTILISER LE HOOK POUR OBTENIR LES DONNÉES TEMPS RÉEL ---
+  const { latestByDevice } = useRealtimeContext();
+
 
   useEffect(() => {
     loadData()
-  }, [selectedTab, currentUser]) // <-- NOUVEAU : Ajoutez currentUser comme dépendance
+  }, [selectedTab, currentUser]) 
+
+
+  useEffect(() => {
+    if (latestByDevice.size === 0) {
+      return; 
+    }
+
+    console.log("🔄 [Realtime] Détection d'un changement, mise à jour de la liste des appareils...");
+
+    setDevices(prevDevices => 
+      prevDevices.map(device => {
+        const newData = latestByDevice.get(device.tuya_device_id);
+        
+        if (newData) {
+          // --- MODIFICATION ICI ---
+          // On vérifie si 'etat_switch' est défini dans les nouvelles données.
+          // S'il est undefined ou null, on garde l'ancienne valeur.
+          const newSwitchState = newData.etat_switch;
+
+          return {
+            ...device,
+            // On s'assure que la valeur est toujours un booléen.
+            // Si newSwitchState est undefined/null, on garde device.etat_actuel_tuya.
+            etat_actuel_tuya: typeof newSwitchState === 'boolean' ? newSwitchState : device.etat_actuel_tuya,
+          };
+        }
+        
+        return device;
+      })
+    );
+
+  }, [latestByDevice]);
   
   const loadData = async () => {
     try {
       setLoading(true)
       
-      let devicesResponse
-      let siteIdToFilter = null;
-
-      // <-- NOUVEAU : Logique de filtrage par site pour les utilisateurs simples
-      if (currentUser && currentUser.role === 'user' && currentUser.site_id) {
-        siteIdToFilter = currentUser.site_id;
-        // Pour un utilisateur simple, on ne montre que les appareils de son site,
-        // donc les onglets "unassigned" et "all" n'ont pas de sens ou doivent être adaptés.
-        // Ici, on force à "assigned" pour simplifier.
-        if (selectedTab !== 'assigned') {
-          setSelectedTab('assigned'); // Force l'onglet à "assigned"
+      let devicesResponse;
+      
+      // --- MODIFICATION 2 : Simplification de la logique de chargement des données ---
+      // Si l'utilisateur n'est pas superadmin, on charge toujours les appareils assignés.
+      if (!isSuperadmin()) {
+        devicesResponse = await DeviceService.listerAppareils();
+      } else {
+        // La logique du superadmin reste inchangée
+        if (selectedTab === 'assigned') {
+          devicesResponse = await DeviceService.listerAppareils();
+        } else if (selectedTab === 'unassigned') {
+          devicesResponse = await DeviceService.listerNonAssignes();
+        } else { // 'all' tab
+          devicesResponse = await DeviceService.listerAppareils(null, true);
         }
-      }
-
-      if (selectedTab === 'assigned') {
-        devicesResponse = await DeviceService.listerAppareils(siteIdToFilter); // <-- Passez siteIdToFilter
-      } else if (selectedTab === 'unassigned' && isSuperadmin()) {
-        devicesResponse = await DeviceService.listerNonAssignes();
-      } else { // 'all' tab
-        devicesResponse = await DeviceService.listerAppareils(siteIdToFilter, isSuperadmin()); // <-- Passez siteIdToFilter
       }
 
       const statsResponse = await DeviceService.obtenirStatistiques();
@@ -90,6 +133,12 @@ const [selectedDeviceForAlerts, setSelectedDeviceForAlerts] = useState(null)
     }
   }
 
+  // ... (le reste de vos fonctions handle... reste identique)
+  // handleShowAlerts, handleSearch, handleImportTuya, handleSyncTuya, handleToggleDevice, etc.
+  // Aucune modification nécessaire dans les autres fonctions.
+
+  // --- Le reste de votre composant jusqu'au rendu ---
+  
   const showToast = (message, type = 'info') => {
     setToast({ message, type })
     setTimeout(() => setToast(null), 4000)
@@ -108,9 +157,8 @@ const [selectedDeviceForAlerts, setSelectedDeviceForAlerts] = useState(null)
     }
 
     try {
-      // Pour la recherche, nous devons aussi potentiellement filtrer par site
       const siteIdToFilter = (currentUser && currentUser.role === 'user' && currentUser.site_id) ? currentUser.site_id : null;
-      const response = await DeviceService.rechercherAppareils(term, siteIdToFilter); // <-- Passez siteIdToFilter
+      const response = await DeviceService.rechercherAppareils(term, siteIdToFilter);
       setDevices(response.data.data)
     } catch (error) {
       showToast('Erreur lors de la recherche', 'error')
@@ -158,22 +206,15 @@ const [selectedDeviceForAlerts, setSelectedDeviceForAlerts] = useState(null)
   setLoadingDeviceIds((prev) => [...prev, deviceId])
 
   try {
-    // Déterminez le nouvel état souhaité basé sur l'état actuel de Tuya
-    // Si device.etat_actuel_tuya est True (ON), le nouvel état souhaité est False (OFF)
-    // Si device.etat_actuel_tuya est False (OFF), le nouvel état souhaité est True (ON)
     const newStateValue = !device.etat_actuel_tuya; 
-    
-    // Appelez le service avec le deviceId Tuya et le nouvel état souhaité
     const result = await DeviceService.toggleAppareil(deviceId, newStateValue); 
 
     if (result.success) {
       showToast(result.message, 'success')
-
-      // Mettez à jour l'état local des appareils avec le nouvel état reçu du backend
       setDevices(prev =>
         prev.map(d =>
           d.id === device.id
-            ? { ...d, etat_actuel_tuya: result.newState } // Utilisez le nouveau champ
+            ? { ...d, etat_actuel_tuya: result.newState }
             : d
         )
       )
@@ -194,7 +235,7 @@ const [selectedDeviceForAlerts, setSelectedDeviceForAlerts] = useState(null)
                 setShowAssignModal(true)
               }
 
-              const handleCreateDevice = (device) => { // Non utilisé
+              const handleCreateDevice = (device) => { 
                 setSelectedDevice(device)
                 setShowDeviceModal(true)
               }
@@ -249,18 +290,15 @@ const [selectedDeviceForAlerts, setSelectedDeviceForAlerts] = useState(null)
     }
   }
 
-  //  fonction pour ouvrir les graphiques
 const handleShowCharts = (device) => {
   setSelectedDeviceForCharts(device)
   setShowChartsModal(true)
 }
 
-  // <-- ÉTAPE 2 : Créer la fonction de navigation vers la page de configuration
   const handleGoToConfigPage = (device) => {
     navigate(`/devices/config/${device.id}`);
   };
 
-  // Fonction pour ouvrir le modal d'export Excel
   const handleShowExportModal = () => {
     setShowExportModal(true);
   };
@@ -280,7 +318,8 @@ const handleShowCharts = (device) => {
     <Layout>
       <div className="device-management">
         <div className="device-management-header">
-          <h1>Gestion des Appareils</h1>
+          {/* --- MODIFICATION 3 : Titre dynamique --- */}
+          <h1>{isSuperadmin() ? 'Gestion des Appareils' : 'Mes Appareils'}</h1>
           <div className="header-actions">
             <Input
               type="text"
@@ -351,37 +390,34 @@ const handleShowCharts = (device) => {
           </div>
         </div>
 
-        {/* Onglets */}
-        {/* <-- NOUVEAU : Affichage conditionnel des onglets */}
-        {currentUser && currentUser.role !== 'user' ? (
-          <div className="tabs">
-            <button
-              className={`tab ${selectedTab === 'assigned' ? 'active' : ''}`}
-              onClick={() => setSelectedTab('assigned')}
-            >
-              Appareils assignés
-            </button>
-            {isSuperadmin() && (
+        {/* --- MODIFICATION 4 : Affichage conditionnel des onglets --- */}
+        <div className="tabs">
+          {isSuperadmin() ? (
+            <>
+              <button
+                className={`tab ${selectedTab === 'assigned' ? 'active' : ''}`}
+                onClick={() => setSelectedTab('assigned')}
+              >
+                Appareils assignés
+              </button>
               <button
                 className={`tab ${selectedTab === 'unassigned' ? 'active' : ''}`}
                 onClick={() => setSelectedTab('unassigned')}
               >
                 Non assignés ({stats.non_assignes || 0})
               </button>
-            )}
-            <button
-              className={`tab ${selectedTab === 'all' ? 'active' : ''}`}
-              onClick={() => setSelectedTab('all')}
-            >
-              Tous les appareils
-            </button>
-          </div>
-        ) : (
-          // Pour les utilisateurs simples, un seul onglet "Mes appareils"
-          <div className="tabs">
+              <button
+                className={`tab ${selectedTab === 'all' ? 'active' : ''}`}
+                onClick={() => setSelectedTab('all')}
+              >
+                Tous les appareils
+              </button>
+            </>
+          ) : (
+            // Pour admin et client, un seul onglet "Mes appareils" qui est toujours actif.
             <button className="tab active">Mes appareils</button>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Tableau des appareils */}
         <DevicesTable
@@ -391,15 +427,19 @@ const handleShowCharts = (device) => {
                 onUnassign={handleUnassignDevice}
                 onDetails={handleDeviceDetails}
                 onCollectData={handleCollectData}
-                onShowCharts={handleShowCharts} // Nouvelle prop
-                showAssignActions={selectedTab === 'unassigned' || isSuperadmin()}
+                onShowCharts={handleShowCharts}
+                // --- MODIFICATION 5 : Logique d'affichage des actions ---
+                // Seul le superadmin voit les actions d'assignation/désassignation
+                showAssignActions={isSuperadmin() && (selectedTab === 'unassigned' || selectedTab === 'all')}
                 isSuperadmin={isSuperadmin()}
                 isClient={isClient()}
                 onShowAlerts={handleShowAlerts}
                 onGoToConfigPage={handleGoToConfigPage}
-                currentUserRole={currentUser?.role} // <-- NOUVEAU : Passez le rôle de l'utilisateur
+                currentUserRole={currentUser?.role}
+                 loadingDeviceIds={loadingDeviceIds}
               />
-                      {/* Modals */}
+        
+        {/* ... (Le reste du composant avec les Modals reste identique) ... */}
         {showAssignModal && (
           <AssignModal
             device={selectedDevice}
@@ -456,7 +496,6 @@ const handleShowCharts = (device) => {
           />
         )}
 
-        {/* Modal des graphiques */}
         {showChartsModal && selectedDeviceForCharts && (
           <MultiChartView
             device={selectedDeviceForCharts}
@@ -464,7 +503,6 @@ const handleShowCharts = (device) => {
           />
         )}
 
-        {/* Modal des alertes */}
         {showAlertsPanel && selectedDeviceForAlerts && (
           <AlertPanel
             device={selectedDeviceForAlerts}
@@ -472,7 +510,6 @@ const handleShowCharts = (device) => {
           />
         )}
 
-        {/* Modal d'export Excel */}
         {showExportModal && (
           <ExportModal
             isOpen={showExportModal}
@@ -486,7 +523,7 @@ const handleShowCharts = (device) => {
   )
 }
 
-// Composant tableau des appareils
+// Le composant DevicesTable reste inchangé, car la logique est gérée dans le composant parent.
 const DevicesTable = ({ 
   devices, 
   onToggle, 
@@ -494,13 +531,14 @@ const DevicesTable = ({
   onUnassign, 
   onDetails, 
   onCollectData,
-  onShowCharts, // Nouvelle prop
+  onShowCharts,
   showAssignActions,
   isSuperadmin,
   isClient,
    onShowAlerts,
-  onGoToConfigPage, // <-- NOUVEAU : Prop pour la navigation
-  currentUserRole // <-- NOUVEAU : Récupérez le rôle ici
+  onGoToConfigPage,
+  currentUserRole,
+  loadingDeviceIds 
 }) => (
   <div className="table-container">
     <table className="data-table">
@@ -511,7 +549,6 @@ const DevicesTable = ({
           <th>Statut</th>
           <th>État</th>
           {isSuperadmin && <th>Client</th>}
-          {/* <-- NOUVEAU : Afficher la colonne Site si Superadmin ou Admin */}
           {(isSuperadmin || currentUserRole === 'admin') && <th>Site</th>} 
           <th>En ligne</th>
           <th>Actions</th>
@@ -532,19 +569,24 @@ const DevicesTable = ({
               </span>
             </td>
             <td>
-              <span className={`status-badge ${device.statut_assignation === 'assigne' ? 'assigned' : 'unassigned'}`}>
-                {device.statut_assignation === 'assigne' ? 'Assigné' : 'Non assigné'}
-              </span>
-            </td>
-            <td>
-              <span className={`state-badge ${device.etat_actuel_tuya ? 'on' : 'off'}`}>
-                {device.etat_actuel_tuya ? 'ON' : 'OFF'}
-              </span>
+              {/* Condition pour afficher l'interrupteur ou le badge statique */}
+              {device.statut_assignation === 'assigne' && !isClient && currentUserRole !== 'user' ? (
+                <ToggleSwitch 
+                  isOn={device.etat_actuel_tuya}
+                  onToggle={() => onToggle(device)}
+                  isLoading={loadingDeviceIds.includes(device.tuya_device_id)}
+                  isDisabled={!device.en_ligne} // On désactive si l'appareil est hors ligne
+                />
+              ) : (
+                // Sinon, on affiche le badge texte comme avant
+                <span className={`state-badge ${device.etat_actuel_tuya ? 'on' : 'off'}`}>
+                  {device.etat_actuel_tuya ? 'ON' : 'OFF'}
+                </span>
+              )}
             </td>
             {isSuperadmin && (
               <td>{device.client?.nom_entreprise || 'N/A'}</td>
             )}
-            {/* <-- NOUVEAU : Afficher le nom du site */}
             {(isSuperadmin || currentUserRole === 'admin') && (
               <td>{device.site?.nom_site || 'N/A'}</td>
             )}
@@ -555,7 +597,6 @@ const DevicesTable = ({
             </td>
             <td>
               <div className="action-buttons">
-                {/* Bouton Détails (toujours visible) */}
                 <Button
                   variant="outline"
                   size="small"
@@ -565,17 +606,7 @@ const DevicesTable = ({
                   👁️ Détails
                 </Button>
                 
-                {/* Bouton ON/OFF (visible si assigné et contrôlable) */}
-                {device.statut_assignation === 'assigne' && !isClient && currentUserRole !== 'user' && (
-                  <Button
-                    variant="outline"
-                    size="small"
-                    onClick={() => onToggle(device)}
-                    title="Toggle ON/OFF"
-                  >
-                    {device.etat_actuel_tuya ? '⏸️ OFF'  : '▶️ ON'}
-                  </Button>
-                )}
+               
                 
                 {device.statut_assignation === 'assigne' && (
                   <Button
@@ -588,14 +619,10 @@ const DevicesTable = ({
                   </Button>
                 )}
 
-                {/* Bouton "Plus d'actions" avec menu déroulant */}
                 <DropdownMenu icon="•••" title="Plus d'actions">
-                  {/* Les autres boutons vont ici */}
-
-                  {/* Bouton Voir les graphiques */}
                   {device.statut_assignation === 'assigne' && (
                     <Button
-                      variant="text" // Utilisez 'text' pour un style de lien dans le menu
+                      variant="text"
                       size="small"
                       onClick={() => onShowCharts(device)}
                       title="Voir les graphiques"
@@ -604,7 +631,6 @@ const DevicesTable = ({
                     </Button>
                   )}
                   
-                  {/* Bouton Collecter données */}
                   {device.statut_assignation === 'assigne' && (
                     <Button
                       variant="text"
@@ -616,10 +642,8 @@ const DevicesTable = ({
                     </Button>
                   )}
                   
-                 
-
-                  {/* Bouton Assigner (si non assigné et l'action est visible) */}
-                  {showAssignActions && device.statut_assignation !== 'assigne' && currentUserRole !== 'user' && (
+                  {/* Seul le superadmin voit ces actions maintenant */}
+                  {isSuperadmin && device.statut_assignation !== 'assigne' && (
                     <Button
                       variant="text"
                       size="small"
@@ -630,8 +654,7 @@ const DevicesTable = ({
                     </Button>
                   )}
                   
-                  {/* Bouton Désassigner (si assigné et Superadmin) */}
-                  {showAssignActions && device.statut_assignation === 'assigne' && isSuperadmin && (
+                  {isSuperadmin && device.statut_assignation === 'assigne' && (
                     <Button
                       variant="text"
                       size="small"

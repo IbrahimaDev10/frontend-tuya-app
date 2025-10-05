@@ -36,10 +36,38 @@ const GlobalConsumptionChart = ({ data, onTimeRangeChange, isLoading }) => {
     responsive: true,
     maintainAspectRatio: false,
     scales: {
-      x: { type: 'time', time: { unit: activeRange === '24h' ? 'hour' : 'day', tooltipFormat: 'dd/MM/yyyy HH:mm' }, grid: { display: false } },
+      x: { 
+        type: 'time', 
+        time: { 
+          unit: activeRange === '24h' ? 'hour' : 'day',
+          displayFormats: {
+            hour: 'HH:mm',
+            day: 'EEEE' // Affiche le jour de la semaine en toutes lettres (Lundi, Mardi, etc.)
+          },
+          tooltipFormat: activeRange === '24h' ? 'dd/MM/yyyy HH:mm' : 'EEEE dd/MM/yyyy'
+        }, 
+        grid: { display: false } 
+      },
       y: { beginAtZero: true, title: { display: true, text: 'Puissance (W)' } },
     },
-    plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
+    plugins: { 
+      legend: { display: false }, 
+      tooltip: { 
+        mode: 'index', 
+        intersect: false,
+        callbacks: {
+          title: (context) => {
+            const date = new Date(context[0].parsed.x);
+            if (activeRange === '7d') {
+              // Format pour afficher "Lundi 01/01/2023" en français
+              const options = { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' };
+              return date.toLocaleDateString('fr-FR', options);
+            }
+            return date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+          }
+        }
+      }
+    },
     interaction: { intersect: false, mode: 'index' },
   };
 

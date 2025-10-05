@@ -1,16 +1,16 @@
 .alert-panel {
   position: fixed;
-  right: 20px;
-  top: 80px;
-  width: 400px;
-  max-height: calc(100vh - 100px); /* ✅ Hauteur max relative à l'écran */
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100vh;
   background: white;
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-  z-index: 1000;
+  z-index: 2000;
   display: flex;
   flex-direction: column;
-  overflow: hidden; /* ✅ Important pour le container principal */
+  overflow: hidden;
 }
 
 .alert-panel-header {
@@ -20,7 +20,36 @@
   padding: 1rem 1.5rem;
   background: #f8f9fa;
   border-bottom: 1px solid #e9ecef;
-  flex-shrink: 0; /* ✅ Empêche la compression du header */
+  flex-shrink: 0;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.back-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #f1f1f1;
+  border: none;
+  border-radius: 4px;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  font-weight: 500;
+  color: #333;
+  transition: background-color 0.2s;
+}
+
+.back-btn:hover {
+  background: #e0e0e0;
+}
+
+.back-btn svg {
+  width: 18px;
+  height: 18px;
 }
 
 .alert-panel-header h3 {
@@ -46,7 +75,7 @@
   padding: 1rem 1.5rem;
   background: #f8f9fa;
   border-bottom: 1px solid #e9ecef;
-  flex-shrink: 0; /* ✅ Empêche la compression des stats */
+  flex-shrink: 0;
 }
 
 .stats-grid {
@@ -91,7 +120,7 @@
   display: flex;
   background: #f8f9fa;
   border-bottom: 1px solid #e9ecef;
-  flex-shrink: 0; /* ✅ Empêche la compression des onglets */
+  flex-shrink: 0;
 }
 
 .alert-tab {
@@ -115,17 +144,15 @@
   background: #e9ecef;
 }
 
-/* ✅ SECTION CRITIQUE : Zone scrollable */
 .alert-list {
-  flex: 1; /* ✅ Prend tout l'espace disponible */
-  overflow-y: auto; /* ✅ Scroll vertical */
-  overflow-x: hidden; /* ✅ Pas de scroll horizontal */
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 1rem;
-  min-height: 0; /* ✅ Important pour permettre le shrink */
-  max-height: none; /* ✅ Pas de limite max spécifique */
+  min-height: 0;
+  max-height: none;
 }
 
-/* ✅ Améliorer le scrollbar */
 .alert-list::-webkit-scrollbar {
   width: 6px;
 }
@@ -150,7 +177,7 @@
   border: 1px solid #e9ecef;
   background: white;
   transition: all 0.2s;
-  flex-shrink: 0; /* ✅ Les items gardent leur taille */
+  flex-shrink: 0;
 }
 
 .alert-item.critique {
@@ -170,7 +197,7 @@
 }
 
 .alert-item:last-child {
-  margin-bottom: 0; /* ✅ Pas de marge sur le dernier élément */
+  margin-bottom: 0;
 }
 
 .alert-header {
@@ -213,7 +240,7 @@
   display: flex;
   gap: 0.5rem;
   align-items: flex-start;
-  flex-shrink: 0; /* ✅ Empêche la compression des boutons */
+  flex-shrink: 0;
 }
 
 .alert-content {
@@ -297,21 +324,17 @@
   padding: 1rem 1.5rem;
   background: #f8f9fa;
   border-top: 1px solid #e9ecef;
-  flex-shrink: 0; /* ✅ Empêche la compression du footer */
+  flex-shrink: 0;
 }
 
-/* ✅ AMÉLIORATION MOBILE */
 @media (max-width: 768px) {
   .alert-panel {
-    right: 10px;
-    left: 10px;
-    top: 60px;
-    width: auto;
-    max-height: calc(100vh - 80px); /* ✅ Ajuster pour mobile */
+    width: 100%;
+    height: 100vh;
   }
 
   .alert-list {
-    padding: 0.75rem; /* ✅ Réduire le padding sur mobile */
+    padding: 0.75rem;
   }
 
   .stats-grid {
@@ -341,8 +364,8 @@
 
 @media (max-width: 480px) {
   .alert-panel {
-    top: 50px;
-    max-height: calc(100vh - 70px);
+    top: 0;
+    bottom: 0;
   }
 
   .alert-panel-header,
@@ -365,7 +388,6 @@
   }
 }
 
-/* ✅ AMÉLIORATION ACCESSIBILITY */
 .alert-list:focus {
   outline: 2px solid #007bff;
   outline-offset: -2px;
@@ -376,39 +398,6 @@
   outline-offset: 2px;
 }
 
-/* ✅ ANIMATION DE SMOOTH SCROLL */
 .alert-list {
   scroll-behavior: smooth;
-}
-
-/* ✅ INDICATEUR DE SCROLL */
-.alert-panel::after {
-  content: '';
-  position: absolute;
-  right: 0;
-  top: 140px; /* Après header + stats + tabs */
-  bottom: 60px; /* Avant footer */
-  width: 2px;
-  background: linear-gradient(to bottom, transparent, #007bff, transparent);
-  opacity: 0;
-  transition: opacity 0.3s;
-  pointer-events: none;
-}
-
-.alert-panel:hover::after {
-  opacity: 0.3;
-}
-/* Alert panel */
-.App .device-management .alert-panel{
- transform:translatex(-260px) translatey(12px);
- margin-left:0px;
-}
-
-@media (min-width:769px){
-
- /* Alert panel */
- .App .device-management .alert-panel{
-  width:975px;
- }
- 
 }

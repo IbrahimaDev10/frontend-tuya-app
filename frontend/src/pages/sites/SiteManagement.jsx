@@ -232,14 +232,14 @@ const SiteManagement = () => {
                 size="small"
                 onClick={() => setViewMode('cards')}
               >
-                🃏 Cartes
+                🃏 Liste visuelle
               </Button>
               <Button
                 variant={viewMode === 'map' ? 'primary' : 'outline'}
                 size="small"
                 onClick={() => setViewMode('map')}
               >
-                🗺️ Carte
+                🗺️ Vue géographique
               </Button>
             </div>
 

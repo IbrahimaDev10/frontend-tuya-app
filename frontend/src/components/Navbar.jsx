@@ -9,6 +9,18 @@ const Navbar = ({ onMenuToggle }) => {
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false)
   const profileMenuRef = useRef(null)
 
+
+
+  const getRoleLabel = (role) => {
+  const roleLabels = {
+    user: 'Utilisateur',
+    admin: 'Administrateur',
+    superadmin: 'Super administrateur'
+  }
+  return roleLabels[role] || 'Rôle inconnu'
+}
+
+
   // Fermer le menu profil si on clique ailleurs
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -72,7 +84,7 @@ const Navbar = ({ onMenuToggle }) => {
                   <div>
                     <div className="profile-name">{user?.nom_complet}</div>
                     <div className="profile-email">{user?.email}</div>
-                    <div className="profile-role">{user?.role}</div>
+                    <div className="profile-role">{getRoleLabel(user?.role)}</div>
                   </div>
                 </div>
                 

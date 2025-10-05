@@ -5,6 +5,15 @@ import './Sidebar.css'
 const Sidebar = ({ isOpen, onClose }) => {
   const { user, isSuperadmin, isAdmin, isClient, logout } = useAuth()
 
+  const getRoleLabel = (role) => {
+  const roleLabels = {
+    user: 'Utilisateur',
+    admin: 'Administrateur',
+    superadmin: 'Super administrateur'
+  }
+  return roleLabels[role] || 'Rôle inconnu'
+}
+
   const getSidebarItems = () => {
     const baseItems = [
       {
@@ -14,6 +23,10 @@ const Sidebar = ({ isOpen, onClose }) => {
         active: window.location.pathname === '/dashboard'
       }
     ]
+
+    
+
+
 
     if (isSuperadmin()) {
       return [
@@ -30,7 +43,6 @@ const Sidebar = ({ isOpen, onClose }) => {
           path: '/sites',
           active: window.location.pathname === '/sites'
         },
-        
         {
           icon: '📱',
           label: 'Gestion des Appareils',
@@ -38,11 +50,11 @@ const Sidebar = ({ isOpen, onClose }) => {
           active: window.location.pathname === '/devices'
         },
         {
-          icon: '📊',
-          label: 'Rapports Globaux',
-          path: '/reports'
+          icon: '🔔',
+          label: 'Alertes',
+          path: '/alertes',
+          active: window.location.pathname === '/alertes'
         },
-        
       ]
     }
 
@@ -64,7 +76,8 @@ const Sidebar = ({ isOpen, onClose }) => {
         {
           icon: '👤',
           label: 'Gestion des Clients',
-          path: '/clients'
+          path: '/clients',
+          active: window.location.pathname === '/clients'
         },
         {
           icon: '📱',
@@ -72,8 +85,13 @@ const Sidebar = ({ isOpen, onClose }) => {
           path: '/devices',
           active: window.location.pathname === '/devices'
         },
-        
-        
+  
+        {
+          icon: '🔔',
+          label: 'Alertes',
+          path: '/alertes',
+          active: window.location.pathname === '/alertes'
+        }
       ]
     }
 
@@ -126,7 +144,8 @@ const Sidebar = ({ isOpen, onClose }) => {
           </div>
           <div className="sidebar-user-info">
             <div className="sidebar-username">{user?.nom_complet}</div>
-            <div className="sidebar-role">{user?.role}</div>
+            <div className="sidebar-role">{getRoleLabel(user?.role)}</div>
+
           </div>
         </div>
 

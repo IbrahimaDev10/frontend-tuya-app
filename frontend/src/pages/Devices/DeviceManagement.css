@@ -363,3 +363,73 @@
       padding: 0.2rem 0.5rem;
     }
   }
+
+  /* Toggle Switch */
+  /* === NOUVEAU : Styles pour le Toggle Switch (adaptés à votre design) === */
+
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;  /* Largeur réduite pour mieux s'intégrer */
+  height: 24px; /* Hauteur réduite */
+}
+
+/* Cache la checkbox native */
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+/* Le fond de l'interrupteur */
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #757575; /* Votre couleur pour l'état OFF */
+  transition: .3s; /* Transition plus rapide */
+  border-radius: 24px; /* Pour un arrondi parfait */
+}
+
+/* Le cercle blanc qui se déplace */
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 18px; /* Taille du cercle */
+  width: 18px;  /* Taille du cercle */
+  left: 3px;    /* Position initiale (gauche) */
+  bottom: 3px;  /* Positionnement vertical */
+  background-color: white;
+  transition: .3s;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2); /* Ombre subtile pour un effet de profondeur */
+}
+
+/* Quand la checkbox est cochée (état ON) */
+input:checked + .slider {
+  background-color: #4caf50; /* Votre couleur pour l'état ON */
+}
+
+/* Déplacement du cercle vers la droite pour l'état ON */
+input:checked + .slider:before {
+  transform: translateX(20px); /* Ajustement du déplacement */
+}
+
+/* Style pour l'état de chargement/attente */
+.toggle-switch.loading .slider {
+  background-color: #ffc107; /* Jaune, cohérent avec le badge "unassigned" */
+  cursor: not-allowed; /* Indique que l'action est en cours */
+}
+
+/* Style pour l'état désactivé */
+.toggle-switch.disabled .slider {
+  background-color: #e0e0e0; /* Gris clair pour désactivé */
+  cursor: not-allowed;
+}
+
+.toggle-switch.disabled .slider:before {
+  background-color: #f5f5f5;
+}

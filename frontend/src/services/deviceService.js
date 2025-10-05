@@ -163,6 +163,15 @@ async toggleAppareil(deviceId, etat = null) { // 'etat' est la valeur booléenne
   async obtenirStatsDashboard() {
     return apiClient.get('/devices/dashboard-stats');
   }
+  
+  async obtenirStatsDashboardAdmin() {
+    return apiClient.get('/devices/dashboard-stats/admin');
+  }
+  
+  async obtenirStatsDashboardClient() {
+    return apiClient.get('/devices/dashboard-stats/client');
+  }
+  
   async obtenirGraphiqueGlobalPuissance(startTime, endTime, resolution) {
     const params = {
       startTime,
@@ -171,6 +180,24 @@ async toggleAppareil(deviceId, etat = null) { // 'etat' est la valeur booléenne
     };
     // Notez que l'URL n'a pas de deviceId, elle est fixe.
     return apiClient.get('/devices/global/graphique/puissance', { params });
+  }
+  
+  async obtenirGraphiqueStructurePuissance(startTime, endTime, resolution) {
+    const params = {
+      startTime,
+      endTime,
+      resolution
+    };
+    return apiClient.get('/devices/structure/graphique/puissance', { params });
+  }
+  
+  async obtenirGraphiqueClientPuissance(startTime, endTime, resolution) {
+    const params = {
+      startTime,
+      endTime,
+      resolution
+    };
+    return apiClient.get('/devices/client/graphique/puissance', { params });
   }
 
   async obtenirStatutAppareil(deviceId) {

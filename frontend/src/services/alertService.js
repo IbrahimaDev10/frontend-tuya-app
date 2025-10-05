@@ -3,6 +3,12 @@ import { apiClient } from './authService';
 class AlertService {
   // =================== CONSULTATION DES ALERTES ===================
   
+  async obtenirToutesAlertes(hoursBack = 24, limit = 50) {
+    return apiClient.get('/alerts', {
+      params: { hours_back: hoursBack, limit }
+    });
+  }
+  
   async obtenirAlertesAppareil(deviceId, hoursBack = 24, limit = 50) {
     return apiClient.get(`/alerts/device/${deviceId}`, {
       params: { hours_back: hoursBack, limit }

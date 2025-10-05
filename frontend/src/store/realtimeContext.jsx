@@ -43,6 +43,14 @@ export function RealtimeProvider({ children }) {
   );
 }
 
+// On crée un hook pour accéder au contexte complet, pas seulement à un appareil.
+export function useRealtimeContext() {
+  const ctx = useContext(RealtimeContext);
+  if (!ctx) throw new Error("useRealtimeContext must be used within RealtimeProvider");
+  return ctx;
+}
+
+
 export function useDeviceRealtime(deviceId) {
   const ctx = useContext(RealtimeContext);
   if (!ctx) throw new Error("useDeviceRealtime must be used within RealtimeProvider");
