@@ -16,9 +16,28 @@ class Config:
     JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY')
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=20)
     
-    # Base de données MySQL
-    SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL') or \
-        'mysql+pymysql://root:password@localhost:3306/sertec_iot'
+    @staticmethod
+    def get_database_url():
+        """Gère automatiquement PostgreSQL (Render) et MySQL (local)"""
+        db_url = os.getenv('DATABASE_URL')
+        
+        if db_url:
+            # Fix pour Render.com : postgres:// -> postgresql://
+            if db_url.startswith('postgres://'):
+                db_url = db_url.replace('postgres://', 'postgresql://', 1)
+            return db_url
+        
+        # Fallback local MySQL
+        mysql_user = os.getenv('MYSQL_USER', 'root')
+        mysql_password = os.getenv('MYSQL_PASSWORD', 'Haadee09!!123')
+        mysql_host = os.getenv('MYSQL_HOST', 'localhost')
+        mysql_port = os.getenv('MYSQL_PORT', '3306')
+        mysql_db = os.getenv('MYSQL_DATABASE', 'sertec_iot')
+        
+        return f"mysql+pymysql://{mysql_user}:{mysql_password}@{mysql_host}:{mysql_port}/{mysql_db}"
+    
+    # Utiliser la méthode statique
+    SQLALCHEMY_DATABASE_URI = get_database_url.__func__()
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS = {
         'pool_pre_ping': True,

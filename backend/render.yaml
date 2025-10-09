@@ -1,0 +1,93 @@
+services:
+  # ==================== WEB SERVICE (Flask Backend) ====================
+  - type: web
+    name: sertec-iot-backend
+    runtime: python
+    region: frankfurt
+    plan: free
+    branch: main
+    buildCommand: pip install -r requirements.txt && flask db upgrade
+    startCommand: gunicorn --worker-class eventlet -w 1 --bind 0.0.0.0:$PORT app:app
+    healthCheckPath: /certif
+    
+    envVars:
+      # Flask
+      - key: FLASK_ENV
+        value: production
+      
+      - key: FLASK_DEBUG
+        value: false
+      
+      - key: SECRET_KEY
+        generateValue: true
+      
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      
+      # Database (automatique depuis la DB créée)
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sertec-postgres
+          property: connectionString
+      
+      # Redis (automatique depuis Redis créé)
+      - key: REDIS_URL
+        fromDatabase:
+          name: sertec-redis
+          property: connectionString
+      
+      # Tuya - À CONFIGURER MANUELLEMENT
+      - key: ACCESS_ID
+        sync: false
+      
+      - key: ACCESS_KEY
+        sync: false
+      
+      - key: USERNAME
+        sync: false
+      
+      - key: PASSWORD
+        sync: false
+      
+      - key: TUYA_ENDPOINT
+        value: https://openapi.tuyaeu.com
+      
+      - key: COUNTRY_CODE
+        value: "221"
+      
+      # Email - À CONFIGURER MANUELLEMENT
+      - key: MAIL_SERVER
+        value: smtp.gmail.com
+      
+      - key: MAIL_PORT
+        value: "587"
+      
+      - key: MAIL_USE_TLS
+        value: "True"
+      
+      - key: MAIL_USERNAME
+        sync: false
+      
+      - key: MAIL_PASSWORD
+        sync: false
+      
+      - key: MAIL_DEFAULT_SENDER
+        sync: false
+      
+      # CORS
+      - key: CORS_ORIGINS
+        value: http://localhost:5173
+
+databases:
+  # ==================== POSTGRESQL ====================
+  - name: sertec-postgres
+    databaseName: sertec_iot
+    user: sertec_user
+    region: frankfurt
+    plan: free
+  
+  # ==================== REDIS ====================
+  - name: sertec-redis
+    region: frankfurt
+    plan: free
+    maxmemoryPolicy: allkeys-lru

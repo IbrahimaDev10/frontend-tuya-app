@@ -1,0 +1,126 @@
+# ==================== ENVIRONNEMENT ====================
+.env
+.env.local
+.env.production
+.env.*.local
+*.env
+
+# ==================== PYTHON ====================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Environnements virtuels
+venv/
+env/
+ENV/
+.venv
+virtualenv/
+
+# Distribution / packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ==================== FLASK ====================
+instance/
+.webassets-cache
+
+# ==================== BASE DE DONNÉES ====================
+*.db
+*.sqlite
+*.sqlite3
+*.sql
+
+# Migrations (optionnel - décommentez si vous ne voulez pas les commiter)
+# migrations/
+
+# ==================== LOGS ====================
+logs/
+*.log
+log/
+
+# ==================== REDIS ====================
+dump.rdb
+*.rdb
+
+# ==================== TESTS ====================
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+
+# ==================== IDE ====================
+# VS Code
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iml
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# ==================== OS ====================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+
+# ==================== AUTRES ====================
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Backup files
+*.bak
+*.tmp
+*.temp
+
+# Secrets et clés
+*.pem
+*.key
+*.crt
+secrets/
+credentials/
+
+# Fichiers de configuration locaux
+config_local.py
+settings_local.py
+
+# Uploads utilisateurs
+uploads/
+media/

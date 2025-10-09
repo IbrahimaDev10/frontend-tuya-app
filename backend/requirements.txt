@@ -1,49 +1,86 @@
-# Framework Flask
+# ==================== FRAMEWORK FLASK ====================
 Flask==3.0.0
 Flask-SQLAlchemy==3.1.1
 Flask-Migrate==4.0.5
 Flask-JWT-Extended==4.6.0
 Flask-Mail==0.10.0
 Flask-CORS==4.0.0
-
-
-# Base de données
-PyMySQL==1.1.0
-
-# Sécurité
-bcrypt==4.2.0
-
-
-
-# Configuration
-python-dotenv==1.0.0
-
-# Tuya SDK
-tuya-iot-py-sdk==0.6.6
-
-# Utilitaires
-requests==2.31.0
-# Export Excel
-pandas==
-# Développement (optionnel)
-pytest==7.4.3
-pytest-flask==1.3.0
-
-# Gestion de la mémoire Redis
-Flask-Redis==0.4.0
-
-# WebSocket
-websocket-client==1.8.0
-
-# Autres dépendances
+Flask-SocketIO==5.5.1
 Werkzeug==3.1.3
 
+# ==================== BASE DE DONNÉES ====================
+# PostgreSQL (PRODUCTION - Render)
+psycopg2-binary==2.9.9
 
-#Export 
-pandas>=2.0.0
-xlsxwriter>=3.0.0
-reportlab>=4.0.0
-matplotlib>=3.5.0
-numpy>=1.21.0eportlab>=4.0.0
-matplotlib>=3.5.0
-numpy>=1.21.0
+# MySQL (LOCAL)
+PyMySQL==1.1.0
+
+# ORM
+SQLAlchemy==2.0.43
+alembic==1.16.5
+greenlet==3.2.4
+
+# ==================== REDIS ====================
+redis==6.4.0
+Flask-Redis==0.4.0
+
+# ==================== SCHEDULER ====================
+APScheduler==3.11.0
+
+# ==================== WEBSOCKET ====================
+python-socketio==5.14.0
+python-engineio==4.12.3
+websocket-client==1.8.0
+simple-websocket==1.1.0
+bidict==0.23.1
+
+# ==================== TUYA IoT ====================
+tuya-iot-py-sdk==0.6.6
+pulsar-client==3.5.0
+paho-mqtt==2.1.0
+
+# ==================== SÉCURITÉ ====================
+bcrypt==4.2.0
+PyJWT==2.10.1
+pycryptodome==3.23.0
+
+# ==================== EXPORT / RAPPORTS ====================
+pandas==2.1.4
+openpyxl==3.1.2
+xlsxwriter==3.2.0
+reportlab==4.2.5
+matplotlib==3.10.6
+numpy==1.26.4
+
+# ==================== SERVEUR PRODUCTION ====================
+gunicorn==21.2.0
+
+# ==================== UTILITAIRES ====================
+python-dotenv==1.0.0
+requests==2.31.0
+python-dateutil==2.8.2
+pytz==2025.2
+tzdata==2025.2
+tzlocal==5.3.1
+
+# ==================== DÉPENDANCES CORE ====================
+blinker==1.9.0
+certifi==2025.8.3
+charset-normalizer==3.4.3
+click==8.3.0
+h11==0.16.0
+idna==3.10
+itsdangerous==2.2.0
+Jinja2==3.1.6
+Mako==1.3.10
+MarkupSafe==3.0.3
+packaging==25.0
+six==1.17.0
+typing_extensions==4.15.0
+urllib3==2.5.0
+wsproto==1.2.0
+
+# ==================== DÉVELOPPEMENT (OPTIONNEL) ====================
+# Décommentez pour les tests locaux
+# pytest==7.4.3
+# pytest-flask==1.3.0
