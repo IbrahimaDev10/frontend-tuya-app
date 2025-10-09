@@ -36,7 +36,7 @@ bidict==0.23.1
 
 # ==================== TUYA IoT ====================
 tuya-iot-py-sdk==0.6.6
-pulsar-client==3.5.0
+pulsar-client==3.8.0
 paho-mqtt==2.1.0
 
 # ==================== SÉCURITÉ ====================
