@@ -28,6 +28,7 @@ Flask-Redis==0.4.0
 APScheduler==3.11.0
 
 # ==================== WEBSOCKET ====================
+eventlet
 python-socketio==5.14.0
 python-engineio==4.12.3
 websocket-client==1.8.0
