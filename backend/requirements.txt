@@ -37,6 +37,7 @@ paho-mqtt==2.1.0
 pandas==2.1.4
 pillow==11.3.0
 pluggy==1.6.0
+psycopg2-binary==2.9.10
 pulsar-client==3.5.0
 pycryptodome==3.23.0
 PyJWT==2.10.1
