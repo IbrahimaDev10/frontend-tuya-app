@@ -1,4 +1,7 @@
-# run.py (ou le nom de votre fichier de démarrage)
+# wsgi.py (ou le nom de votre fichier de démarrage)
+import eventlet
+eventlet.monkey_patch()
+
 
 import sys
 import os
