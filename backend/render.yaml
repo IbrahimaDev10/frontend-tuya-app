@@ -87,7 +87,7 @@ databases:
     plan: free
   
   # ==================== REDIS ====================
-  - name: sertec-redis
-    region: frankfurt
-    plan: free
-    maxmemoryPolicy: allkeys-lru
+  # - name: sertec-redis
+  #   region: frankfurt
+  #   plan: free
+  #   maxmemoryPolicy: allkeys-lru
