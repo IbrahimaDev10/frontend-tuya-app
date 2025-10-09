@@ -476,7 +476,7 @@ const ChartContainer = ({ device, chartType = 'tension', onClose }) => {
           >
             🔄 Actualiser
           </Button>
-          <Button
+          {/* <Button
             variant="outline"
             size="small"
             onClick={() => {
@@ -485,7 +485,7 @@ const ChartContainer = ({ device, chartType = 'tension', onClose }) => {
             }}
           >
             📊 Exporter CSV
-          </Button>
+          </Button> */}
         </div>
       </div>
 

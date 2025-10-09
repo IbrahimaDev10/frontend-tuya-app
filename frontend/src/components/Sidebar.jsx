@@ -73,12 +73,12 @@ const Sidebar = ({ isOpen, onClose }) => {
           path: '/sites',
           active: window.location.pathname === '/sites'
         },
-        {
-          icon: '👤',
-          label: 'Gestion des Clients',
-          path: '/clients',
-          active: window.location.pathname === '/clients'
-        },
+        // {
+        //   icon: '👤',
+        //   label: 'Gestion des Clients',
+        //   path: '/clients',
+        //   active: window.location.pathname === '/clients'
+        // },
         {
           icon: '📱',
           label: 'Gestion des Appareils',
@@ -104,11 +104,11 @@ const Sidebar = ({ isOpen, onClose }) => {
           path: '/devices',
           active: window.location.pathname === '/devices'
         },
-        {
-          icon: '🔄',
-          label: 'Demandes Support',
-          path: '/support-requests'
-        }
+        // {
+        //   icon: '🔄',
+        //   label: 'Demandes Support',
+        //   path: '/support-requests'
+        // }
        
       ]
     }

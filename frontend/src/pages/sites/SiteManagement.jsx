@@ -270,14 +270,14 @@ const SiteManagement = () => {
               <div className="stat-number">{stats.sites_actifs || 0}</div>
             </div>
           </div>
-          <div className="stat-card">
+          {/* <div className="stat-card">
             <div className="stat-icon">📍</div>
             <div className="stat-content">
               <h3>Géocodés</h3>
               <div className="stat-number">{stats.sites_geocodes || 0}</div>
               <small>{stats.taux_geocodage || 0}%</small>
             </div>
-          </div>
+          </div> */}
           <div className="stat-card">
             <div className="stat-icon">📱</div>
             <div className="stat-content">
