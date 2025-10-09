@@ -59,7 +59,7 @@ def create_app():
 
     # Le paramètre async_mode='threading' est souvent plus compatible avec les déploiements standards.
     # 'eventlet' ou 'gevent' sont plus performants mais nécessitent une configuration serveur spécifique.
-    socketio.init_app(app, async_mode='threading', cors_allowed_origins="*")
+    socketio.init_app(app, async_mode='eventlet', cors_allowed_origins="*")
 
     # Initialize Redis ultra-optimisé
     setup_redis(app)
