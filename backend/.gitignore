@@ -1,8 +1,6 @@
 # ==================== ENVIRONNEMENT ====================
 .env
-.env.local
-.env.production
-.env.*.local
+.env.*
 *.env
 
 # ==================== PYTHON ====================
@@ -12,11 +10,12 @@ __pycache__/
 *.so
 .Python
 
-# Environnements virtuels
+# Environnements virtuels - IMPORTANT !
+sertec/
 venv/
 env/
 ENV/
-.venv
+.venv/
 virtualenv/
 
 # Distribution / packaging
@@ -44,83 +43,21 @@ instance/
 *.db
 *.sqlite
 *.sqlite3
-*.sql
-
-# Migrations (optionnel - décommentez si vous ne voulez pas les commiter)
-# migrations/
 
 # ==================== LOGS ====================
 logs/
 *.log
-log/
 
-# ==================== REDIS ====================
-dump.rdb
-*.rdb
-
-# ==================== TESTS ====================
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
-.nox/
-coverage.xml
-*.cover
+# ==================== MIGRATIONS (cache) ====================
+migrations/__pycache__/
 
 # ==================== IDE ====================
-# VS Code
 .vscode/
-*.code-workspace
-
-# PyCharm
 .idea/
-*.iml
-
-# Sublime Text
-*.sublime-project
-*.sublime-workspace
-
-# Vim
 *.swp
 *.swo
-*~
 
 # ==================== OS ====================
-# macOS
 .DS_Store
-.AppleDouble
-.LSOverride
-._*
-
-# Windows
 Thumbs.db
-ehthumbs.db
 Desktop.ini
-$RECYCLE.BIN/
-
-# Linux
-*~
-
-# ==================== AUTRES ====================
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# Backup files
-*.bak
-*.tmp
-*.temp
-
-# Secrets et clés
-*.pem
-*.key
-*.crt
-secrets/
-credentials/
-
-# Fichiers de configuration locaux
-config_local.py
-settings_local.py
-
-# Uploads utilisateurs
-uploads/
-media/
