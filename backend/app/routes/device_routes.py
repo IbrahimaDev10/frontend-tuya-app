@@ -1661,7 +1661,7 @@ def get_sites_accessibles(current_user):
 
 @device_bp.route('/import-tuya', methods=['POST'])
 # @superadmin_required
-def import_appareils_tuya(current_user):
+def import_appareils_tuya():
     """Importer tous les appareils depuis Tuya avec options avancées"""
     try:
         # ✅ SOLUTION DÉFINITIVE: Ignorer Content-Type
@@ -1708,7 +1708,7 @@ def import_appareils_tuya(current_user):
     
 @device_bp.route('/sync-tuya', methods=['POST'])
 # @authenticated_user_required
-def synchroniser_tuya(current_user):
+def synchroniser_tuya():
     """Synchroniser les statuts avec Tuya avec options + sync temps réel"""
     try:
         # ✅ SOLUTION DÉFINITIVE: Ignorer Content-Type comme import-tuya
