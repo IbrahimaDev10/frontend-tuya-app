@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const API = import.meta.env.VITE_API_URL || 'https://sertecingenierie.onrender.com/api';
 
 // Configuration axios avec intercepteur pour les tokens
 const apiClient = axios.create({

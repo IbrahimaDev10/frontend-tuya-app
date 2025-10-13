@@ -1,7 +1,7 @@
 // src/services/socket.js
 import { io } from "socket.io-client";
 
-const API_BASE = (import.meta.env.VITE_API_URL?.replace("/api", "")) || "http://localhost:5000";
+const API_BASE = (import.meta.env.VITE_API_URL?.replace("/api", "")) || 'https://sertecingenierie.onrender.com';
 
 let socket = null;
 

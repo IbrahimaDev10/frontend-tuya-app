@@ -1,3 +1,4 @@
+
 import { apiClient } from './authService';
 
 class UserService {
@@ -8,6 +9,7 @@ class UserService {
   }
 
   async listerClients() {
+
     return apiClient.get('/users/clients');
   }
 
