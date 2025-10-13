@@ -37,16 +37,18 @@ try:
         upgrade()
         print("✅ Migrations terminées avec succès !")
         
+        # Fermer les connexions AVANT de sortir du contexte
+        print("🧹 Nettoyage des connexions...")
+        db.session.remove()
+        db.engine.dispose()
+        print("✅ Connexions fermées proprement")
+        
 except Exception as e:
     print(f"❌ Erreur lors des migrations : {e}")
+    import traceback
+    traceback.print_exc()
     sys.exit(1)
-    
-finally:
-    # Fermer proprement toutes les connexions
-    print("🧹 Nettoyage des connexions...")
-    db.session.remove()
-    db.engine.dispose()
-    print("✅ Connexions fermées proprement")
 
 # Sortie propre
+print("🎉 Script de migration terminé avec succès")
 sys.exit(0)
