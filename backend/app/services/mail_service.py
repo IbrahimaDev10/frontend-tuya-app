@@ -81,7 +81,7 @@ class MailService:
         
         try:
             # URL de réinitialisation (à adapter selon votre frontend)
-            frontend_url = current_app.config.get('FRONTEND_URL', 'http://localhost:5173', 'https://sertecingenierie.vercel.app')
+            frontend_url = current_app.config.get('FRONTEND_URL', 'https://sertecingenierie.vercel.app')
             reset_url = f"{frontend_url}/reset-password?token={reset_token}"
             
             result = MailService.send_email(
@@ -165,7 +165,7 @@ class MailService:
         
         try:
             # URL d'activation (à adapter selon votre frontend)
-            frontend_url = current_app.config.get('FRONTEND_URL', 'http://localhost:5173', 'https://sertecingenierie.vercel.app')
+            frontend_url = current_app.config.get('FRONTEND_URL', 'https://sertecingenierie.vercel.app')
             activation_url = f"{frontend_url}/activation?token={activation_token}"
             
             result = MailService.send_email(
@@ -214,7 +214,7 @@ class MailService:
         
         try:
             # URL d'activation pour admin (différente de l'activation normale)
-            frontend_url = current_app.config.get('FRONTEND_URL', 'http://localhost:5173', 'https://sertecingenierie.vercel.app')
+            frontend_url = current_app.config.get('FRONTEND_URL', 'https://sertecingenierie.vercel.app')
             activation_url = f"{frontend_url}/activer-admin/{activation_token}"
             
             # Nom complet pour affichage
@@ -316,7 +316,7 @@ class MailService:
         
         try:
             # URL de connexion
-            frontend_url = current_app.config.get('FRONTEND_URL', 'http://localhost:5173', 'https://sertecingenierie.vercel.app')
+            frontend_url = current_app.config.get('FRONTEND_URL', 'https://sertecingenierie.vercel.app')
             login_url = login_url or f"{frontend_url}/login"
             
             # Nom complet pour affichage
@@ -368,7 +368,7 @@ class MailService:
             
         try:
             # URL d'activation pour utilisateur standard
-            frontend_url = current_app.config.get('FRONTEND_URL', 'http://localhost:5173', 'https://sertecingenierie.vercel.app')
+            frontend_url = current_app.config.get('FRONTEND_URL', 'https://sertecingenierie.vercel.app')
             activation_url = f"{frontend_url}/activer-utilisateur/{activation_token}"
                 
             # Nom complet pour affichage
@@ -427,7 +427,7 @@ class MailService:
         
         try:
             # URL d'activation pour superadmin
-            frontend_url = current_app.config.get('FRONTEND_URL', 'http://localhost:5173', 'https://sertecingenierie.vercel.app')
+            frontend_url = current_app.config.get('FRONTEND_URL', 'https://sertecingenierie.vercel.app')
             activation_url = f"{frontend_url}/activer-superadmin/{activation_token}"
             
             # Nom complet pour affichage

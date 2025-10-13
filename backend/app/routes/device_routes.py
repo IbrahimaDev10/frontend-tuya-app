@@ -1660,8 +1660,8 @@ def get_sites_accessibles(current_user):
 # =================== ROUTES D'ADMINISTRATION (améliorées) ===================
 
 @device_bp.route('/import-tuya', methods=['POST'])
-# @superadmin_required
-def import_appareils_tuya():
+@superadmin_required
+def import_appareils_tuya(current_user):
     """Importer tous les appareils depuis Tuya avec options avancées"""
     try:
         # ✅ SOLUTION DÉFINITIVE: Ignorer Content-Type
@@ -1707,8 +1707,8 @@ def import_appareils_tuya():
     
     
 @device_bp.route('/sync-tuya', methods=['POST'])
-# @authenticated_user_required
-def synchroniser_tuya():
+@authenticated_user_required
+def synchroniser_tuya(current_user):
     """Synchroniser les statuts avec Tuya avec options + sync temps réel"""
     try:
         # ✅ SOLUTION DÉFINITIVE: Ignorer Content-Type comme import-tuya
