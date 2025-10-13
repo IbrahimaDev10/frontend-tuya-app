@@ -3,6 +3,9 @@
 import os
 import sys
 
+# ⚠️ DÉSACTIVER PULSAR PENDANT LES MIGRATIONS
+os.environ['DISABLE_PULSAR'] = 'true'
+
 # Ajouter le répertoire backend au path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
