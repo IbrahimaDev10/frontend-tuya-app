@@ -119,8 +119,8 @@ def create_app():
     with app.app_context():
         if app.config['DEBUG']:
             try:
-                db.create_all()
-                app.logger.info("✅ Tables de base de données créées")
+                # db.create_all()
+                app.logger.info("✅ Tables de base de données créées ET GÉRÉES PAR FLASK-MIGRATE")
             except Exception as e:
                 app.logger.error(f"⚠️ Erreur création tables: {e}")
 
