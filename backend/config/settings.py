@@ -45,7 +45,7 @@ class Config:
     }
     
     # CORS (pour React)
-    CORS_ORIGINS = os.getenv('CORS_ORIGINS', 'https://sertecingenierie.vercel.app').split(',')
+    CORS_ORIGINS = os.getenv('CORS_ORIGINS', 'http://localhost:5173,https://sertecingenierie.vercel.app').split(',')
     
     # Tuya Configuration - Settings existants
     TUYA_ACCESS_ID = os.getenv('ACCESS_ID')
@@ -99,8 +99,8 @@ class Config:
     MAIL_ASCII_ATTACHMENTS = False
     
     # URLs pour les templates d'emails
-    FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://sertecingenierie.vercel.app')
-    BACKEND_URL = os.getenv('BACKEND_URL','https://sertecingenierie.onrender.com')
+    FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5173,https://sertecingenierie.vercel.app')
+    BACKEND_URL = os.getenv('BACKEND_URL','http://localhost:5000,https://sertecingenierie.onrender.com')
     
     # Configuration des notifications par email
     EMAIL_NOTIFICATIONS = {

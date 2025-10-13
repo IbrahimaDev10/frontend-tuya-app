@@ -44,8 +44,18 @@ def create_app():
     # Setup logging
     setup_logging(app)
 
-    # Initialize CORS avec tes paramètres existants
-    CORS(app, origins=app.config.get('CORS_ORIGINS', ['https://sertecingenierie.vercel.app'] ))
+    # Initialize CORS avec configuration explicite
+    cors_origins = app.config.get('CORS_ORIGINS', [])
+    if not cors_origins:
+        cors_origins = ['https://sertecingenierie.vercel.app', 'http://localhost:5173']
+
+    app.logger.info(f"🌍 CORS configuré pour: {cors_origins}")
+
+    CORS(app, 
+        resources={r"/api/*": {"origins": cors_origins}},
+        supports_credentials=True,
+        allow_headers=["Content-Type", "Authorization"],
+        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 
     # Initialize JWT avec tes paramètres existants
     jwt.init_app(app)
