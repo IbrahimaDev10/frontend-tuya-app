@@ -67,8 +67,14 @@ def create_app():
     # Configure and start the scheduler
     setup_scheduler_with_all_jobs(app)
 
-    if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
-        setup_pulsar_listener(app) # On appelle notre nouvelle fonction
+    # Ne démarrer Pulsar QUE si pas en mode migration
+    if not os.environ.get("DISABLE_PULSAR"):
+        if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
+            setup_pulsar_listener(app)
+        else:
+            app.logger.info("⏭️ [PULSAR] Mode debug - Pulsar non démarré")
+    else:
+        app.logger.info("⏭️ [PULSAR] Désactivé (mode migration)")
 
     # Vérifier et afficher le statut de la configuration mail
     if config.is_mail_configured():
