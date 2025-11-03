@@ -28,7 +28,7 @@ redis_pool = None
 redis_client = None
 
 def create_app():
-    """Factory pour créer l'application Flask - Version optimisée Redis"""
+    """Factory pour créer l'application Flask - Version optimisée Redis et WebSocket"""
 
     # Créer l'app Flask
     app = Flask(__name__)
@@ -47,7 +47,11 @@ def create_app():
     # Initialize CORS avec configuration explicite
     cors_origins = app.config.get('CORS_ORIGINS', [])
     if not cors_origins:
-        cors_origins = ['https://sertecingenierie.vercel.app', 'http://localhost:5173']
+        cors_origins = [
+            'https://sertecingenierie.vercel.app',
+            'http://localhost:5173',
+            'http://localhost:3000'
+        ]
 
     app.logger.info(f"🌍 CORS configuré pour: {cors_origins}")
 
@@ -57,19 +61,58 @@ def create_app():
         allow_headers=["Content-Type", "Authorization"],
         methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 
-    # Initialize JWT avec tes paramètres existants
+    # Initialize JWT
     jwt.init_app(app)
 
-    # Initialize nouvelles extensions (base de données)
+    # Initialize base de données
     db.init_app(app)
     migrate.init_app(app, db)
 
     # Initialize Flask-Mail
     mail.init_app(app)
 
-    # Le paramètre async_mode='threading' est souvent plus compatible avec les déploiements standards.
-    # 'eventlet' ou 'gevent' sont plus performants mais nécessitent une configuration serveur spécifique.
-    socketio.init_app(app, async_mode='eventlet', cors_allowed_origins="*")
+    # ✅ CONFIGURATION SOCKETIO OPTIMISÉE
+    app.logger.info("🔌 Configuration de Socket.IO...")
+    
+    # Déterminer le mode async optimal
+    async_mode = determine_async_mode(app)
+    
+    socketio.init_app(
+        app,
+        # Mode async - eventlet est recommandé pour production
+        async_mode=async_mode,
+        
+        # CORS - origines spécifiques (pas *)
+        cors_allowed_origins=cors_origins,
+        
+        # Support des credentials pour l'authentification
+        cors_credentials=True,
+        
+        # Transports - polling d'abord pour compatibilité
+        transports=['polling', 'websocket'],
+        
+        # Permet l'upgrade de polling vers websocket
+        allow_upgrades=True,
+        
+        # Timeouts et ping pour maintenir la connexion
+        ping_timeout=60,
+        ping_interval=25,
+        
+        # Logging pour debug
+        logger=app.debug,
+        engineio_logger=app.debug,
+        
+        # Options avancées pour stabilité
+        max_http_buffer_size=1e6,  # 1MB
+        http_compression=True,
+        
+        # Pour le déploiement derrière un proxy (Render, Vercel)
+        async_handlers=True
+    )
+    
+    app.logger.info(f"✅ Socket.IO configuré avec mode: {async_mode}")
+    app.logger.info(f"   Origines CORS: {cors_origins}")
+    app.logger.info(f"   Transports: polling → websocket")
 
     # Initialize Redis ultra-optimisé
     setup_redis(app)
@@ -116,13 +159,14 @@ def create_app():
     except ImportError as e:
         app.logger.warning(f"⚠️ Erreur import service mail: {e}")
 
+    # ✅ IMPORT DES ÉVÉNEMENTS SOCKET.IO
     try:
-        from . import socket_events
-        app.logger.info("✅ Événements WebSocket importés.")
+        from app import socket_events
+        app.logger.info("✅ Événements WebSocket importés")
     except ImportError as e:
-        app.logger.warning(f"⚠️ Fichier socket_events.py non trouvé ou erreur d'import: {e}")    
+        app.logger.warning(f"⚠️ Fichier socket_events.py non trouvé: {e}")
 
-    # Register blueprints - Version améliorée
+    # Register blueprints
     register_blueprints(app)
 
     # Gestionnaires d'erreurs
@@ -135,15 +179,41 @@ def create_app():
     with app.app_context():
         if app.config['DEBUG']:
             try:
-                # db.create_all()
-                app.logger.info("✅ Tables de base de données créées ET GÉRÉES PAR FLASK-MIGRATE")
+                app.logger.info("✅ Tables de base de données gérées par Flask-Migrate")
             except Exception as e:
                 app.logger.error(f"⚠️ Erreur création tables: {e}")
 
-    app.logger.info("🚀 Application SERTEC IoT initialisée avec succès (avec support WebSocket)")
+    app.logger.info("🚀 Application SERTEC IoT initialisée avec succès (avec WebSocket optimisé)")
     return app
 
-def setup_pulsar_listener(app): # Renommez la fonction pour plus de clarté
+
+def determine_async_mode(app):
+    """
+    Détermine le meilleur mode async disponible pour Socket.IO
+    """
+    # Ordre de préférence pour production
+    preferred_modes = ['eventlet', 'gevent', 'threading']
+    
+    for mode in preferred_modes:
+        try:
+            if mode == 'eventlet':
+                import eventlet
+                app.logger.info(f"✅ Module {mode} disponible")
+                return mode
+            elif mode == 'gevent':
+                import gevent
+                app.logger.info(f"✅ Module {mode} disponible")
+                return mode
+        except ImportError:
+            app.logger.debug(f"⚠️ Module {mode} non disponible")
+            continue
+    
+    # Fallback sur threading (toujours disponible)
+    app.logger.warning("⚠️ Utilisation de 'threading' (performances limitées)")
+    return 'threading'
+
+
+def setup_pulsar_listener(app):
     """
     Initialise et démarre le listener PULSAR Tuya en arrière-plan.
     """
@@ -158,8 +228,8 @@ def setup_pulsar_listener(app): # Renommez la fonction pour plus de clarté
         ACCESS_KEY = os.getenv('ACCESS_KEY')
         
         # Définir les constantes pour Pulsar
-        PULSAR_SERVER_URL = "pulsar+ssl://mqe.tuyaeu.com:7285" # Pour l'Europe
-        MQ_ENV = "event" # "event" pour la production
+        PULSAR_SERVER_URL = "pulsar+ssl://mqe.tuyaeu.com:7285"  # Pour l'Europe
+        MQ_ENV = "event"  # "event" pour la production
 
         # Créer et démarrer le listener
         listener = TuyaPulsarListener(ACCESS_ID, ACCESS_KEY, PULSAR_SERVER_URL, MQ_ENV, app)
@@ -173,8 +243,7 @@ def setup_pulsar_listener(app): # Renommez la fonction pour plus de clarté
         
 def setup_scheduler_with_all_jobs(app):
     """
-    [HARMONISÉ] Configure et démarre le planificateur avec des tâches optimisées
-    pour la performance et l'économie d'appels API.
+    Configure et démarre le planificateur avec des tâches optimisées
     """
     global scheduler
 
@@ -246,7 +315,7 @@ def setup_scheduler_with_all_jobs(app):
 
 
 def setup_redis(app):
-    """Setup Redis ultra-optimisé pour performance - VERSION FINALE CORRIGÉE"""
+    """Setup Redis ultra-optimisé pour performance"""
     global redis_client, redis_pool
 
     try:
@@ -320,15 +389,18 @@ def setup_redis(app):
         redis_client = None
         redis_pool = None
 
+
 def get_redis():
     """Client Redis optimisé avec pool"""
     return redis_client
+
 
 def get_redis_pipeline():
     """Pipeline Redis pour opérations batch"""
     if redis_client:
         return redis_client.pipeline()
     return None
+
 
 def is_redis_available():
     """Vérifier si Redis est disponible et connecté"""
@@ -340,6 +412,7 @@ def is_redis_available():
         return True
     except:
         return False
+
 
 def setup_logging(app):
     """Configuration des logs"""
@@ -358,6 +431,7 @@ def setup_logging(app):
         )
     else:
         logging.basicConfig(level=logging.DEBUG)
+
 
 def register_blueprints(app):
     """Enregistrer tous les blueprints"""
@@ -450,19 +524,15 @@ def register_blueprints(app):
 
     # 📊 BLUEPRINT EXPORT
     try:
-        app.logger.info("Import du blueprint export...")
-        
-        # Méthode 1 : Import direct (RECOMMANDÉ - plus simple et fiable)
+        app.logger.info("🔍 Import du blueprint export...")
         from app.routes.export_routes import export_bp
         app.register_blueprint(export_bp)
-        app.logger.info("Blueprint export enregistré sur /api/export")
-        
+        app.logger.info("✅ Blueprint export enregistré sur /api/export")
     except ImportError as e:
-        app.logger.error(f"Erreur import blueprint export: {e}")
-        app.logger.warning("Le module export_routes.py est manquant ou contient des erreurs")
-        
+        app.logger.error(f"❌ Erreur import blueprint export: {e}")
+        app.logger.warning("   Le module export_routes.py est manquant ou contient des erreurs")
     except Exception as e:
-        app.logger.error(f"Erreur inattendue lors de l'enregistrement du blueprint export: {e}")
+        app.logger.error(f"❌ Erreur inattendue lors de l'enregistrement du blueprint export: {e}")
 
     # 🔧 ROUTES DE DEBUG ET SANTÉ
     @app.route('/debug/routes')
@@ -479,6 +549,43 @@ def register_blueprints(app):
             'total_routes': len(routes),
             'routes': sorted(routes, key=lambda x: x['path'])
         }
+
+    @app.route('/debug/websocket')
+    def debug_websocket():
+        """Route pour vérifier l'état de Socket.IO"""
+        try:
+            from flask_socketio import __version__ as socketio_version
+            
+            # Vérifier les clients connectés
+            try:
+                connected_clients = len(socketio.server.manager.rooms.get('/', {}).keys())
+            except:
+                connected_clients = "N/A"
+            
+            async_mode = socketio.async_mode
+            
+            # Test de la configuration
+            config_test = {
+                'cors_origins': app.config.get('CORS_ORIGINS', []),
+                'async_mode': async_mode,
+                'transports': ['polling', 'websocket'],
+                'ping_timeout': 60,
+                'ping_interval': 25
+            }
+            
+            return {
+                'websocket_service': 'configured',
+                'socketio_version': socketio_version,
+                'async_mode': async_mode,
+                'connected_clients': connected_clients,
+                'configuration': config_test,
+                'status': 'ready'
+            }
+        except Exception as e:
+            return {
+                'websocket_service': 'error',
+                'error': str(e)
+            }, 500
 
     @app.route('/debug/redis')
     def debug_redis():
@@ -727,6 +834,7 @@ def register_blueprints(app):
                 'sites': 'active',
                 'devices': 'active',
                 'tuya': 'active',
+                'websocket': 'active',
                 'mail': mail_status,
                 'redis': redis_status,
                 'scheduler': scheduler_status
@@ -746,9 +854,8 @@ def register_blueprints(app):
                 'mail': '/debug/mail',
                 'redis': '/debug/redis',
                 'redis_performance': '/debug/redis-performance',
-                'scheduler': '/debug/scheduler',
-                'scheduler_execute': '/debug/scheduler/execute-now',
-                'scheduler_control': '/debug/scheduler/control/{action}'
+                'websocket': '/debug/websocket',
+                'scheduler': '/debug/scheduler'
             },
             'api_endpoints': {
                 'auth': '/api/auth',
@@ -757,6 +864,7 @@ def register_blueprints(app):
                 'devices': '/api/devices'
             }
         }, 200
+
 
 def register_error_handlers(app):
     """Gestionnaires d'erreurs globaux"""
@@ -781,6 +889,7 @@ def register_error_handlers(app):
     @app.errorhandler(403)
     def forbidden(error):
         return {'error': 'Accès interdit'}, 403
+
 
 def register_jwt_callbacks(app):
     """Callbacks JWT pour une meilleure gestion"""
