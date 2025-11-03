@@ -7,7 +7,7 @@ import DeviceService from '../../services/deviceService'
 import Button from '../../components/Button'
 import ToggleSwitch from '../../components/ToggleSwitch';
 import Input from '../../components/Input'
-import DeviceModal from './DeviceModal' // Non utilisé dans ce fichier, mais laissé pour référence
+import DeviceModal from './DeviceModal' 
 import AssignModal from './AssignModal'
 import { useRealtimeContext } from '../../store/realtimeContext'
 import DropdownMenu from '../../components/DropdownMenu'
