@@ -205,16 +205,7 @@ def handle_subscribe_all():
 def emit_new_device_data(data: dict, broadcast=True, to_specific_users=None):
     """
     Fonction centrale pour envoyer les nouvelles données de l'appareil.
-    Appelée par data_processor.py après une sauvegarde en BDD.
-    
-    Args:
-        data (dict): Les données de l'appareil formatées.
-        broadcast (bool): Si True, envoie à tous les clients de la room de l'appareil.
-        to_specific_users (list): Liste d'user_id pour un envoi ciblé.
-    
-    Exemple d'utilisation:
-        from app.socket_events import emit_new_device_data
-        emit_new_device_data({'device_id': '123', 'temperature': 25.5})
+    CORRIGÉE pour fonctionner depuis n'importe quel contexte (Pulsar, etc.)
     """
     try:
         device_id = data.get('device_id')
@@ -222,22 +213,24 @@ def emit_new_device_data(data: dict, broadcast=True, to_specific_users=None):
             log.warning("⚠️ [WebSocket] Tentative d'émission sans device_id.")
             return
         
-        # Envoi ciblé vers la room de l'appareil
+        # ✅ SOLUTION : Utiliser namespace='/' et skip_sid pour émission depuis background
         room = f"device_{device_id}"
         log.info(f"🚀 [WebSocket] Émission de 'new_data' pour l'appareil {device_id}")
         
         if broadcast:
             # Envoyer à tous dans la room de cet appareil
-            socketio.emit('new_data', data, room=room)
+            socketio.emit('new_data', data, room=room, namespace='/')
             
             # Également envoyer à la room "all_devices" pour les dashboards
-            socketio.emit('new_data', data, room='all_devices')
+            socketio.emit('new_data', data, room='all_devices', namespace='/')
+            
+            log.info(f"✅ [WebSocket] Données émises vers room={room} et all_devices")
         
         if to_specific_users:
             # Envoyer à des utilisateurs spécifiques
             for user_id in to_specific_users:
                 user_room = f"user_{user_id}"
-                socketio.emit('new_data', data, room=user_room)
+                socketio.emit('new_data', data, room=user_room, namespace='/')
                 log.debug(f"📤 [WebSocket] Données envoyées à l'utilisateur {user_id}")
         
     except Exception as e:
