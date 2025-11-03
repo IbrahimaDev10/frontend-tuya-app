@@ -524,6 +524,7 @@ const handleShowCharts = (device) => {
 }
 
 // Le composant DevicesTable reste inchangé, car la logique est gérée dans le composant parent.
+// Composant tableau des appareils (VERSION CORRIGÉE)
 const DevicesTable = ({ 
   devices, 
   onToggle, 
@@ -535,7 +536,7 @@ const DevicesTable = ({
   showAssignActions,
   isSuperadmin,
   isClient,
-   onShowAlerts,
+  onShowAlerts,
   onGoToConfigPage,
   currentUserRole,
   loadingDeviceIds 
@@ -568,17 +569,22 @@ const DevicesTable = ({
                 {device.type_systeme || 'N/A'}
               </span>
             </td>
+           
             <td>
-              {/* Condition pour afficher l'interrupteur ou le badge statique */}
+              <span className={`status-badge ${device.statut_assignation === 'assigne' ? 'assigned' : 'unassigned'}`}>
+                {device.statut_assignation === 'assigne' ? 'Assigné' : 'Non assigné'}
+              </span>
+            </td>
+           
+            <td>
               {device.statut_assignation === 'assigne' && !isClient && currentUserRole !== 'user' ? (
                 <ToggleSwitch 
                   isOn={device.etat_actuel_tuya}
                   onToggle={() => onToggle(device)}
                   isLoading={loadingDeviceIds.includes(device.tuya_device_id)}
-                  isDisabled={!device.en_ligne} // On désactive si l'appareil est hors ligne
+                  isDisabled={!device.en_ligne}
                 />
               ) : (
-                // Sinon, on affiche le badge texte comme avant
                 <span className={`state-badge ${device.etat_actuel_tuya ? 'on' : 'off'}`}>
                   {device.etat_actuel_tuya ? 'ON' : 'OFF'}
                 </span>
@@ -605,8 +611,6 @@ const DevicesTable = ({
                 >
                   👁️ Détails
                 </Button>
-                
-               
                 
                 {device.statut_assignation === 'assigne' && (
                   <Button
@@ -642,7 +646,6 @@ const DevicesTable = ({
                     </Button>
                   )}
                   
-                  {/* Seul le superadmin voit ces actions maintenant */}
                   {isSuperadmin && device.statut_assignation !== 'assigne' && (
                     <Button
                       variant="text"
@@ -678,7 +681,8 @@ const DevicesTable = ({
       </div>
     )}
   </div>
-)
+);
+
 
 
 export default DeviceManagement
