@@ -50,7 +50,7 @@ def create_app():
         cors_origins = [
             'https://sertecingenierie.vercel.app',
             'http://localhost:5173',
-            'http://localhost:3000'
+            # 'http://localhost:3000'
         ]
 
     app.logger.info(f"🌍 CORS configuré pour: {cors_origins}")
