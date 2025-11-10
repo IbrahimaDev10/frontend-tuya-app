@@ -547,7 +547,7 @@ const DevicesTable = ({
         <tr>
           <th>Nom</th>
           <th>Type</th>
-          <th>Statut</th>
+          <th>Assignation</th>
           <th>État</th>
           {isSuperadmin && <th>Client</th>}
           {(isSuperadmin || currentUserRole === 'admin') && <th>Site</th>} 
